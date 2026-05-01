@@ -1,0 +1,42 @@
+{
+  "name": "cortex-cdd",
+  "version": "2.4.0",
+  "description": "Cortex - Framework de desenvolvimento orientado a contexto para IDEs de IA",
+  "bin": {
+    "cortex-cdd": "./bin/cli.js"
+  },
+  "files": [
+    "bin/",
+    ".claude/agents/",
+    ".claude/commands/",
+    ".claude/skills/",
+    ".claude/scripts/",
+    ".claude/rules/",
+    "README.md"
+  ],
+  "keywords": [
+    "cortex",
+    "context-driven-development",
+    "ai-agents",
+    "claude",
+    "windsurf",
+    "cursor"
+  ],
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/PX-Ativos-Judiciais/cortex-cdd.git"
+  },
+  "private": true,
+  "license": "SEE LICENSE IN LICENSE.txt",
+  "devDependencies": {
+    "cheerio": "^1.2.0",
+    "docx": "^9.5.1",
+    "html2pptx": "^0.0.5",
+    "html2pptxgenjs": "^0.0.3",
+    "pptxgenjs": "^4.0.1",
+    "puppeteer": "^24.36.1"
+  }
+}

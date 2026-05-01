@@ -1,0 +1,736 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>TITULO_DA_APRESENTACAO</title>
+    <script src="https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.min.js"></script>
+    <style>
+        /* ======================================== AI FRONTIERS DESIGN SYSTEM ======================================== */
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap');
+
+        :root {
+            --bg-primary: #0b1929;
+            --bg-secondary: #0d2137;
+            --bg-tertiary: #132d4a;
+            --cyan: #4fc3f7;
+            --cyan-bright: #00e5ff;
+            --cyan-light: #b3e5fc;
+            --cyan-dim: rgba(79, 195, 247, 0.15);
+            --text-primary: #ffffff;
+            --text-secondary: #b0bec5;
+            --text-muted: #78909c;
+            --accent-green: #66bb6a;
+            --accent-orange: #ffa726;
+            --accent-red: #ef5350;
+            --accent-purple: #ab47bc;
+        }
+
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+
+        body {
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+            background: var(--bg-primary);
+            color: var(--text-primary);
+            overflow: hidden;
+            height: 100vh;
+            width: 100vw;
+        }
+
+        /* ======================================== SLIDE SYSTEM ======================================== */
+        .presentation { position: relative; width: 100vw; height: 100vh; }
+
+        .slide {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100vw;
+            height: 100vh;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            padding: 40px 60px;
+            opacity: 0;
+            visibility: hidden;
+            transition: opacity 0.5s ease, visibility 0.5s ease;
+            background: var(--bg-primary);
+            overflow-y: auto;
+        }
+
+        .slide.active { opacity: 1; visibility: visible; }
+
+        .slide-content {
+            max-width: 1400px;
+            width: 100%;
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+        }
+
+        /* ======================================== TYPOGRAPHY ======================================== */
+        .slide-label {
+            font-size: 0.75rem;
+            font-weight: 600;
+            letter-spacing: 3px;
+            text-transform: uppercase;
+            color: var(--cyan);
+            margin-bottom: 12px;
+        }
+
+        .slide h1 {
+            font-size: 3rem;
+            font-weight: 800;
+            line-height: 1.1;
+            margin-bottom: 16px;
+            background: linear-gradient(135deg, var(--cyan-bright), var(--cyan), var(--cyan-light));
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+        }
+
+        .slide h2 {
+            font-size: 2rem;
+            font-weight: 700;
+            color: var(--cyan);
+            margin-bottom: 12px;
+        }
+
+        .slide h3 {
+            font-size: 1.3rem;
+            font-weight: 600;
+            color: var(--cyan-light);
+            margin-bottom: 8px;
+        }
+
+        .slide p {
+            font-size: 1.05rem;
+            line-height: 1.6;
+            color: var(--text-secondary);
+            max-width: 900px;
+        }
+
+        .slide .subtitle {
+            font-size: 1.3rem;
+            color: var(--text-secondary);
+            font-weight: 300;
+            margin-bottom: 24px;
+        }
+
+        .highlight { color: var(--cyan); font-weight: 600; }
+
+        /* ======================================== DIAGRAM CONTAINER ======================================== */
+        .diagram-container {
+            width: 100%;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            flex: 1;
+            min-height: 0;
+            padding: 10px 0;
+        }
+
+        .diagram-container .mermaid {
+            width: 100%;
+            max-height: 72vh;
+            display: flex;
+            justify-content: center;
+        }
+
+        .diagram-container .mermaid svg {
+            max-width: 100%;
+            max-height: 70vh;
+            height: auto;
+        }
+
+        /* ======================================== TITLE SLIDE ======================================== */
+        .title-slide { text-align: center; }
+        .title-slide h1 { font-size: 3.5rem; margin-bottom: 20px; }
+
+        .title-slide .divider {
+            width: 120px;
+            height: 3px;
+            background: linear-gradient(90deg, transparent, var(--cyan), transparent);
+            margin: 24px auto;
+        }
+
+        .title-slide .authors {
+            font-size: 1.1rem;
+            color: var(--text-muted);
+            margin-top: 24px;
+        }
+
+        .title-slide .authors span { color: var(--cyan-light); }
+
+        /* ======================================== SECTION HEADER SLIDE ======================================== */
+        .section-header { text-align: center; }
+
+        .section-header .section-number {
+            font-size: 5rem;
+            font-weight: 800;
+            color: var(--cyan-dim);
+            line-height: 1;
+        }
+
+        .section-header h2 { font-size: 2.5rem; margin-top: -10px; }
+
+        /* ======================================== TABLE SLIDES ======================================== */
+        .data-table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 20px;
+        }
+
+        .data-table th {
+            background: var(--bg-tertiary);
+            color: var(--cyan);
+            font-weight: 600;
+            font-size: 0.85rem;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            padding: 12px 16px;
+            text-align: left;
+            border-bottom: 2px solid var(--cyan);
+        }
+
+        .data-table td {
+            padding: 12px 16px;
+            border-bottom: 1px solid rgba(79, 195, 247, 0.1);
+            font-size: 0.95rem;
+            color: var(--text-secondary);
+        }
+
+        .data-table tr:hover td { background: rgba(79, 195, 247, 0.05); }
+        .data-table .impact { color: var(--accent-green); font-weight: 600; }
+
+        /* ======================================== COMPACT TABLE ======================================== */
+        .compact-table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 0.82rem;
+        }
+
+        .compact-table th {
+            background: var(--bg-tertiary);
+            color: var(--cyan);
+            font-weight: 600;
+            padding: 8px 10px;
+            text-align: left;
+            border-bottom: 2px solid var(--cyan);
+            font-size: 0.72rem;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+
+        .compact-table td {
+            padding: 7px 10px;
+            border-bottom: 1px solid rgba(79, 195, 247, 0.08);
+            color: var(--text-secondary);
+        }
+
+        .compact-table tr:hover td { background: rgba(79, 195, 247, 0.04); }
+
+        /* ======================================== AGENDA GRID ======================================== */
+        .agenda-grid {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 20px;
+            margin-top: 32px;
+        }
+
+        .agenda-item {
+            background: var(--bg-secondary);
+            border: 1px solid rgba(79, 195, 247, 0.15);
+            border-radius: 12px;
+            padding: 24px;
+            transition: border-color 0.3s;
+        }
+
+        .agenda-item:hover { border-color: var(--cyan); }
+
+        .agenda-item .item-number {
+            font-size: 2rem;
+            font-weight: 800;
+            color: rgba(79, 195, 247, 0.3);
+        }
+
+        .agenda-item h3 { font-size: 1rem; margin-top: 8px; }
+        .agenda-item p { font-size: 0.85rem; margin-top: 6px; }
+
+        /* ======================================== TWO-COLUMN LAYOUT ======================================== */
+        .two-col {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 40px;
+            width: 100%;
+            align-items: start;
+        }
+
+        /* ======================================== STATS GRID ======================================== */
+        .stats-grid {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 16px;
+            margin-top: 24px;
+        }
+
+        .stat-card {
+            background: var(--bg-secondary);
+            border: 1px solid rgba(79, 195, 247, 0.2);
+            border-radius: 12px;
+            padding: 20px;
+            text-align: center;
+        }
+
+        .stat-card .stat-value {
+            font-size: 2.2rem;
+            font-weight: 800;
+            color: var(--cyan-bright);
+            line-height: 1;
+        }
+
+        .stat-card .stat-label {
+            font-size: 0.75rem;
+            color: var(--text-muted);
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            margin-top: 6px;
+        }
+
+        /* ======================================== SCR CARDS ======================================== */
+        .scr-cards {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 20px;
+            margin-top: 24px;
+        }
+
+        .scr-card {
+            background: var(--bg-secondary);
+            border-radius: 12px;
+            padding: 24px;
+            border-left: 4px solid var(--cyan);
+        }
+
+        .scr-card.situacao { border-left-color: var(--accent-green); }
+        .scr-card.complicacao { border-left-color: var(--accent-orange); }
+        .scr-card.resolucao { border-left-color: var(--cyan-bright); }
+        .scr-card h3 { margin-bottom: 8px; }
+        .scr-card p { font-size: 0.9rem; }
+
+        /* ======================================== TIER CARDS ======================================== */
+        .tier-cards {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+            gap: 16px;
+            margin-top: 20px;
+        }
+
+        .tier-card {
+            background: var(--bg-secondary);
+            border: 1px solid rgba(79, 195, 247, 0.15);
+            border-radius: 12px;
+            padding: 20px;
+        }
+
+        .tier-card h4 { color: var(--cyan); font-size: 1rem; margin-bottom: 6px; }
+        .tier-card p { font-size: 0.82rem; color: var(--text-muted); }
+        .tier-card .tier-impact { font-size: 0.8rem; color: var(--accent-green); font-weight: 600; margin-top: 8px; }
+
+        /* ======================================== QUOTE BOX ======================================== */
+        .quote-box {
+            background: var(--bg-secondary);
+            border-left: 4px solid var(--cyan);
+            border-radius: 0 12px 12px 0;
+            padding: 20px 24px;
+            margin-top: 20px;
+            max-width: 800px;
+        }
+
+        .quote-box p { font-style: italic; color: var(--cyan-light); font-size: 1.1rem; }
+        .quote-box .quote-author { font-style: normal; color: var(--text-muted); font-size: 0.85rem; margin-top: 8px; }
+
+        /* ======================================== MODULE CARDS ======================================== */
+        .module-cards {
+            display: grid;
+            grid-template-columns: repeat(4, 1fr);
+            gap: 14px;
+            margin-top: 20px;
+        }
+
+        .module-card {
+            background: var(--bg-secondary);
+            border: 1px solid rgba(79, 195, 247, 0.15);
+            border-radius: 10px;
+            padding: 16px;
+            border-top: 3px solid var(--cyan);
+        }
+
+        .module-card h4 { color: var(--cyan-light); font-size: 0.9rem; margin-bottom: 4px; }
+        .module-card .module-hours { color: var(--cyan); font-weight: 700; font-size: 0.8rem; }
+        .module-card p { font-size: 0.78rem; color: var(--text-muted); margin-top: 6px; }
+
+        /* ======================================== PHASE BADGES ======================================== */
+        .phase-badge {
+            display: inline-block;
+            padding: 2px 10px;
+            border-radius: 10px;
+            font-size: 0.7rem;
+            font-weight: 600;
+        }
+
+        .phase-badge.green { background: rgba(102, 187, 106, 0.2); color: #66bb6a; }
+        .phase-badge.blue { background: rgba(79, 195, 247, 0.2); color: #4fc3f7; }
+        .phase-badge.purple { background: rgba(171, 71, 188, 0.2); color: #ab47bc; }
+        .phase-badge.orange { background: rgba(255, 167, 38, 0.2); color: #ffa726; }
+        .phase-badge.red { background: rgba(239, 83, 80, 0.2); color: #ef5350; }
+
+        /* ======================================== RISK COLORS ======================================== */
+        .risk-high { color: var(--accent-red); }
+        .risk-med { color: var(--accent-orange); }
+        .risk-low { color: var(--accent-green); }
+
+        /* ======================================== NAVIGATION ======================================== */
+        .nav-controls {
+            position: fixed;
+            bottom: 24px;
+            right: 40px;
+            display: flex;
+            align-items: center;
+            gap: 16px;
+            z-index: 100;
+        }
+
+        .nav-btn {
+            width: 44px;
+            height: 44px;
+            border: 1px solid rgba(79, 195, 247, 0.3);
+            background: rgba(11, 25, 41, 0.9);
+            color: var(--cyan);
+            border-radius: 50%;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 1.1rem;
+            transition: all 0.3s;
+            backdrop-filter: blur(10px);
+        }
+
+        .nav-btn:hover {
+            background: var(--cyan);
+            color: var(--bg-primary);
+            border-color: var(--cyan);
+        }
+
+        .slide-counter {
+            font-size: 0.85rem;
+            color: var(--text-muted);
+            font-variant-numeric: tabular-nums;
+            min-width: 60px;
+            text-align: center;
+        }
+
+        /* ======================================== PROGRESS BAR ======================================== */
+        .progress-bar {
+            position: fixed;
+            top: 0;
+            left: 0;
+            height: 3px;
+            background: linear-gradient(90deg, var(--cyan-bright), var(--cyan));
+            transition: width 0.5s ease;
+            z-index: 100;
+        }
+
+        /* ======================================== BRAND FOOTER ======================================== */
+        .brand-footer {
+            position: fixed;
+            bottom: 28px;
+            left: 40px;
+            font-size: 0.7rem;
+            color: var(--text-muted);
+            letter-spacing: 1px;
+            z-index: 100;
+        }
+
+        .brand-footer span { color: var(--cyan); }
+
+        /* ======================================== PRINT STYLES ======================================== */
+        /* NOTE: For best PDF results, use Puppeteer (see assets/html-to-pdf.js).
+           These print styles are a fallback for browser Ctrl+P but results may vary. */
+        @media print {
+            @page {
+                size: 254mm 142.875mm; /* 16:9 landscape */
+                margin: 0;
+            }
+
+            html, body {
+                overflow: visible !important;
+                height: auto !important;
+                width: auto !important;
+            }
+
+            .presentation {
+                position: relative !important;
+                height: auto !important;
+            }
+
+            .slide {
+                position: relative !important;
+                opacity: 1 !important;
+                visibility: visible !important;
+                width: 100vw !important;
+                height: 100vh !important;
+                page-break-after: always !important;
+                break-after: page !important;
+                display: flex !important;
+            }
+
+            .slide:last-child {
+                page-break-after: avoid !important;
+                break-after: avoid !important;
+            }
+
+            .nav-controls, .progress-bar, .brand-footer { display: none !important; }
+
+            * {
+                -webkit-print-color-adjust: exact !important;
+                print-color-adjust: exact !important;
+                color-adjust: exact !important;
+            }
+        }
+
+        /* ======================================== RESPONSIVE ======================================== */
+        @media (max-width: 1024px) {
+            .slide { padding: 24px 32px; }
+            .slide h1 { font-size: 2.2rem; }
+            .agenda-grid { grid-template-columns: 1fr 1fr; }
+            .two-col { grid-template-columns: 1fr; }
+            .stats-grid { grid-template-columns: repeat(2, 1fr); }
+            .scr-cards { grid-template-columns: 1fr; }
+            .module-cards { grid-template-columns: repeat(2, 1fr); }
+            .tier-cards { grid-template-columns: 1fr 1fr; }
+        }
+    </style>
+</head>
+<body>
+
+<div class="progress-bar" id="progressBar"></div>
+
+<div class="presentation" id="presentation">
+
+<!-- ============================================================ SLIDE 1: TITLE ============================================================ -->
+<div class="slide title-slide active" data-slide="1">
+    <div class="slide-content">
+        <div class="slide-label">TIPO DO DOCUMENTO</div>
+        <h1>Título da Apresentação</h1>
+        <div class="divider"></div>
+        <p class="subtitle">Subtítulo descritivo com mais contexto</p>
+        <p class="authors">
+            Elaborado por <span>Nome da Empresa</span> para <span>Nome do Cliente</span>
+        </p>
+    </div>
+</div>
+
+<!-- ============================================================ SLIDE 2: AGENDA ============================================================ -->
+<div class="slide" data-slide="2">
+    <div class="slide-content">
+        <div class="slide-label">VISÃO GERAL</div>
+        <h2>Agenda</h2>
+        <p>Navegue pelas seções desta apresentação</p>
+        <div class="agenda-grid">
+            <div class="agenda-item">
+                <div class="item-number">01</div>
+                <h3>Primeira Seção</h3>
+                <p>Descrição breve do conteúdo</p>
+            </div>
+            <div class="agenda-item">
+                <div class="item-number">02</div>
+                <h3>Segunda Seção</h3>
+                <p>Descrição breve do conteúdo</p>
+            </div>
+            <div class="agenda-item">
+                <div class="item-number">03</div>
+                <h3>Terceira Seção</h3>
+                <p>Descrição breve do conteúdo</p>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- ============================================================ ADICIONAR MAIS SLIDES AQUI ============================================================ -->
+
+<!-- ============================================================ SLIDE FINAL: CLOSING ============================================================ -->
+<!-- Atualizar data-slide="N" com o número correto -->
+<div class="slide title-slide" data-slide="3">
+    <div class="slide-content">
+        <div class="slide-label">ENCERRAMENTO</div>
+        <h1>Obrigado!</h1>
+        <div class="divider"></div>
+        <p class="subtitle">Documento elaborado por Empresa para Cliente</p>
+        <p style="color: var(--text-muted); font-size: 0.9rem; margin-top: 16px;">
+            Versão 1.0 — Fevereiro de 2026
+        </p>
+    </div>
+</div>
+
+</div><!-- /presentation -->
+
+<!-- ======================================== NAVIGATION CONTROLS ======================================== -->
+<div class="nav-controls">
+    <button class="nav-btn" onclick="changeSlide(-1)">&#9664;</button>
+    <span class="slide-counter"><span id="currentSlideNum">1</span> / <span id="totalSlideNum">1</span></span>
+    <button class="nav-btn" onclick="changeSlide(1)">&#9654;</button>
+</div>
+
+<div class="brand-footer">
+    <span>NOME</span> DA EMPRESA
+</div>
+
+<script>
+    // ======================================== MERMAID CONFIG ========================================
+    mermaid.initialize({
+        startOnLoad: true,
+        theme: 'dark',
+        flowchart: {
+            useMaxWidth: true,
+            htmlLabels: true,
+            curve: 'basis',
+            padding: 15
+        },
+        sequence: {
+            useMaxWidth: true,
+            wrap: true,
+            width: 180,
+            height: 50,
+            boxMargin: 10,
+            mirrorActors: false
+        },
+        themeVariables: {
+            background: 'transparent',
+            primaryColor: '#0d3b66',
+            primaryTextColor: '#e0e0e0',
+            primaryBorderColor: '#4fc3f7',
+            lineColor: '#4fc3f7',
+            secondaryColor: '#132d4a',
+            tertiaryColor: '#1a3a5c',
+            mainBkg: '#0d3b66',
+            nodeBorder: '#4fc3f7',
+            clusterBkg: 'rgba(79,195,247,0.08)',
+            clusterBorder: '#4fc3f7',
+            titleColor: '#4fc3f7',
+            edgeLabelBackground: 'transparent',
+            nodeTextColor: '#e0e0e0',
+            actorBkg: '#0d3b66',
+            actorBorder: '#4fc3f7',
+            actorTextColor: '#e0e0e0',
+            actorLineColor: '#4fc3f7',
+            noteBkgColor: '#132d4a',
+            noteTextColor: '#e0e0e0',
+            noteBorderColor: '#4fc3f7',
+            activationBkgColor: '#1a3a5c',
+            activationBorderColor: '#4fc3f7',
+            signalColor: '#b0bec5',
+            signalTextColor: '#e0e0e0',
+            labelBoxBkgColor: '#0d3b66',
+            labelBoxBorderColor: '#4fc3f7',
+            labelTextColor: '#e0e0e0',
+            loopTextColor: '#4fc3f7',
+            altSectionBkgColor: 'rgba(79,195,247,0.05)'
+        },
+        securityLevel: 'loose'
+    });
+
+    // ======================================== SLIDE NAVIGATION ========================================
+    let currentSlide = 1;
+    const slides = document.querySelectorAll('.slide');
+    const totalSlides = slides.length;
+    const progressBar = document.getElementById('progressBar');
+    const currentSlideNum = document.getElementById('currentSlideNum');
+    const totalSlideNum = document.getElementById('totalSlideNum');
+
+    totalSlideNum.textContent = totalSlides;
+
+    function updateSlide() {
+        slides.forEach(s => s.classList.remove('active'));
+        const activeSlide = document.querySelector(`[data-slide="${currentSlide}"]`);
+        if (activeSlide) activeSlide.classList.add('active');
+
+        currentSlideNum.textContent = currentSlide;
+
+        const progress = ((currentSlide - 1) / (totalSlides - 1)) * 100;
+        progressBar.style.width = `${progress}%`;
+
+        history.replaceState(null, null, `#${currentSlide}`);
+    }
+
+    function changeSlide(delta) {
+        const newSlide = currentSlide + delta;
+        if (newSlide >= 1 && newSlide <= totalSlides) {
+            currentSlide = newSlide;
+            updateSlide();
+        }
+    }
+
+    document.addEventListener('keydown', (e) => {
+        switch(e.key) {
+            case 'ArrowRight':
+            case 'ArrowDown':
+            case ' ':
+            case 'PageDown':
+                e.preventDefault();
+                changeSlide(1);
+                break;
+            case 'ArrowLeft':
+            case 'ArrowUp':
+            case 'PageUp':
+                e.preventDefault();
+                changeSlide(-1);
+                break;
+            case 'Home':
+                e.preventDefault();
+                currentSlide = 1;
+                updateSlide();
+                break;
+            case 'End':
+                e.preventDefault();
+                currentSlide = totalSlides;
+                updateSlide();
+                break;
+            case 'f':
+            case 'F':
+                if (!document.fullscreenElement) {
+                    document.documentElement.requestFullscreen();
+                } else {
+                    document.exitFullscreen();
+                }
+                break;
+        }
+    });
+
+    // Touch support
+    let touchStartX = 0;
+    document.addEventListener('touchstart', (e) => {
+        touchStartX = e.touches[0].clientX;
+    });
+    document.addEventListener('touchend', (e) => {
+        const touchEndX = e.changedTouches[0].clientX;
+        const diff = touchStartX - touchEndX;
+        if (Math.abs(diff) > 50) {
+            changeSlide(diff > 0 ? 1 : -1);
+        }
+    });
+
+    // Hash URL navigation
+    window.addEventListener('load', () => {
+        const hash = parseInt(location.hash.replace('#', ''));
+        if (hash >= 1 && hash <= totalSlides) {
+            currentSlide = hash;
+        }
+        updateSlide();
+    });
+</script>
+
+</body>
+</html>

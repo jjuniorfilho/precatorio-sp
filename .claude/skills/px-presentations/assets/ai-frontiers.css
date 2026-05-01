@@ -1,0 +1,400 @@
+/* AI Frontiers - Custom CSS for Presentations */
+/* Design System extraído da identidade visual AI Frontiers */
+:root {
+  /* ===== CORE PALETTE ===== */
+
+  /* Background tones (dark navy scale) */
+  --af-bg-darkest: #0b1929;          /* Cover/closing slide background */
+  --af-bg-dark: #0d1f33;             /* Alternative dark background */
+  --af-bg-surface: #162338;           /* Cards on dark backgrounds */
+  --af-bg-surface-hover: #1a2940;     /* Card hover/lighter surface on dark */
+  --af-bg-card-border: rgba(79, 195, 247, 0.15); /* Subtle border on dark cards */
+
+  /* Primary Navy (content slides, headers) */
+  --af-primary: #1e3a5f;              /* Header bars, navy cards on light bg */
+  --af-primary-dark: #163050;         /* Darker variant */
+  --af-primary-foreground: #ffffff;
+
+  /* Accent Cyan (highlights, links, numbers, separators) */
+  --af-accent: #4fc3f7;               /* Main accent - labels, numbers, links */
+  --af-accent-light: #81d4fa;         /* Lighter variant */
+  --af-accent-dark: #039be5;          /* Darker cyan for contrast */
+
+  /* Secondary Blue (metric cards, card headers) */
+  --af-secondary: #5bbad5;            /* Lighter card backgrounds, card headers */
+  --af-secondary-dark: #3a9cc0;       /* Hover/pressed state */
+  --af-secondary-foreground: #ffffff;
+
+  /* Surface / Content slides */
+  --af-surface: #ffffff;              /* Content slide background */
+  --af-surface-foreground: #1e293b;   /* Main text on light */
+
+  /* Text colors */
+  --af-text-primary: #ffffff;          /* Text on dark backgrounds */
+  --af-text-secondary: #94a3b8;        /* Subtitles, descriptions on dark */
+  --af-text-muted: #64748b;           /* Muted text on dark */
+  --af-text-dark: #1e293b;            /* Text on light backgrounds */
+  --af-text-subtitle: #6b7280;        /* Subtitles on light backgrounds */
+
+  /* Status / Feedback */
+  --af-success: #22c55e;              /* Green checkmarks */
+  --af-success-dark: #16a34a;
+  --af-warning: #f59e0b;              /* Warnings */
+  --af-info: #4fc3f7;                 /* Same as accent */
+
+  /* Borders */
+  --af-border-light: #e2e8f0;         /* Borders on light bg */
+  --af-border-dark: rgba(79, 195, 247, 0.2); /* Borders on dark bg */
+
+  /* Decorative circles (top-right corner) */
+  --af-circle-outer: rgba(79, 195, 247, 0.08);  /* Outermost circle */
+  --af-circle-middle: rgba(79, 195, 247, 0.12);  /* Middle circle */
+  --af-circle-inner: rgba(79, 195, 247, 0.18);   /* Innermost circle */
+
+  /* ===== TYPOGRAPHY ===== */
+  --af-font-family: 'Inter', 'Segoe UI', Arial, sans-serif;
+  --af-font-display: 'Inter', 'Segoe UI', Arial, sans-serif;
+  --af-font-weight-bold: 700;
+  --af-font-weight-semibold: 600;
+  --af-font-weight-regular: 400;
+
+  /* ===== SPACING ===== */
+  --af-slide-width: 960px;
+  --af-slide-height: 540px;
+  --af-padding-x: 40px;
+  --af-padding-y: 30px;
+  --af-gap-cards: 20px;
+  --af-gap-sections: 25px;
+  --af-border-radius: 8px;
+  --af-border-radius-lg: 12px;
+}
+
+/* ===== SLIDE LAYOUTS ===== */
+
+/* Dark slide (cover, closing, results) */
+.slide-dark {
+  background: var(--af-bg-darkest);
+  color: var(--af-text-primary);
+}
+
+/* Light content slide */
+.slide-light {
+  background: var(--af-surface);
+  color: var(--af-text-dark);
+}
+
+/* ===== LOGO ===== */
+.logo-ai {
+  color: var(--af-accent);
+  font-weight: 400;
+  font-style: italic;
+}
+.logo-frontiers {
+  color: var(--af-text-primary);
+  font-weight: var(--af-font-weight-bold);
+  text-transform: uppercase;
+}
+
+/* ===== METRIC CARDS ===== */
+
+/* Navy metric card (used on light backgrounds) */
+.metric-card-navy {
+  background: var(--af-primary);
+  border-radius: var(--af-border-radius);
+  padding: 20px;
+  text-align: center;
+}
+.metric-card-navy .value {
+  font-size: 42px;
+  font-weight: var(--af-font-weight-bold);
+  color: var(--af-text-primary);
+}
+.metric-card-navy .label {
+  font-size: 11px;
+  font-weight: var(--af-font-weight-semibold);
+  color: var(--af-text-primary);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+/* Cyan/blue metric card (alternating with navy) */
+.metric-card-cyan {
+  background: var(--af-secondary);
+  border-radius: var(--af-border-radius);
+  padding: 20px;
+  text-align: center;
+}
+.metric-card-cyan .value {
+  font-size: 42px;
+  font-weight: var(--af-font-weight-bold);
+  color: var(--af-text-primary);
+}
+.metric-card-cyan .label {
+  font-size: 11px;
+  font-weight: var(--af-font-weight-semibold);
+  color: var(--af-text-primary);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+/* Dark surface metric card (used on dark backgrounds) */
+.metric-card-dark {
+  background: var(--af-bg-surface);
+  border: 1px solid var(--af-border-dark);
+  border-radius: var(--af-border-radius);
+  padding: 20px;
+  text-align: center;
+}
+.metric-card-dark .icon {
+  width: 48px;
+  height: 48px;
+  border-radius: 50%;
+  background: var(--af-bg-surface-hover);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin: 0 auto 12px;
+}
+.metric-card-dark .icon svg {
+  color: var(--af-accent);
+  width: 24px;
+  height: 24px;
+}
+.metric-card-dark .value {
+  font-size: 36px;
+  font-weight: var(--af-font-weight-bold);
+  color: var(--af-accent);
+}
+.metric-card-dark .label {
+  font-size: 13px;
+  font-weight: var(--af-font-weight-bold);
+  color: var(--af-text-primary);
+}
+.metric-card-dark .description {
+  font-size: 11px;
+  color: var(--af-text-secondary);
+  margin-top: 4px;
+}
+
+/* ===== INFO BOXES (cover bottom) ===== */
+.info-box {
+  background: var(--af-bg-surface);
+  border-radius: var(--af-border-radius);
+  padding: 16px 20px;
+}
+.info-box .label {
+  font-size: 10px;
+  font-weight: var(--af-font-weight-bold);
+  color: var(--af-accent);
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  margin-bottom: 6px;
+}
+.info-box .value {
+  font-size: 14px;
+  font-weight: var(--af-font-weight-semibold);
+  color: var(--af-text-primary);
+}
+
+/* ===== TWO-COLUMN CARDS (scope slides) ===== */
+.scope-card {
+  border-radius: var(--af-border-radius-lg);
+  overflow: hidden;
+  background: var(--af-surface);
+  box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+}
+.scope-card .header-navy {
+  background: var(--af-primary);
+  color: var(--af-text-primary);
+  padding: 14px 20px;
+  font-weight: var(--af-font-weight-bold);
+  font-size: 15px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.scope-card .header-cyan {
+  background: var(--af-secondary);
+  color: var(--af-text-primary);
+  padding: 14px 20px;
+  font-weight: var(--af-font-weight-bold);
+  font-size: 15px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.scope-card .body {
+  padding: 16px 20px;
+}
+.scope-card .checklist-item {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  margin-bottom: 8px;
+  font-size: 12px;
+  color: var(--af-text-dark);
+}
+.scope-card .check-icon {
+  color: var(--af-success);
+  font-size: 14px;
+  flex-shrink: 0;
+}
+
+/* ===== CALLOUT / QUOTE BOX ===== */
+.callout {
+  border-left: 4px solid var(--af-accent);
+  background: #f8fafc;
+  padding: 16px 20px;
+  border-radius: 0 var(--af-border-radius) var(--af-border-radius) 0;
+  font-size: 13px;
+  color: var(--af-text-dark);
+  line-height: 1.6;
+}
+
+/* ===== STEP CARDS (closing slide) ===== */
+.step-card {
+  background: var(--af-bg-surface);
+  border-radius: var(--af-border-radius);
+  padding: 20px;
+}
+.step-card .number {
+  font-size: 28px;
+  font-weight: var(--af-font-weight-bold);
+  color: var(--af-accent);
+  margin-bottom: 8px;
+}
+.step-card .title {
+  font-size: 15px;
+  font-weight: var(--af-font-weight-bold);
+  color: var(--af-text-primary);
+  margin-bottom: 4px;
+}
+.step-card .description {
+  font-size: 11px;
+  color: var(--af-text-secondary);
+}
+
+/* ===== BANNER (dark slides) ===== */
+.banner {
+  background: rgba(79, 195, 247, 0.12);
+  border-radius: var(--af-border-radius);
+  padding: 14px 24px;
+  text-align: center;
+  color: var(--af-text-primary);
+  font-size: 14px;
+  font-weight: var(--af-font-weight-semibold);
+}
+
+/* ===== FOOTER ===== */
+.footer-dark {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  height: 32px;
+  background: var(--af-bg-surface);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 var(--af-padding-x);
+}
+.footer-dark .text {
+  font-size: 9px;
+  color: var(--af-text-secondary);
+}
+.footer-dark .page-num {
+  font-size: 9px;
+  color: var(--af-accent);
+}
+
+.footer-light {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  height: 32px;
+  background: var(--af-primary);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 var(--af-padding-x);
+}
+.footer-light .text {
+  font-size: 9px;
+  color: rgba(255, 255, 255, 0.7);
+}
+.footer-light .page-num {
+  font-size: 9px;
+  color: var(--af-accent);
+}
+
+/* ===== DECORATIVE CIRCLES ===== */
+.decorative-circles {
+  position: absolute;
+  top: -60px;
+  right: -60px;
+  width: 300px;
+  height: 300px;
+}
+.circle-outer {
+  position: absolute;
+  width: 300px;
+  height: 300px;
+  border-radius: 50%;
+  background: var(--af-circle-outer);
+}
+.circle-middle {
+  position: absolute;
+  top: 40px;
+  left: 40px;
+  width: 220px;
+  height: 220px;
+  border-radius: 50%;
+  background: var(--af-circle-middle);
+}
+.circle-inner {
+  position: absolute;
+  top: 80px;
+  left: 80px;
+  width: 140px;
+  height: 140px;
+  border-radius: 50%;
+  background: var(--af-circle-inner);
+}
+
+/* ===== SEPARATOR LINE ===== */
+.separator-cyan {
+  width: 80px;
+  height: 3px;
+  background: var(--af-accent);
+}
+
+/* ===== CONTACT SECTION ===== */
+.contact-label {
+  font-size: 10px;
+  font-weight: var(--af-font-weight-bold);
+  color: var(--af-accent);
+  text-transform: uppercase;
+  letter-spacing: 1px;
+}
+.contact-name {
+  font-size: 18px;
+  font-weight: var(--af-font-weight-bold);
+  color: var(--af-text-primary);
+}
+.contact-role {
+  font-size: 12px;
+  color: var(--af-text-secondary);
+}
+.contact-link {
+  font-size: 12px;
+  color: var(--af-accent);
+  text-decoration: underline;
+}
+
+/* ===== BULLET ARROWS ===== */
+.bullet-arrow {
+  color: var(--af-accent);
+  font-size: 14px;
+  margin-right: 8px;
+}

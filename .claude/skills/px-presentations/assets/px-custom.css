@@ -1,0 +1,26 @@
+/* PX Ativos Judiciais - Custom CSS for Presentations */
+:root {
+  /* PX Brand Colors */
+  --color-primary: #1e3a5f;
+  --color-primary-foreground: #ffffff;
+  --color-secondary: #f0a500;
+  --color-secondary-foreground: #1e3a5f;
+  --color-surface: #ffffff;
+  --color-surface-foreground: #1e3a5f;
+  --color-muted: #f5f7fa;
+  --color-muted-foreground: #4a5568;
+  --color-accent: #f0a500;
+  --color-accent-foreground: #1e3a5f;
+  --color-border: #e2e8f0;
+  
+  /* Status Colors */
+  --color-success: #7ac47a;
+  --color-warning: #f0a500;
+  --color-info: #7ab8e8;
+  
+  /* Typography */
+  --font-family-display: Arial, sans-serif;
+  --font-family-content: Arial, sans-serif;
+  --font-weight-display: 700;
+  --font-weight-content: 400;
+}

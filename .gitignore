@@ -1,0 +1,26 @@
+# Dependencies
+node_modules/
+
+# Generated reports and presentations
+reports/
+
+# Separate repositories
+cortex-educational/
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Temporary files
+*.temp
+.temp_images/
+
+# IDE
+.vscode/
+.idea/
+
+# Zip archives
+*.zip
+
+# Data files (large)
+precatorios_depre_completo.xlsx
