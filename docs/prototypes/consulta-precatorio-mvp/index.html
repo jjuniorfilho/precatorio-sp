@@ -1,0 +1,150 @@
+<!DOCTYPE html>
+<html lang="pt-BR" data-theme="light">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Protótipos MVP — Consulta Precatório SP</title>
+<link rel="stylesheet" href="shared.css">
+<style>
+  body { padding: 40px 24px 80px; max-width: 900px; margin: 0 auto; }
+  .hub-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px,1fr)); gap: 16px; }
+  .screen-card {
+    border: 1px solid var(--border); border-radius: var(--radius-xl);
+    overflow: hidden; text-decoration: none; transition: box-shadow 150ms, border-color 150ms;
+    display: flex; flex-direction: column; background: var(--card);
+  }
+  .screen-card:hover { box-shadow: var(--shadow-md); border-color: var(--primary); text-decoration: none; }
+  .screen-thumb {
+    height: 120px; background: var(--muted);
+    display: flex; align-items: center; justify-content: center;
+    border-bottom: 1px solid var(--border);
+    font-size: 40px; color: var(--muted-foreground);
+  }
+  .screen-body { padding: 16px; flex: 1; }
+  .screen-title { font-size: 14px; font-weight: 600; margin-bottom: 4px; }
+  .screen-desc  { font-size: 13px; color: var(--muted-foreground); line-height: 1.5; margin-bottom: 10px; }
+  .screen-variants { display: flex; flex-wrap: wrap; gap: 4px; }
+  .vpill { font-size: 11px; background: var(--muted); color: var(--muted-foreground); border-radius: 9999px; padding: 2px 8px; font-weight: 500; }
+  .screen-meta {
+    padding: 10px 16px; border-top: 1px solid var(--border);
+    display: flex; align-items: center; justify-content: space-between;
+    background: var(--muted); font-size: 11px; color: var(--muted-foreground);
+    font-family: var(--font-mono);
+  }
+  .section-label { font-size: 11px; font-weight: 700; color: var(--muted-foreground); text-transform: uppercase; letter-spacing: 0.08em; margin-bottom: 12px; margin-top: 32px; }
+</style>
+</head>
+<body>
+
+<div class="flex items-center justify-between mb-6">
+  <div>
+    <h1 class="tracking-tight" style="font-size:22px;">Protótipos — Consulta Precatório SP</h1>
+    <p class="text-sm text-muted-foreground mt-1">MVP · 5 superfícies · 19 estados · Design system: rhilo-app/frontend</p>
+  </div>
+  <button class="btn btn-outline btn-sm" onclick="toggleTheme()" id="theme-btn">Dark</button>
+</div>
+
+<div class="alert alert-info mb-4" style="max-width:680px;">
+  <svg class="alert-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+  <div>
+    <a href="../../../design-system/components.html" style="font-weight:600;color:var(--primary);">→ Ver Design System (components.html)</a>
+    <span class="alert-description" style="display:block;margin-top:2px;">HTML estático — spec visual para implementação Lovable + Supabase. Zero JS funcional.</span>
+  </div>
+</div>
+
+<!-- Portal público -->
+<div class="section-label">Portal Público</div>
+<div class="hub-grid" style="margin-bottom:32px;">
+
+  <a href="landing-page.html" class="screen-card">
+    <div class="screen-thumb">🏠</div>
+    <div class="screen-body">
+      <div class="screen-title">Landing Page + Busca</div>
+      <div class="screen-desc">Página principal com hero, campo de busca e social proof. Entrada de 100% dos usuários.</div>
+      <div class="screen-variants">
+        <span class="vpill">Padrão</span>
+        <span class="vpill">Carregando</span>
+        <span class="vpill">Dark</span>
+      </div>
+    </div>
+    <div class="screen-meta"><span>landing-page.html</span><span>3 variantes</span></div>
+  </a>
+
+  <a href="resultado-consulta.html" class="screen-card">
+    <div class="screen-thumb">📋</div>
+    <div class="screen-body">
+      <div class="screen-title">Resultado da Consulta</div>
+      <div class="screen-desc">4 cenários: saldo ativo, sem saldo, suspenso, não encontrado.</div>
+      <div class="screen-variants">
+        <span class="vpill">Saldo ativo</span>
+        <span class="vpill">Sem saldo</span>
+        <span class="vpill">Suspenso</span>
+        <span class="vpill">Não encontrado</span>
+      </div>
+    </div>
+    <div class="screen-meta"><span>resultado-consulta.html</span><span>4 variantes</span></div>
+  </a>
+
+  <a href="captura-lead.html" class="screen-card">
+    <div class="screen-thumb">📝</div>
+    <div class="screen-body">
+      <div class="screen-title">Captura de Lead + Token</div>
+      <div class="screen-desc">Formulário + validação multi-canal (e-mail + WhatsApp). 4 etapas do fluxo.</div>
+      <div class="screen-variants">
+        <span class="vpill">Formulário</span>
+        <span class="vpill">Token e-mail</span>
+        <span class="vpill">Token WhatsApp</span>
+        <span class="vpill">Sucesso</span>
+      </div>
+    </div>
+    <div class="screen-meta"><span>captura-lead.html</span><span>4 variantes</span></div>
+  </a>
+
+</div>
+
+<!-- Admin -->
+<div class="section-label">Painel Administrativo (/admin)</div>
+<div class="hub-grid">
+
+  <a href="admin-leads.html" class="screen-card">
+    <div class="screen-thumb">👥</div>
+    <div class="screen-body">
+      <div class="screen-title">Admin — Leads + CRM</div>
+      <div class="screen-desc">Listagem com filtros, modal de detalhe com timeline, leads incompletos, estado vazio.</div>
+      <div class="screen-variants">
+        <span class="vpill">Listagem</span>
+        <span class="vpill">Modal detalhe</span>
+        <span class="vpill">Incompletos</span>
+        <span class="vpill">Vazio</span>
+      </div>
+    </div>
+    <div class="screen-meta"><span>admin-leads.html</span><span>4 variantes</span></div>
+  </a>
+
+  <a href="admin-funil.html" class="screen-card">
+    <div class="screen-thumb">📊</div>
+    <div class="screen-body">
+      <div class="screen-title">Admin — Funil + Analytics</div>
+      <div class="screen-desc">Dashboard de métricas, funil gráfico/tabela, badge realtime, login.</div>
+      <div class="screen-variants">
+        <span class="vpill">Dashboard</span>
+        <span class="vpill">Funil gráfico</span>
+        <span class="vpill">Funil tabela</span>
+        <span class="vpill">Login</span>
+      </div>
+    </div>
+    <div class="screen-meta"><span>admin-funil.html</span><span>4 variantes</span></div>
+  </a>
+
+</div>
+
+<script>
+function toggleTheme() {
+  const html = document.documentElement;
+  const isDark = html.getAttribute('data-theme') === 'dark';
+  html.setAttribute('data-theme', isDark ? 'light' : 'dark');
+  document.getElementById('theme-btn').textContent = isDark ? 'Dark' : 'Light';
+}
+</script>
+</body>
+</html>

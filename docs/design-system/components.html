@@ -1,0 +1,435 @@
+<!DOCTYPE html>
+<html lang="pt-BR" data-theme="light">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Design System — Consulta Precatório SP</title>
+<link rel="stylesheet" href="shared.css">
+<style>
+  body { padding-top: 56px; }
+  .ds-topbar {
+    position: fixed; top: 0; left: 0; right: 0; z-index: 100;
+    height: 56px; background: var(--background); border-bottom: 1px solid var(--border);
+    display: flex; align-items: center; justify-content: space-between; padding: 0 24px;
+  }
+  .ds-brand { font-size: 14px; font-weight: 700; color: var(--foreground); }
+  .ds-page { max-width: 860px; margin: 0 auto; padding: 40px 24px 80px; }
+  .ds-section { margin-bottom: 56px; }
+  .ds-section-title {
+    font-size: 11px; font-weight: 700; color: var(--muted-foreground);
+    text-transform: uppercase; letter-spacing: 0.1em;
+    border-bottom: 1px solid var(--border); padding-bottom: 12px; margin-bottom: 24px;
+  }
+  .ds-row { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; margin-bottom: 12px; }
+  .color-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(72px, 1fr)); gap: 12px; }
+  .color-swatch { }
+  .swatch-box { height: 40px; border-radius: var(--radius-lg); border: 1px solid var(--border); }
+  .swatch-label { font-size: 11px; color: var(--muted-foreground); margin-top: 4px; }
+  .swatch-hex   { font-size: 10px; color: var(--muted-foreground); font-family: var(--font-mono); }
+</style>
+</head>
+<body>
+
+<div class="ds-topbar">
+  <span class="ds-brand">Consulta Precatório SP — Design System</span>
+  <div style="display:flex;gap:8px;align-items:center;">
+    <span class="text-xs text-muted-foreground">Ref: rhilo-app/frontend</span>
+    <button class="btn btn-outline btn-sm" onclick="toggleTheme()" id="theme-btn">Dark</button>
+  </div>
+</div>
+
+<div class="ds-page">
+
+  <!-- Colors -->
+  <div class="ds-section">
+    <div class="ds-section-title">Cores</div>
+    <div class="color-grid">
+      <div class="color-swatch">
+        <div class="swatch-box" style="background:hsl(217 91% 60%);border:none;"></div>
+        <div class="swatch-label">Primary</div>
+        <div class="swatch-hex">217 91% 60%</div>
+      </div>
+      <div class="color-swatch">
+        <div class="swatch-box" style="background:hsl(217 91% 50%);border:none;"></div>
+        <div class="swatch-label">Primary Dark</div>
+        <div class="swatch-hex">217 91% 50%</div>
+      </div>
+      <div class="color-swatch">
+        <div class="swatch-box" style="background:hsl(217 91% 97%);"></div>
+        <div class="swatch-label">Primary 50</div>
+        <div class="swatch-hex">217 91% 97%</div>
+      </div>
+      <div class="color-swatch">
+        <div class="swatch-box" style="background:hsl(142 50% 45%);border:none;"></div>
+        <div class="swatch-label">Success</div>
+        <div class="swatch-hex">142 50% 45%</div>
+      </div>
+      <div class="color-swatch">
+        <div class="swatch-box" style="background:hsl(149 80% 96%);"></div>
+        <div class="swatch-label">Success bg</div>
+        <div class="swatch-hex">149 80% 96%</div>
+      </div>
+      <div class="color-swatch">
+        <div class="swatch-box" style="background:hsl(38 70% 50%);border:none;"></div>
+        <div class="swatch-label">Warning</div>
+        <div class="swatch-hex">38 70% 50%</div>
+      </div>
+      <div class="color-swatch">
+        <div class="swatch-box" style="background:hsl(0 60% 50%);border:none;"></div>
+        <div class="swatch-label">Error</div>
+        <div class="swatch-hex">0 60% 50%</div>
+      </div>
+      <div class="color-swatch">
+        <div class="swatch-box"></div>
+        <div class="swatch-label">Background</div>
+        <div class="swatch-hex">0 0% 100%</div>
+      </div>
+      <div class="color-swatch">
+        <div class="swatch-box" style="background:hsl(210 40% 96%);"></div>
+        <div class="swatch-label">Muted</div>
+        <div class="swatch-hex">210 40% 96%</div>
+      </div>
+      <div class="color-swatch">
+        <div class="swatch-box" style="background:hsl(215 16% 47%);border:none;"></div>
+        <div class="swatch-label">Muted FG</div>
+        <div class="swatch-hex">215 16% 47%</div>
+      </div>
+      <div class="color-swatch">
+        <div class="swatch-box" style="background:hsl(222 47% 11%);border:none;"></div>
+        <div class="swatch-label">Foreground</div>
+        <div class="swatch-hex">222 47% 11%</div>
+      </div>
+    </div>
+
+    <div style="margin-top:20px;">
+      <div class="text-xs text-muted-foreground font-semibold mb-3" style="text-transform:uppercase;letter-spacing:0.06em;">CRM Pipeline</div>
+      <div class="ds-row">
+        <span class="badge badge-crm-novo">Novo</span>
+        <span class="badge badge-crm-contatado">Contatado</span>
+        <span class="badge badge-crm-qualificado">Qualificado</span>
+        <span class="badge badge-crm-interessado">Interessado</span>
+        <span class="badge badge-crm-proposta">Proposta</span>
+        <span class="badge badge-crm-negociacao">Negociação</span>
+        <span class="badge badge-crm-fechado">Fechado</span>
+        <span class="badge badge-crm-descartado">Descartado</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- Typography -->
+  <div class="ds-section">
+    <div class="ds-section-title">Tipografia — Inter</div>
+    <div class="space-y-4">
+      <div><span class="text-xs text-muted-foreground">h1 / 30px / 700 / tracking-tight</span><h1 class="tracking-tight">Consulte gratis o valor do seu precatório SP</h1></div>
+      <div><span class="text-xs text-muted-foreground">h2 / 24px / 700</span><h2>Base com mais de 200 mil processos</h2></div>
+      <div><span class="text-xs text-muted-foreground">h3 / 20px / 600</span><h3>Resultado da consulta</h3></div>
+      <div><span class="text-xs text-muted-foreground">body / 14px / 400</span><p>Seu precatório tem saldo registrado na base DEPRE. Informe seus dados para receber o relatório completo gratuitamente.</p></div>
+      <div><span class="text-xs text-muted-foreground">text-sm / 13px / muted</span><p class="text-sm text-muted-foreground">Dados públicos oficiais. Sem compromisso. Protegido pela LGPD.</p></div>
+      <div>
+        <span class="text-xs text-muted-foreground">Saldo DEPRE</span>
+        <div class="value-label">Saldo DEPRE</div>
+        <div class="value-amount">R$ 147.832,00</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Buttons -->
+  <div class="ds-section">
+    <div class="ds-section-title">Botões</div>
+    <div class="ds-row">
+      <button class="btn btn-default">Consultar Agora</button>
+      <button class="btn btn-secondary">Cancelar</button>
+      <button class="btn btn-outline">Ver detalhes</button>
+      <button class="btn btn-ghost">Reenviar código</button>
+      <button class="btn btn-destructive">Descartar</button>
+    </div>
+    <div class="ds-row">
+      <button class="btn btn-default btn-lg">Receber detalhes grátis</button>
+      <button class="btn btn-default btn-sm">Filtrar</button>
+      <button class="btn btn-default" disabled>Consultando...</button>
+      <button class="btn btn-icon btn-outline">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/><circle cx="5" cy="12" r="1"/></svg>
+      </button>
+    </div>
+    <div class="ds-row">
+      <button class="btn btn-default btn-full" style="max-width:300px;">Confirmar e receber detalhes</button>
+    </div>
+  </div>
+
+  <!-- Inputs -->
+  <div class="ds-section">
+    <div class="ds-section-title">Inputs</div>
+    <div style="max-width:440px;display:flex;flex-direction:column;gap:16px;">
+
+      <div>
+        <div class="text-xs text-muted-foreground mb-2">Search input (hero)</div>
+        <div class="search-input-wrapper">
+          <input class="search-input" type="text" placeholder="Ex: 0122089-09.2025.8.26.0500">
+          <button class="btn btn-default">Consultar</button>
+        </div>
+      </div>
+
+      <div class="input-group">
+        <label class="label">Nome completo</label>
+        <input class="input" type="text" placeholder="Maria Aparecida da Silva">
+      </div>
+      <div class="input-group">
+        <label class="label">E-mail</label>
+        <input class="input" type="email" placeholder="seu@email.com">
+        <span class="input-helper">Enviaremos o relatório para este e-mail</span>
+      </div>
+      <div class="input-group">
+        <label class="label">WhatsApp</label>
+        <input class="input" type="tel" placeholder="(11) 99999-9999" value="(11) 999" style="border-color:var(--error);">
+        <span class="input-error-msg">Informe um número válido com DDD</span>
+      </div>
+      <div class="input-group">
+        <label class="label">Relação com o processo</label>
+        <select class="select">
+          <option value="" disabled selected>Selecione...</option>
+          <option>Sou o titular</option>
+          <option>Sou herdeiro</option>
+          <option>Sou advogado do titular</option>
+        </select>
+      </div>
+      <div class="input-group">
+        <label class="label">Notas internas</label>
+        <textarea class="textarea" placeholder="Adicione observações sobre este lead..."></textarea>
+      </div>
+
+      <div>
+        <div class="text-xs text-muted-foreground mb-2">Token OTP</div>
+        <div class="token-inputs">
+          <input class="token-input filled" maxlength="1" value="4">
+          <input class="token-input filled" maxlength="1" value="7">
+          <input class="token-input filled" maxlength="1" value="2">
+          <input class="token-input" maxlength="1" placeholder="·">
+          <input class="token-input" maxlength="1" placeholder="·">
+          <input class="token-input" maxlength="1" placeholder="·">
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Cards -->
+  <div class="ds-section">
+    <div class="ds-section-title">Cards</div>
+    <div class="grid-2" style="max-width:680px;">
+
+      <!-- Result card -->
+      <div class="card">
+        <div class="card-header">
+          <div class="flex items-center gap-2">
+            <div style="width:8px;height:8px;border-radius:50%;background:var(--success);"></div>
+            <span class="text-xs text-muted-foreground font-semibold" style="text-transform:uppercase;letter-spacing:0.06em;">Processo encontrado</span>
+          </div>
+        </div>
+        <div class="card-content">
+          <div class="value-label">Saldo DEPRE</div>
+          <div class="value-amount">R$ 147.832,00</div>
+          <div class="separator" style="margin:16px 0 12px;"></div>
+          <div class="space-y-2">
+            <div class="flex justify-between items-center">
+              <span class="text-sm text-muted-foreground">Processo</span>
+              <span class="cell-mono text-xs">0122089-09...</span>
+            </div>
+            <div class="flex justify-between items-center">
+              <span class="text-sm text-muted-foreground">Devedora</span>
+              <span class="text-sm font-medium">Fazenda SP</span>
+            </div>
+            <div class="flex justify-between items-center">
+              <span class="text-sm text-muted-foreground">Status</span>
+              <span class="badge badge-success">Ativo</span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Stat cards -->
+      <div class="flex flex-col gap-3">
+        <div class="card">
+          <div class="card-content" style="padding:20px;">
+            <div class="flex items-start justify-between">
+              <div>
+                <div class="stat-label">Leads hoje</div>
+                <div class="stat-value">47</div>
+                <div class="stat-change up">↑ +12 vs ontem</div>
+              </div>
+              <div class="stat-icon" style="background:hsl(217 91% 97%);">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="hsl(217 91% 60%)" stroke-width="2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div class="card">
+          <div class="card-content" style="padding:20px;">
+            <div class="flex items-start justify-between">
+              <div>
+                <div class="stat-label">Conversão</div>
+                <div class="stat-value">3,8%</div>
+                <div class="stat-change down">↓ -0,3pp</div>
+              </div>
+              <div class="stat-icon" style="background:hsl(149 80% 96%);">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="hsl(142 50% 45%)" stroke-width="2"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Badges / Alerts -->
+  <div class="ds-section">
+    <div class="ds-section-title">Badges e Alertas</div>
+    <div class="ds-row mb-4">
+      <span class="badge badge-default">Primário</span>
+      <span class="badge badge-secondary">Secundário</span>
+      <span class="badge badge-outline">Outline</span>
+      <span class="badge badge-success">Ativo</span>
+      <span class="badge badge-warning">Suspenso</span>
+      <span class="badge badge-error">Não encontrado</span>
+      <span class="badge badge-info">Informativo</span>
+    </div>
+    <div style="max-width:480px;display:flex;flex-direction:column;gap:8px;">
+      <div class="alert alert-success">
+        <svg class="alert-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>
+        <div><div class="alert-title">Processo encontrado</div><div class="alert-description">Saldo de <strong>R$ 147.832,00</strong> na base DEPRE.</div></div>
+      </div>
+      <div class="alert alert-warning">
+        <svg class="alert-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+        <div><div class="alert-title">Processo suspenso</div><div class="alert-description">Pode haver ação judicial em curso.</div></div>
+      </div>
+      <div class="alert alert-error">
+        <svg class="alert-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="15" y1="9" x2="9" y2="15"/><line x1="9" y1="9" x2="15" y2="15"/></svg>
+        <div><div class="alert-title">Não encontrado</div><div class="alert-description">Verifique o número e tente novamente.</div></div>
+      </div>
+      <div class="alert alert-info">
+        <svg class="alert-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+        <div><div class="alert-description">Código expira em <strong>8:42</strong>. Clique em reenviar se não recebeu.</div></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Table -->
+  <div class="ds-section">
+    <div class="ds-section-title">Tabela de Leads</div>
+    <div class="card" style="padding:0;overflow:hidden;">
+      <div class="table-wrapper">
+        <table>
+          <thead>
+            <tr><th>Nome</th><th>Processo</th><th>Saldo</th><th>Status</th><th>Data</th><th></th></tr>
+          </thead>
+          <tbody>
+            <tr class="table-row">
+              <td><div class="font-medium">Maria Aparecida da Silva</div><div class="text-xs text-muted-foreground">maria@email.com</div></td>
+              <td><span class="cell-mono">0122089-09.2025.8.26.0500</span></td>
+              <td><span class="font-semibold text-success">R$ 147.832</span></td>
+              <td><span class="badge badge-crm-novo">Novo</span></td>
+              <td><span class="text-xs text-muted-foreground">Hoje, 14:23</span></td>
+              <td><div class="quick-actions"><button class="quick-action-btn"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg></button></div></td>
+            </tr>
+            <tr class="table-row">
+              <td><div class="font-medium">Dr. Rodrigo Fernandes</div><div class="text-xs text-muted-foreground">rfernandes@adv.com</div></td>
+              <td><span class="cell-mono">0033421-14.2023.8.26.0100</span></td>
+              <td><span class="font-semibold text-success">R$ 312.540</span></td>
+              <td><span class="badge badge-crm-proposta">Proposta</span></td>
+              <td><span class="text-xs text-muted-foreground">Ontem</span></td>
+              <td><div class="quick-actions"><button class="quick-action-btn"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg></button></div></td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <!-- Steps / Progress -->
+  <div class="ds-section">
+    <div class="ds-section-title">Steps e Progresso</div>
+    <div class="step-indicator mb-6" style="max-width:480px;">
+      <div class="step completed"><div class="step-dot">✓</div><span>Resultado</span></div>
+      <div class="step-line completed"></div>
+      <div class="step active"><div class="step-dot">2</div><span>Seus dados</span></div>
+      <div class="step-line"></div>
+      <div class="step"><div class="step-dot">3</div><span>Verificar</span></div>
+      <div class="step-line"></div>
+      <div class="step"><div class="step-dot">4</div><span>Pronto</span></div>
+    </div>
+    <div class="progress-bar" style="max-width:320px;">
+      <div class="progress-fill" style="width:40%;"></div>
+    </div>
+  </div>
+
+  <!-- Skeleton -->
+  <div class="ds-section">
+    <div class="ds-section-title">Skeleton / Loading</div>
+    <div style="max-width:360px;display:flex;flex-direction:column;gap:10px;">
+      <div class="skeleton" style="height:20px;width:60%;"></div>
+      <div class="skeleton" style="height:36px;width:45%;"></div>
+      <div class="skeleton" style="height:14px;width:80%;"></div>
+      <div class="skeleton" style="height:14px;width:55%;"></div>
+      <div style="height:4px;"></div>
+      <div class="skeleton" style="height:56px;border-radius:var(--radius-lg);"></div>
+    </div>
+  </div>
+
+  <!-- Funnel -->
+  <div class="ds-section">
+    <div class="ds-section-title">Funil de Conversão</div>
+    <div style="max-width:560px;">
+      <div class="funnel-row"><span class="funnel-label">Visitantes</span><div class="funnel-track"><div class="funnel-fill" style="width:100%;">8.420</div></div><span class="funnel-pct">100%</span></div>
+      <div class="funnel-row"><span class="funnel-label">Buscas</span><div class="funnel-track"><div class="funnel-fill" style="width:62%;opacity:0.85;">5.220</div></div><span class="funnel-pct">62%</span></div>
+      <div class="funnel-row"><span class="funnel-label">Resultados</span><div class="funnel-track"><div class="funnel-fill" style="width:45%;opacity:0.75;">3.790</div></div><span class="funnel-pct">45%</span></div>
+      <div class="funnel-row"><span class="funnel-label">Cadastros</span><div class="funnel-track"><div class="funnel-fill" style="width:18%;opacity:0.65;">1.516</div></div><span class="funnel-pct">18%</span></div>
+      <div class="funnel-row"><span class="funnel-label">Lead completo</span><div class="funnel-track"><div class="funnel-fill" style="width:5%;background:var(--success);">421</div></div><span class="funnel-pct">5%</span></div>
+    </div>
+  </div>
+
+  <!-- Timeline -->
+  <div class="ds-section">
+    <div class="ds-section-title">Timeline</div>
+    <div class="timeline" style="max-width:360px;">
+      <div class="timeline-item">
+        <div class="timeline-indicator"><div class="timeline-dot success"></div><div class="timeline-line"></div></div>
+        <div class="timeline-content"><div class="timeline-label">Lead completo</div><div class="timeline-time">Hoje, 14:23</div></div>
+      </div>
+      <div class="timeline-item">
+        <div class="timeline-indicator"><div class="timeline-dot success"></div><div class="timeline-line"></div></div>
+        <div class="timeline-content"><div class="timeline-label">Token WhatsApp validado</div><div class="timeline-time">Hoje, 14:22</div></div>
+      </div>
+      <div class="timeline-item">
+        <div class="timeline-indicator"><div class="timeline-dot"></div><div class="timeline-line"></div></div>
+        <div class="timeline-content"><div class="timeline-label">Cadastro iniciado</div><div class="timeline-time">Hoje, 14:15</div></div>
+      </div>
+      <div class="timeline-item">
+        <div class="timeline-indicator"><div class="timeline-dot muted"></div></div>
+        <div class="timeline-content"><div class="timeline-label text-muted-foreground">Buscou processo 0122089...</div><div class="timeline-time">Hoje, 14:14</div></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Empty state -->
+  <div class="ds-section">
+    <div class="ds-section-title">Estado Vazio</div>
+    <div class="card" style="max-width:400px;">
+      <div class="empty-state">
+        <svg class="empty-state-icon" width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/></svg>
+        <div class="empty-state-title">Nenhum lead encontrado</div>
+        <div class="empty-state-desc">Tente ajustar os filtros ou aguarde novas consultas.</div>
+        <button class="btn btn-outline btn-sm">Limpar filtros</button>
+      </div>
+    </div>
+  </div>
+
+</div>
+
+<script>
+function toggleTheme() {
+  const html = document.documentElement;
+  const isDark = html.getAttribute('data-theme') === 'dark';
+  html.setAttribute('data-theme', isDark ? 'light' : 'dark');
+  document.getElementById('theme-btn').textContent = isDark ? 'Dark' : 'Light';
+}
+</script>
+</body>
+</html>

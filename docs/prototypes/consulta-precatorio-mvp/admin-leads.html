@@ -1,0 +1,328 @@
+<!DOCTYPE html>
+<html lang="pt-BR" data-theme="light">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Admin — Leads — Consulta Precatório SP</title>
+<link rel="stylesheet" href="shared.css">
+</head>
+<body>
+<a href="index.html" class="proto-back-btn">← Hub</a>
+
+<!-- =====================================================
+     VARIANTE 1 — Listagem de leads populada
+     ===================================================== -->
+<div class="proto-variant-header">VARIANTE 1 — Listagem de leads (populada)</div>
+
+<div class="admin-layout">
+  <!-- Sidebar -->
+  <aside class="admin-sidebar">
+    <div class="sidebar-brand">
+      <div class="sidebar-brand-name">Consulta Precatório SP</div>
+      <div class="sidebar-brand-sub">Painel Admin</div>
+    </div>
+    <nav class="sidebar-nav">
+      <a href="admin-funil.html" class="sidebar-item">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg>
+        Visão geral
+      </a>
+      <a href="#" class="sidebar-item active">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
+        Leads completos
+        <span class="notif-badge" style="margin-left:auto;">12</span>
+      </a>
+      <a href="#v-incompletos" class="sidebar-item">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+        Incompletos
+      </a>
+      <a href="admin-funil.html" class="sidebar-item">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>
+        Funil
+      </a>
+    </nav>
+    <div class="sidebar-user">
+      <div class="flex items-center gap-2">
+        <div class="sidebar-avatar">A</div>
+        <div>
+          <div class="text-sm font-medium">Admin</div>
+          <div class="text-xs text-muted-foreground">admin@empresa.com</div>
+        </div>
+      </div>
+    </div>
+  </aside>
+
+  <!-- Main -->
+  <div class="admin-content">
+    <div class="admin-topbar">
+      <div>
+        <div class="page-title">Leads completos</div>
+        <div class="page-sub">327 leads · 12 novos hoje</div>
+      </div>
+      <div class="flex gap-2 items-center">
+        <button class="btn btn-outline btn-sm">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+          Exportar CSV
+        </button>
+        <button class="btn btn-ghost btn-sm" onclick="toggleTheme()">Dark</button>
+        <button class="btn btn-ghost btn-icon btn-sm" style="position:relative;">
+          <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg>
+          <span class="notif-badge" style="position:absolute;top:-4px;right:-4px;">12</span>
+        </button>
+      </div>
+    </div>
+
+    <div class="admin-page">
+      <!-- Filters -->
+      <div class="card mb-4" style="padding:0;">
+        <div class="card-content" style="padding:14px 16px;">
+          <div class="flex gap-2 flex-wrap items-center">
+            <input class="input" type="text" placeholder="Buscar por nome, e-mail, processo..." style="max-width:260px;height:36px;font-size:13px;">
+            <select class="select" style="max-width:140px;height:36px;font-size:13px;">
+              <option>Todos os status</option>
+              <option>Novo</option><option>Contatado</option><option>Qualificado</option>
+              <option>Interessado</option><option>Proposta</option><option>Fechado</option>
+            </select>
+            <select class="select" style="max-width:110px;height:36px;font-size:13px;">
+              <option>7 dias</option><option>Hoje</option><option>30 dias</option>
+            </select>
+            <select class="select" style="max-width:140px;height:36px;font-size:13px;">
+              <option>Todos os saldos</option>
+              <option>R$1k–10k</option><option>R$10k–100k</option><option>+R$100k</option>
+            </select>
+            <select class="select" style="max-width:130px;height:36px;font-size:13px;">
+              <option>Todas devedoras</option>
+              <option>Fazenda SP</option><option>SPPREV</option><option>CBPM</option>
+            </select>
+          </div>
+        </div>
+      </div>
+
+      <!-- Quick filter chips -->
+      <div class="flex gap-2 mb-4 flex-wrap">
+        <span class="badge badge-default" style="cursor:pointer;padding:5px 12px;">Todos (327)</span>
+        <span class="badge badge-crm-novo" style="cursor:pointer;padding:5px 12px;">Novo (12)</span>
+        <span class="badge badge-crm-contatado" style="cursor:pointer;padding:5px 12px;">Contatado (48)</span>
+        <span class="badge badge-crm-qualificado" style="cursor:pointer;padding:5px 12px;">Qualificado (21)</span>
+        <span class="badge badge-crm-interessado" style="cursor:pointer;padding:5px 12px;">Interessado (15)</span>
+        <span class="badge badge-crm-fechado" style="cursor:pointer;padding:5px 12px;">Fechado (183)</span>
+      </div>
+
+      <!-- Table -->
+      <div class="card" style="padding:0;overflow:hidden;">
+        <div class="table-wrapper">
+          <table>
+            <thead>
+              <tr>
+                <th>Nome</th>
+                <th>Processo</th>
+                <th>Saldo</th>
+                <th>Devedora</th>
+                <th>Relação</th>
+                <th>Status</th>
+                <th>Data</th>
+                <th style="width:40px;"></th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr class="table-row" onclick="document.getElementById('modal').style.display='flex'">
+                <td>
+                  <div class="font-medium">Maria Aparecida da Silva</div>
+                  <div class="text-xs text-muted-foreground">maria.silva@gmail.com · (11) 99182-3344</div>
+                </td>
+                <td><span class="cell-mono">0122089-09.2025.8.26.0500</span></td>
+                <td><span class="font-semibold text-success">R$ 147.832</span></td>
+                <td><span class="text-sm">Fazenda SP</span></td>
+                <td><span class="badge badge-secondary">Titular</span></td>
+                <td><span class="badge badge-crm-novo">Novo</span></td>
+                <td><span class="text-xs text-muted-foreground">Hoje 14:23</span></td>
+                <td>
+                  <div class="quick-actions">
+                    <button class="quick-action-btn" title="Editar">
+                      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
+                    </button>
+                  </div>
+                </td>
+              </tr>
+              <tr class="table-row">
+                <td>
+                  <div class="font-medium">Carlos Eduardo Herdeiro</div>
+                  <div class="text-xs text-muted-foreground">carlos.h@email.com · (21) 98765-4321</div>
+                </td>
+                <td><span class="cell-mono">0006248-79.2024.8.26.0506</span></td>
+                <td><span class="font-semibold text-success">R$ 89.200</span></td>
+                <td><span class="text-sm">SPPREV</span></td>
+                <td><span class="badge badge-secondary">Herdeiro</span></td>
+                <td><span class="badge badge-crm-contatado">Contatado</span></td>
+                <td><span class="text-xs text-muted-foreground">Hoje 11:05</span></td>
+                <td><div class="quick-actions"><button class="quick-action-btn"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg></button></div></td>
+              </tr>
+              <tr class="table-row">
+                <td>
+                  <div class="font-medium">Dr. Rodrigo Fernandes</div>
+                  <div class="text-xs text-muted-foreground">rfernandes@adv.com · (11) 97654-3210</div>
+                </td>
+                <td><span class="cell-mono">0033421-14.2023.8.26.0100</span></td>
+                <td><span class="font-semibold text-success">R$ 312.540</span></td>
+                <td><span class="text-sm">CBPM</span></td>
+                <td><span class="badge badge-default">Advogado</span></td>
+                <td><span class="badge badge-crm-proposta">Proposta</span></td>
+                <td><span class="text-xs text-muted-foreground">Ontem 16:30</span></td>
+                <td><div class="quick-actions"><button class="quick-action-btn"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg></button></div></td>
+              </tr>
+              <tr class="table-row">
+                <td>
+                  <div class="font-medium">Aparecida Santos</div>
+                  <div class="text-xs text-muted-foreground">aparecida@hotmail.com · (11) 95555-0000</div>
+                </td>
+                <td><span class="cell-mono">0044122-33.2022.8.26.0200</span></td>
+                <td><span class="font-semibold text-success">R$ 52.100</span></td>
+                <td><span class="text-sm">IPESP</span></td>
+                <td><span class="badge badge-secondary">Titular</span></td>
+                <td><span class="badge badge-crm-fechado">Fechado</span></td>
+                <td><span class="text-xs text-muted-foreground">23/05 09:14</span></td>
+                <td><div class="quick-actions"><button class="quick-action-btn"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg></button></div></td>
+              </tr>
+              <tr class="table-row">
+                <td>
+                  <div class="font-medium">João Pedro Lima</div>
+                  <div class="text-xs text-muted-foreground">jplima@email.com · (19) 98811-2233</div>
+                </td>
+                <td><span class="cell-mono">0089201-44.2021.8.26.0300</span></td>
+                <td><span class="font-semibold text-muted-foreground">R$ 4.200</span></td>
+                <td><span class="text-sm">DER</span></td>
+                <td><span class="badge badge-secondary">Titular</span></td>
+                <td><span class="badge badge-crm-descartado">Descartado</span></td>
+                <td><span class="text-xs text-muted-foreground">20/05 11:00</span></td>
+                <td><div class="quick-actions"><button class="quick-action-btn"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg></button></div></td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+        <div class="flex justify-between items-center" style="padding:12px 16px;border-top:1px solid var(--border);">
+          <span class="text-xs text-muted-foreground">Mostrando 5 de 327 leads</span>
+          <div class="flex gap-2">
+            <button class="btn btn-outline btn-sm" disabled>← Anterior</button>
+            <button class="btn btn-outline btn-sm">Próxima →</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Modal detalhe do lead -->
+<div id="modal" class="modal-backdrop" style="display:none;" onclick="if(event.target===this)this.style.display='none'">
+  <div class="modal">
+    <div class="modal-header">
+      <div>
+        <div class="modal-title">Maria Aparecida da Silva</div>
+        <div class="text-sm text-muted-foreground">Lead #1482 · Hoje às 14:23</div>
+      </div>
+      <button class="btn btn-ghost btn-icon btn-sm" onclick="document.getElementById('modal').style.display='none'">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+      </button>
+    </div>
+    <div class="modal-body">
+      <!-- Status pipeline -->
+      <div class="flex gap-2 flex-wrap mb-5">
+        <span class="badge badge-crm-novo" style="cursor:pointer;padding:5px 12px;font-size:12px;">● Novo</span>
+        <span class="badge badge-secondary" style="cursor:pointer;padding:5px 12px;font-size:12px;opacity:0.6;">Contatado</span>
+        <span class="badge badge-secondary" style="cursor:pointer;padding:5px 12px;font-size:12px;opacity:0.6;">Qualificado</span>
+        <span class="badge badge-secondary" style="cursor:pointer;padding:5px 12px;font-size:12px;opacity:0.6;">Interessado</span>
+        <span class="badge badge-secondary" style="cursor:pointer;padding:5px 12px;font-size:12px;opacity:0.6;">Proposta</span>
+      </div>
+
+      <!-- Dados -->
+      <div style="background:var(--muted);border-radius:var(--radius-lg);padding:14px 16px;margin-bottom:16px;">
+        <div class="grid-2" style="gap:12px;">
+          <div><div class="text-xs text-muted-foreground">E-mail</div><div class="text-sm font-medium">maria.silva@gmail.com</div></div>
+          <div><div class="text-xs text-muted-foreground">WhatsApp</div><div class="text-sm font-medium">(11) 99182-3344</div></div>
+          <div><div class="text-xs text-muted-foreground">Relação</div><div class="text-sm font-medium">Titular</div></div>
+          <div><div class="text-xs text-muted-foreground">Processo</div><div class="cell-mono" style="font-size:11px;">0122089-09.2025.8.26.0500</div></div>
+          <div><div class="text-xs text-muted-foreground">Saldo DEPRE</div><div class="font-bold text-success">R$ 147.832,00</div></div>
+          <div><div class="text-xs text-muted-foreground">Devedora</div><div class="text-sm">Fazenda SP</div></div>
+        </div>
+      </div>
+
+      <!-- Notas -->
+      <div class="input-group mb-5">
+        <label class="label">Notas internas</label>
+        <textarea class="textarea" style="min-height:70px;">Ligou às 15h. Demonstrou interesse em antecipar. Pediu para ligar amanhã pela manhã.</textarea>
+      </div>
+
+      <!-- Timeline -->
+      <div class="text-xs text-muted-foreground font-semibold mb-3" style="text-transform:uppercase;letter-spacing:0.06em;">Timeline</div>
+      <div class="timeline">
+        <div class="timeline-item"><div class="timeline-indicator"><div class="timeline-dot success"></div><div class="timeline-line"></div></div><div class="timeline-content"><div class="timeline-label">Lead completo — ambos canais validados</div><div class="timeline-time">Hoje 14:23</div></div></div>
+        <div class="timeline-item"><div class="timeline-indicator"><div class="timeline-dot success"></div><div class="timeline-line"></div></div><div class="timeline-content"><div class="timeline-label">Token WhatsApp validado</div><div class="timeline-time">Hoje 14:22</div></div></div>
+        <div class="timeline-item"><div class="timeline-indicator"><div class="timeline-dot success"></div><div class="timeline-line"></div></div><div class="timeline-content"><div class="timeline-label">Token e-mail validado</div><div class="timeline-time">Hoje 14:18</div></div></div>
+        <div class="timeline-item"><div class="timeline-indicator"><div class="timeline-dot"></div><div class="timeline-line"></div></div><div class="timeline-content"><div class="timeline-label">Cadastro iniciado</div><div class="timeline-time">Hoje 14:15</div></div></div>
+        <div class="timeline-item"><div class="timeline-indicator"><div class="timeline-dot muted"></div></div><div class="timeline-content"><div class="timeline-label text-muted-foreground">Buscou processo 0122089... · Mobile · São Paulo, SP</div><div class="timeline-time">Hoje 14:14</div></div></div>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-outline btn-sm" onclick="document.getElementById('modal').style.display='none'">Fechar</button>
+      <button class="btn btn-default btn-sm">Marcar como Contatado</button>
+    </div>
+  </div>
+</div>
+
+<!-- =====================================================
+     VARIANTE 2 — Leads incompletos
+     ===================================================== -->
+<div class="proto-variant-header" id="v-incompletos">VARIANTE 2 — Leads incompletos</div>
+
+<div style="padding:24px;max-width:1100px;margin:0 auto;">
+  <div class="flex justify-between items-center mb-4">
+    <div>
+      <div class="page-title" style="font-size:20px;">Leads incompletos</div>
+      <div class="page-sub">Sessões que buscaram mas não completaram o cadastro</div>
+    </div>
+    <button class="btn btn-outline btn-sm">Exportar CSV</button>
+  </div>
+  <div class="alert alert-info mb-4">
+    <svg class="alert-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+    <span class="alert-description">Dados anônimos identificados por session_id. Nenhum dado pessoal exposto — LGPD compliant.</span>
+  </div>
+  <div class="card" style="padding:0;overflow:hidden;">
+    <div class="table-wrapper">
+      <table>
+        <thead><tr><th>Processo buscado</th><th>Saldo</th><th>Etapa de abandono</th><th>Dispositivo</th><th>Data/Hora</th></tr></thead>
+        <tbody>
+          <tr class="table-row"><td><span class="cell-mono">0122089-09.2025.8.26.0500</span></td><td><span class="font-semibold text-success">R$ 147.832</span></td><td><span class="badge badge-warning">Formulário abandonado</span></td><td><span class="text-xs text-muted-foreground">Mobile · Chrome · SP</span></td><td><span class="text-xs text-muted-foreground">Hoje 13:44</span></td></tr>
+          <tr class="table-row"><td><span class="cell-mono">0055231-77.2024.8.26.0100</span></td><td><span class="font-semibold text-success">R$ 220.000</span></td><td><span class="badge badge-warning">Token não confirmado</span></td><td><span class="text-xs text-muted-foreground">Mobile · Safari · RJ</span></td><td><span class="text-xs text-muted-foreground">Hoje 11:21</span></td></tr>
+          <tr class="table-row"><td><span class="cell-mono">0091111-55.2023.8.26.0506</span></td><td><span class="font-semibold text-success">R$ 38.400</span></td><td><span class="badge badge-secondary">Saiu após resultado</span></td><td><span class="text-xs text-muted-foreground">Desktop · Firefox · SP</span></td><td><span class="text-xs text-muted-foreground">Ontem 16:02</span></td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+<!-- =====================================================
+     VARIANTE 3 — Estado vazio
+     ===================================================== -->
+<div class="proto-variant-header">VARIANTE 3 — Estado vazio</div>
+
+<div style="padding:24px;max-width:600px;margin:0 auto;">
+  <div class="card">
+    <div class="empty-state">
+      <svg class="empty-state-icon" width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
+      <div class="empty-state-title">Nenhum lead encontrado</div>
+      <div class="empty-state-desc">Quando usuários consultarem e se cadastrarem, os leads aparecerão aqui em tempo real.</div>
+      <div class="flex gap-2">
+        <button class="btn btn-outline btn-sm">Limpar filtros</button>
+        <a href="landing-page.html" class="btn btn-default btn-sm" target="_blank">Ver portal público</a>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+function toggleTheme() {
+  const html = document.documentElement;
+  const isDark = html.getAttribute('data-theme') === 'dark';
+  html.setAttribute('data-theme', isDark ? 'light' : 'dark');
+}
+</script>
+</body>
+</html>
