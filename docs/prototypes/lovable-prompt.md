@@ -127,7 +127,9 @@ descartado  → bg-muted      text-muted-foreground
 
 ```
 / ................................ Landing page (portal público)
-/resultado/:processo ............. Resultado da consulta
+/resultado/:processo ............. Resultado único — busca por número de processo
+/resultado/cpf/:cpf .............. Resultado lista — busca por CPF (1 a N precatórios)
+/resultado/cnpj/:cnpj ............ Resultado lista — busca por CNPJ (1 a N precatórios)
 /cadastro ........................ Formulário de captura de lead (step 2/4)
 /verificar/email ................. Token OTP e-mail (step 3a/4)
 /verificar/whatsapp .............. Token OTP WhatsApp (step 3b/4)
@@ -155,6 +157,8 @@ export const mockPrecatorios = [
     id: "1",
     processo_depre: "0122089-09.2025.8.26.0500",
     autos: "0122089-09.2025.8.26.0500",
+    cpf_titular: "123.456.789-00",
+    cnpj_titular: null,
     devedora: "Fazenda do Estado de SP",
     saldo_depre: 14783200, // centavos
     natureza: "Alimentar",
@@ -166,6 +170,8 @@ export const mockPrecatorios = [
     id: "2",
     processo_depre: "0033421-14.2023.8.26.0100",
     autos: "0033421-14.2023.8.26.0100",
+    cpf_titular: "123.456.789-00", // mesmo CPF — titular com dois precatórios
+    cnpj_titular: null,
     devedora: "SPPREV",
     saldo_depre: 0,
     natureza: "Outras",
@@ -177,12 +183,40 @@ export const mockPrecatorios = [
     id: "3",
     processo_depre: "0006248-79.2024.8.26.0506",
     autos: "0006248-79.2024.8.26.0506",
+    cpf_titular: "987.654.321-00",
+    cnpj_titular: null,
     devedora: "CBPM",
     saldo_depre: 8920000, // centavos
     natureza: "Outras",
     status: "Suspenso",
     suspenso: true,
     data_protocolo: "2024-01-10",
+  },
+  {
+    id: "4",
+    processo_depre: "0044122-33.2022.8.26.0200",
+    autos: "0044122-33.2022.8.26.0200",
+    cpf_titular: null,
+    cnpj_titular: "12.345.678/0001-90", // pessoa jurídica
+    devedora: "IPESP",
+    saldo_depre: 5210000,
+    natureza: "Outras",
+    status: "Ativo",
+    suspenso: false,
+    data_protocolo: "2022-09-05",
+  },
+  {
+    id: "5",
+    processo_depre: "0089201-44.2021.8.26.0300",
+    autos: "0089201-44.2021.8.26.0300",
+    cpf_titular: null,
+    cnpj_titular: "12.345.678/0001-90", // mesma empresa — dois precatórios
+    devedora: "DER",
+    saldo_depre: 31254000,
+    natureza: "Alimentar",
+    status: "Ativo",
+    suspenso: false,
+    data_protocolo: "2021-04-22",
   },
 ]
 
@@ -409,19 +443,59 @@ export function formatDate(iso: string): string {
   }).format(new Date(iso))
 }
 
-// Normaliza número do processo (remove pontos, hífens, espaços)
-export function normalizeProcesso(input: string): string {
-  return input.replace(/[\s.\-]/g, "").toLowerCase()
+// Remove máscara de qualquer input
+export function normalizeInput(input: string): string {
+  return input.replace(/[\s.\-\/]/g, "").toLowerCase()
 }
 
-// Busca tolerante a formatação
-export function findPrecatorio(input: string, precatorios: Precatorio[]): Precatorio | null {
-  const normalized = normalizeProcesso(input)
+// Detecta o tipo de input automaticamente
+export type InputType = "processo" | "cpf" | "cnpj" | "desconhecido"
+export function detectInputType(input: string): InputType {
+  const digits = input.replace(/\D/g, "")
+  if (digits.length === 11) return "cpf"
+  if (digits.length === 14) {
+    // CNPJ tem 14 dígitos; processo DEPRE normalizado também pode ter ~14+
+    // Distinguir: CNPJ puro de dígitos vs número de processo
+    if (/^\d{14}$/.test(digits) && !input.includes(".8.26.")) return "cnpj"
+  }
+  // Padrão de processo: contém ".8.26."
+  if (input.includes(".8.26.") || /\d{7}-\d{2}\.\d{4}/.test(input)) return "processo"
+  if (digits.length === 11) return "cpf"
+  return "desconhecido"
+}
+
+// Busca por número de processo (resultado único)
+export function findByProcesso(input: string, precatorios: Precatorio[]): Precatorio | null {
+  const normalized = normalizeInput(input)
   return precatorios.find(
     (p) =>
-      normalizeProcesso(p.processo_depre) === normalized ||
-      normalizeProcesso(p.autos) === normalized
+      normalizeInput(p.processo_depre) === normalized ||
+      normalizeInput(p.autos) === normalized
   ) ?? null
+}
+
+// Busca por CPF (retorna lista)
+export function findByCpf(cpf: string, precatorios: Precatorio[]): Precatorio[] {
+  const normalized = normalizeInput(cpf)
+  return precatorios.filter(
+    (p) => p.cpf_titular && normalizeInput(p.cpf_titular) === normalized
+  )
+}
+
+// Busca por CNPJ (retorna lista)
+export function findByCnpj(cnpj: string, precatorios: Precatorio[]): Precatorio[] {
+  const normalized = normalizeInput(cnpj)
+  return precatorios.filter(
+    (p) => p.cnpj_titular && normalizeInput(p.cnpj_titular) === normalized
+  )
+}
+
+// Mascara CPF/CNPJ para exibição (privacidade)
+export function maskCpf(cpf: string): string {
+  return cpf.replace(/(\d{3})\.\d{3}\.\d{3}-(\d{2})/, "$1.***.***-$2")
+}
+export function maskCnpj(cnpj: string): string {
+  return cnpj.replace(/(\d{2})\.\d{3}\.\d{3}\/(\d{4}-\d{2})/, "$1.***.***/$2")
 }
 ```
 
@@ -440,7 +514,8 @@ export function findPrecatorio(input: string, precatorios: Precatorio[]): Precat
 - H1: **"Consulte Gratis o Valor do Seu Precatório SP"** (font-size: clamp(28px, 5vw, 40px), font-bold, tracking-tight)
 - Subtítulo: **"Base com mais de 200 mil processos do DEPRE. Resultado em segundos."** (text-muted-foreground, max-w-md)
 - Caixa de busca (max-w-lg, margin auto):
-  - Input de texto (height 48px, rounded-lg, shadow-sm, placeholder: "Ex: 0122089-09.2025.8.26.0500")
+  - Input de texto (height 48px, rounded-lg, shadow-sm, placeholder: "Processo, CPF ou CNPJ")
+  - Helper text abaixo do input (text-xs text-muted-foreground): "Ex: 0122089-09.2025.8.26.0500 · 123.456.789-00 · 12.345.678/0001-90"
   - Botão "Consultar Agora" (height 48px, btn-default, no mesmo row em desktop, abaixo em mobile)
   - Em mobile: `flex-col` para input e botão ficarem empilhados com `w-full`
 - Trust row abaixo da busca (flex wrap, gap-5, justify-center):
@@ -456,7 +531,7 @@ export function findPrecatorio(input: string, precatorios: Precatorio[]): Precat
 - H2: "Como funciona"
 - Subtítulo: "Simples, rápido, sem burocracia"
 - Grid 3 colunas (1 coluna em mobile):
-  1. Card: ícone busca + "1. Informe o número" + "Digite o número do processo DEPRE ou o número de Autos. Aceitamos os dois formatos."
+  1. Card: ícone busca + "1. Informe o número" + "Digite o número do processo DEPRE, número de Autos, CPF ou CNPJ do titular. Detectamos automaticamente."
   2. Card: ícone monitor + "2. Veja o saldo" + "Resultado instantâneo com saldo DEPRE, status, natureza e devedora. Grátis, sem compromisso."
   3. Card: ícone telefone + "3. Receba os detalhes" + "Se quiser mais informações, informe seus dados e receba o relatório completo no e-mail e WhatsApp."
 
@@ -477,8 +552,12 @@ export function findPrecatorio(input: string, precatorios: Precatorio[]): Precat
 ### Comportamento da busca
 1. Ao submeter (click no botão ou Enter): mostrar estado loading (spinner no botão, texto "Consultando...")
 2. Simular delay de 800ms
-3. Usar `findPrecatorio()` para busca tolerante a formatação
-4. Navegar para `/resultado/:processo` passando o número normalizado
+3. Usar `detectInputType()` para identificar o tipo de input automaticamente
+4. Lógica de roteamento por tipo:
+   - `"processo"` → `findByProcesso()` → navegar para `/resultado/:processo` (resultado único)
+   - `"cpf"`      → `findByCpf()` → navegar para `/resultado/cpf/:cpf` (lista de precatórios)
+   - `"cnpj"`     → `findByCnpj()` → navegar para `/resultado/cnpj/:cnpj` (lista de precatórios)
+   - `"desconhecido"` → exibir mensagem de validação inline sem navegar
 5. Guardar resultado no contexto/estado global (useContext ou Zustand) para evitar re-busca
 
 ---
@@ -534,6 +613,41 @@ Card:
 - Alert error: **"Não encontramos este processo na nossa base. Verifique o número e tente novamente."** + dica de formato
 - Botões: "Tentar com outro número" (btn-default w-full) + "Falar com suporte via WhatsApp" (btn-outline w-full)
 - Separador + texto explicativo: "Seu processo pode não estar na base se foi movido em outra comarca, ainda não foi homologado como precatório, ou o número está em formato diferente."
+
+---
+
+## SUPERFÍCIE 2B — RESULTADO POR CPF (`/resultado/cpf/:cpf`) e CNPJ (`/resultado/cnpj/:cnpj`)
+
+### Layout
+- Navbar igual ao da landing
+- Container max-w-2xl, margin auto, padding 28px 16px 64px
+- Campo de busca preservado no topo (com valor mascarado), botão "Nova busca"
+
+### Cabeçalho de resultado
+- Linha superior (flex justify-between):
+  - Esquerda: ponto verde + texto "X precatório(s) encontrado(s)" (text-sm font-semibold text-success)
+  - Direita: "CPF: 123.***.***-00" ou "CNPJ: 12.***.***0001-90" (text-sm font-mono text-muted-foreground)
+- Saldo total (somar todos os saldos_depre): label "Saldo total DEPRE" + valor grande em text-success (font-bold, text-2xl)
+- Separador
+
+### Lista de cards (1 card por precatório)
+Cada card (`rounded-lg border bg-card shadow-sm`, padding 16px):
+- Header do card: ponto colorido por status (verde=Ativo, amarelo=Suspenso, cinza=Sem saldo) + badge de status
+- Linha: "Processo" / número em font-mono text-xs
+- Linha: "Devedora" / nome
+- Linha: "Saldo DEPRE" / valor formatado (font-semibold text-success se > 0, text-muted-foreground se = 0)
+- Linha: "Natureza" / badge (Alimentar = badge-success, Outras = badge-secondary)
+- Se suspenso: Alert warning inline no card
+
+### CTA único ao final da lista
+- Separador
+- Texto: "Quer receber os detalhes completos de todos os seus precatórios?" (text-sm text-center text-muted-foreground)
+- Botão: "Receber todos os detalhes grátis →" (btn-default btn-full btn-lg)
+- Helper: "Por e-mail e WhatsApp. Sem spam." (text-xs text-center text-muted-foreground)
+
+### Estado: CPF/CNPJ sem resultados
+- Card único com alert info: "Não encontramos precatórios vinculados a este CPF/CNPJ na nossa base. Se você acredita que tem um precatório, verifique se o processo está em nome do titular correto ou consulte pelo número do processo."
+- Botão: "Consultar por número de processo" (btn-outline)
 
 ---
 
@@ -973,11 +1087,20 @@ interface AdminState {
 
 ## DETALHES TÉCNICOS CRÍTICOS
 
-### 1. Busca tolerante a formatação
+### 1. Busca inteligente com detecção automática de tipo
 ```typescript
-// Aceitar: "0122089-09.2025.8.26.0500", "01220890920258260500", "0122089092025826050"
-// Normalizar antes de comparar: remover pontos, hífens, espaços
-const normalize = (s: string) => s.replace(/[\s.\-]/g, "").toLowerCase()
+// Único campo aceita 4 tipos de input — detectar automaticamente:
+// CPF:    11 dígitos → findByCpf()  → rota /resultado/cpf/:cpf  → lista de precatórios
+// CNPJ:   14 dígitos → findByCnpj() → rota /resultado/cnpj/:cnpj → lista de precatórios
+// Processo (contém ".8.26."): findByProcesso() → rota /resultado/:processo → resultado único
+// Desconhecido: validação inline sem navegar ("Formato não reconhecido. Ex: processo, CPF ou CNPJ")
+
+// Normalizar antes de comparar: remover pontos, hífens, barras, espaços
+const normalizeInput = (s: string) => s.replace(/[\s.\-\/]/g, "").toLowerCase()
+
+// CPF/CNPJ exibidos mascarados no resultado (privacidade):
+// CPF:  "123.***.***-00"
+// CNPJ: "12.***.***\/0001-90"
 ```
 
 ### 2. Input OTP com auto-focus

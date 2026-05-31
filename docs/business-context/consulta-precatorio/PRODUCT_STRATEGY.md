@@ -66,8 +66,10 @@ Cada interacao gera dados valiosos: quem consulta, quanto vale, quando consulta,
 **Meta**: 100 leads/mes
 **Escopo**:
 - Landing page otimizada para SEO
-- Busca por Nº Processo DEPRE e Nº de Autos
-- Base de dados com ~200K registros importados
+- Busca por Nº Processo DEPRE, Nº de Autos, CPF e CNPJ do titular
+- Deteccao automatica do tipo de input (processo, CPF ou CNPJ)
+- Resultado unico para busca por processo; lista de precatorios para CPF/CNPJ
+- Base de dados com ~200K registros importados (indexados por processo, CPF e CNPJ)
 - Exibicao de resumo (saldo DEPRE sem atualizacao)
 - Formulario de captura com validacao por token (e-mail, SMS, WhatsApp)
 - Paginas institucionais com SEO (sobre, FAQ, como funciona)
@@ -75,10 +77,9 @@ Cada interacao gera dados valiosos: quem consulta, quanto vale, quando consulta,
 
 **Stack**: Lovable + Supabase (banco de dados integrado)
 
-### Fase 2 - Expansao: Busca CPF + Blog IA
-**Objetivo**: Multiplicar trafego organico e expandir formas de busca
+### Fase 2 - Expansao: Blog IA + Atualizacao Monetaria
+**Objetivo**: Multiplicar trafego organico e enriquecer dados
 **Escopo**:
-- Crawler TJSP para busca por CPF
 - Blog com conteudo gerado por IA (SEO content)
 - Atualizacao monetaria dos valores
 - Simulacao basica de venda
