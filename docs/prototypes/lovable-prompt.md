@@ -18,32 +18,41 @@ Construa o frontend completo do **Consulta Precatório SP** — um portal de con
 - shadcn/ui para todos os componentes
 - Tailwind CSS
 - React Router v6 para navegação
-- Inter (Google Fonts) como fonte principal
+- Sora (Google Fonts) para headings + Inter para body/UI (ambas via Google Fonts)
 
 ---
 
 ## DESIGN SYSTEM — IMPLEMENTAR EXATAMENTE
+
+> Referência visual: **BTG Pactual Content Portal** (content.btgpactual.com)
+> Três níveis de azul: royal (navbar) → navy (hero/footer) → medium (seções CTA)
 
 ### Cores (CSS custom properties no globals.css)
 
 ```css
 :root {
   --background: hsl(0 0% 100%);
-  --foreground: hsl(222 47% 11%);
+  --foreground: hsl(222 47% 6%);
   --card: hsl(0 0% 100%);
-  --card-foreground: hsl(222 47% 11%);
-  --primary: hsl(217 91% 60%);
-  --primary-dark: hsl(217 91% 50%);
-  --primary-light: hsl(217 91% 70%);
+  --card-foreground: hsl(222 47% 6%);
+
+  /* Três azuis BTG */
+  --primary: hsl(222 57% 42%);        /* #2B4FA8 — Royal Blue — navbar, botões */
+  --primary-dark: hsl(222 57% 34%);
+  --primary-light: hsl(222 57% 55%);
   --primary-foreground: hsl(0 0% 100%);
-  --primary-50: hsl(217 91% 97%);
-  --secondary: hsl(210 40% 96%);
+  --primary-50: hsl(222 57% 96%);
+  --navy: hsl(225 62% 14%);           /* #0C1B3D — Dark Navy — hero, footer */
+  --blue-section: hsl(221 58% 44%);   /* #2F5BB4 — Medium Blue — seções CTA */
+  --icon-blue: hsl(219 55% 55%);      /* #4472CA — azul vibrante para ícones */
+
+  --secondary: hsl(214 40% 96%);
   --secondary-foreground: hsl(222 47% 11%);
-  --muted: hsl(210 40% 96%);
+  --muted: hsl(214 40% 96%);          /* #F0F3F8 — azul-cinza claro */
   --muted-foreground: hsl(215 16% 47%);
-  --border: hsl(214 32% 91%);
-  --input: hsl(214 32% 91%);
-  --ring: hsl(217 91% 60%);
+  --border: hsl(220 13% 91%);         /* #E5E7EB */
+  --input: hsl(220 13% 91%);
+  --ring: hsl(222 57% 42%);
   --success: hsl(142 50% 45%);
   --success-bg: hsl(149 80% 96%);
   --warning: hsl(38 70% 50%);
@@ -59,14 +68,15 @@ Construa o frontend completo do **Consulta Precatório SP** — um portal de con
 }
 
 .dark {
-  --background: hsl(222 47% 11%);
+  --background: hsl(225 62% 11%);
   --foreground: hsl(210 40% 98%);
-  --card: hsl(222 47% 11%);
+  --card: hsl(225 62% 13%);
   --card-foreground: hsl(210 40% 98%);
-  --muted: hsl(217 33% 18%);
+  --navy: hsl(225 62% 8%);
+  --muted: hsl(222 40% 18%);
   --muted-foreground: hsl(215 20% 65%);
-  --border: hsl(217 33% 18%);
-  --input: hsl(217 33% 18%);
+  --border: hsl(222 40% 22%);
+  --input: hsl(222 40% 22%);
   --success: hsl(142 50% 55%);
   --success-bg: hsl(142 40% 15%);
   --warning: hsl(38 70% 60%);
@@ -77,24 +87,59 @@ Construa o frontend completo do **Consulta Precatório SP** — um portal de con
 ```
 
 ### Tipografia
-- Família: Inter (import do Google Fonts)
-- Pesos: 400, 500, 600, 700
-- Títulos: font-semibold/bold + tracking-tight (-0.025em)
+- **Headings (h1–h3)**: Sora (Google Fonts) — pesos 600, 700, 800 — `font-family: 'Sora', sans-serif`
+- **Body / UI**: Inter (Google Fonts) — pesos 400, 500, 600, 700
+- **Código / processo**: Fira Code — pesos 400, 600
+- Import: `@import url('https://fonts.googleapis.com/css2?family=Sora:wght@600;700;800&family=Inter:wght@400;500;600;700&family=Fira+Code:wght@400;600&display=swap')`
+- Títulos: Sora bold + tracking-tight (-0.025em)
 - Escala: 12/13/14/16/20/24/30/36px
 
 ### Forma e Espaço
-- Border radius padrão shadcn: `--radius: 0.5rem` (8px)
+- Border radius padrão: `--radius: 0.5rem` (8px)
 - Botões: 6px (`rounded-[6px]`)
 - Cards: `rounded-lg` (8px)
 - Modais: `rounded-xl` (12px)
 - Badges/pills: `rounded-full`
 - Sombras: `shadow-sm` em cards padrão, `shadow-md` em hover/modais
 
+### Navbar (portal público)
+- `background: var(--primary)` — royal blue #2B4FA8
+- Logo e links: texto branco (`text-white`)
+- Botão outline no header: borda branca + texto branco (`border-white/75 text-white bg-transparent`)
+- Botão filled no header: fundo branco + texto primary (`bg-white text-primary`)
+
+### Hero (landing page)
+- `background: var(--navy)` — dark navy #0C1B3D
+- Título h1: `text-white font-bold font-sora`
+- Subtítulo: `text-white/75`
+- Eyebrow badge: `bg-white/12 border-white/20 text-white/90`
+- Search bar: fundo branco com shadow-md sobre o hero dark
+
+### Footer (landing page)
+- `background: var(--navy)` — dark navy #0C1B3D
+- Texto: `text-white/60`
+- Links: `text-white/75` → hover: `text-white`
+- Brand: `text-white font-bold`
+
+### Sidebar Admin
+- Background: `bg-white` (branco puro)
+- Border-right: `border-gray-200` (#E5E7EB)
+- Item ativo: `bg-[hsl(214_40%_96%)]` = #F0F3F8
+- Ícones inativos: `text-[hsl(219_55%_55%)]` = #4472CA (icon-blue)
+- Ícones ativos: `text-primary`
+- Page background: `bg-muted` = #F0F3F8
+
+### Admin Topbar
+- `bg-white border-b border-gray-200`
+
 ### Regras de estilo (NUNCA violar)
-- Nunca usar gradientes de fundo coloridos em seções (apenas fundo branco ou muted)
-- Nunca usar a cor primária como fundo de seções inteiras
+- Navbar de páginas públicas **sempre** em royal blue (nunca branco ou transparente)
+- Hero da landing page **sempre** em dark navy (nunca branco)
+- Footer da landing page **sempre** em dark navy
+- Sidebar admin **sempre** fundo branco (nunca azul)
+- Nunca usar gradientes de fundo coloridos em seções
 - Nunca usar border-radius maior que 12px em cards principais
-- Cards: `rounded-lg border bg-card shadow-sm` — sem cor de fundo diferente
+- Cards: `rounded-lg border bg-card shadow-sm`
 - Sombras pesadas apenas em modais e popovers
 
 ### Padrão de tabelas (rhilo table-row pattern)
@@ -505,23 +550,23 @@ export function maskCnpj(cnpj: string): string {
 
 ### Estrutura visual (mobile-first)
 
-**Navbar** (sticky top, height 56px, bg-background border-b):
-- Esquerda: logotipo "Consulta Precatório SP" (texto, font-semibold)
-- Direita: links "Como funciona" e "Dúvidas" (btn-ghost btn-sm, hidden em mobile), botão dark mode toggle (ícone sol/lua)
+**Navbar** (sticky top, height 56px, `bg-[hsl(222_57%_42%)]` — royal blue BTG, sem border):
+- Esquerda: logotipo "Forjuris" (texto branco, font-semibold)
+- Direita: links "Como funciona" e "Dúvidas" (ghost branco, `text-white/85`, hidden em mobile), botão dark mode toggle (ícone sol/lua, cor branca)
 
-**Hero section** (padding 72px 24px desktop, 48px 20px mobile, text-center):
-- Eyebrow badge (pill, bg-primary-50 text-primary, border): "Dados públicos oficiais do DEPRE · Gratuito · Resultado em segundos"
-- H1: **"Consulte Gratis o Valor do Seu Precatório SP"** (font-size: clamp(28px, 5vw, 40px), font-bold, tracking-tight)
-- Subtítulo: **"Base com mais de 200 mil processos do DEPRE. Resultado em segundos."** (text-muted-foreground, max-w-md)
+**Hero section** (padding 72px 24px desktop, 48px 20px mobile, text-center, `bg-[hsl(225_62%_14%)]` — dark navy BTG):
+- Eyebrow badge (pill, `bg-white/12 border border-white/20 text-white/90`): "Dados públicos oficiais do DEPRE · Gratuito · Resultado em segundos"
+- H1: **"Consulte Gratis o Valor do Seu Precatório SP"** (font-size: clamp(28px, 5vw, 40px), font-bold, tracking-tight, `text-white`, Sora)
+- Subtítulo: **"Base com mais de 200 mil processos do DEPRE. Resultado em segundos."** (`text-white/75`, max-w-md)
 - Caixa de busca (max-w-lg, margin auto):
-  - Input de texto (height 48px, rounded-lg, shadow-sm, placeholder: "Processo, CPF ou CNPJ")
+  - Input de texto (height 48px, rounded-lg, **bg-white**, shadow-md, placeholder: "Processo, CPF ou CNPJ")
   - Helper text abaixo do input (text-xs text-muted-foreground): "Ex: 0122089-09.2025.8.26.0500 · 123.456.789-00 · 12.345.678/0001-90"
   - Botão "Consultar Agora" (height 48px, btn-default, no mesmo row em desktop, abaixo em mobile)
   - Em mobile: `flex-col` para input e botão ficarem empilhados com `w-full`
 - Trust row abaixo da busca (flex wrap, gap-5, justify-center):
   - "Sem cadastro prévio" (ícone check verde)
   - "Dados do TJSP/DEPRE" (ícone check verde)
-  - "CNPJ 12.345.678/0001-90" (ícone check verde)
+  - "Forjuris · CNPJ XX.XXX.XXX/XXXX-XX" (ícone check verde)
 
 **Stats strip** (border-y bg-muted/40, padding 12px 24px):
 - "4.821 consultas hoje" | "200.000+ processos na base" | "Resultado em < 2 segundos"
@@ -544,9 +589,9 @@ export function maskCnpj(cnpj: string): string {
   4. "Por que o saldo pode estar diferente do que recebi?" → "O saldo exibido é o da base DEPRE sem atualização monetária. O valor real corrigido pela SELIC pode ser diferente."
   5. "Meus dados estão seguros?" → "Sim. Seus dados são protegidos pela LGPD. Você pode solicitar exclusão a qualquer momento."
 
-**Footer** (bg-muted border-t, padding 24px, text-center, text-sm text-muted-foreground):
-- "Consulta Precatório SP" (font-semibold text-foreground, mb-6px)
-- "CNPJ 12.345.678/0001-90 · Termos de Uso · Privacidade (LGPD)"
+**Footer** (`bg-[hsl(225_62%_14%)]` — dark navy BTG, padding 32px 24px, text-center, `text-white/60`):
+- "Forjuris" (font-bold text-white)
+- "Forjuris · CNPJ XX.XXX.XXX/XXXX-XX · Termos de Uso · Privacidade (LGPD)"
 - "Dados públicos oficiais do DEPRE/TJSP. Sem relação com o Tribunal de Justiça."
 
 ### Comportamento da busca
@@ -789,15 +834,15 @@ Todos completed (verde).
 - Card max-w-sm (shadow-md rounded-xl)
 
 ### Conteúdo
-- Logo: "Consulta Precatório SP" (font-bold 16px) + "Acesso restrito ao painel administrativo" (text-sm muted)
+- Logo: "Forjuris" (font-bold 16px) + "Acesso restrito ao painel administrativo" (text-sm muted)
 - Campos: E-mail + Senha (type password)
 - Separador
 - Botão: "Entrar no painel" (btn-default btn-full btn-lg)
 - Texto: "Autenticação via Supabase Auth. Sessão persistente." (text-xs muted text-center)
 
 ### Lógica mock
-- Credenciais válidas: `admin@empresa.com` / `admin123`
-- Ao autenticar: salvar `{ isAuthenticated: true, email: "admin@empresa.com" }` no localStorage
+- Credenciais válidas: `admin@forjuris.com.br` / `admin123`
+- Ao autenticar: salvar `{ isAuthenticated: true, email: "admin@forjuris.com.br" }` no localStorage
 - Redirecionar para `/admin/leads`
 - Se já autenticado, redirecionar automaticamente
 
@@ -810,7 +855,7 @@ Todos completed (verde).
 ┌──────────────────────────────────────────────────────┐
 │ SIDEBAR (256px, sticky, height 100vh)                │
 │ ┌─────────────────────────────────────────────────┐  │
-│ │ Brand: "Consulta Precatório SP" / "Painel Admin"│  │
+│ │ Brand: "Forjuris" / "Painel Admin"│  │
 │ ├─────────────────────────────────────────────────┤  │
 │ │ Nav items:                                      │  │
 │ │  ⊞ Visão geral      → /admin/funil             │  │
@@ -1313,7 +1358,8 @@ Antes de concluir, verificar que:
 - [ ] Estado vazio na tabela de leads quando filtros não retornam resultados
 - [ ] Não há lorem ipsum em nenhum lugar — apenas dados realistas em PT-BR
 - [ ] Todos os textos em português, sem mistura com inglês
-- [ ] Inter font carregada corretamente do Google Fonts
+- [ ] Sora + Inter + Fira Code carregadas corretamente do Google Fonts
+- [ ] Headings (h1–h3) usam Sora, body/UI usa Inter, números de processo usam Fira Code
 
 ---
 
@@ -1409,6 +1455,6 @@ VITE_SUPABASE_ANON_KEY=<chave anon pública>
 
 5. **shadcn/ui apenas**: Usar exclusivamente componentes do shadcn/ui (Button, Input, Select, Dialog, Badge, Card, Table, Accordion, Separator, Alert, Textarea). Não criar componentes UI do zero quando existir equivalente no shadcn.
 
-6. **Sem back-end chamadas reais**: Todo o fluxo deve funcionar com dados mock. Os tokens OTP aceitar qualquer 6 dígitos. O login aceitar apenas `admin@empresa.com` / `admin123`. A busca de precatório consultar apenas o array `mockPrecatorios`.
+6. **Sem back-end chamadas reais**: Todo o fluxo deve funcionar com dados mock. Os tokens OTP aceitar qualquer 6 dígitos. O login aceitar apenas `admin@forjuris.com.br` / `admin123`. A busca de precatório consultar apenas o array `mockPrecatorios`.
 
 7. **Navegação 100%**: Toda a navegação deve funcionar sem erros de rota. Usar React Router v6 com `<BrowserRouter>`. Todas as rotas listadas devem ser acessíveis.

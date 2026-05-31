@@ -2,8 +2,22 @@
 
 /* === Feature extensions — consulta-precatorio-mvp === */
 
-/* Hero subtle bg tint */
-.hero { background: var(--background); }
+/* Hero — override para dark navy BTG (já definido no shared.css, mas reforçado aqui) */
+.hero {
+  background: var(--navy);
+}
+.hero .hero-title { color: #fff; }
+.hero .hero-sub   { color: rgba(255,255,255,0.75); }
+.hero .trust-item { color: rgba(255,255,255,0.7); }
+
+/* Hero search box — fundo branco sobre hero dark */
+.hero .search-input {
+  background: #fff;
+  color: var(--text-primary);
+  box-shadow: var(--shadow-md);
+}
+.hero .search-input::placeholder { color: var(--muted-foreground); }
+
 .hero-inner-card {
   background: var(--card);
   border: 1px solid var(--border);
@@ -21,6 +35,19 @@
   border-bottom: 1px solid var(--border);
   padding: 12px 24px;
 }
+.stats-strip .trust-item { color: var(--muted-foreground); }
+.stats-strip .trust-item svg { color: var(--success); }
+
+/* Section CTA com medium blue BTG */
+.section-cta {
+  background: var(--blue-section);
+  padding: 64px 24px;
+  text-align: center;
+}
+.section-cta .section-title { color: #fff; font-family: var(--font-heading); }
+.section-cta .section-sub   { color: rgba(255,255,255,0.8); }
+.section-cta .btn-default   { background: #fff; color: var(--blue-section); }
+.section-cta .btn-default:hover { background: hsl(214 40% 96%); }
 
 /* FAQ accordion-style */
 .faq-item {

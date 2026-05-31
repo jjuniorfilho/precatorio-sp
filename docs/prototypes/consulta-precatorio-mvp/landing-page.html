@@ -16,15 +16,18 @@
 
 <div id="v1">
   <nav class="navbar">
-    <a href="#" class="navbar-brand">Consulta Precatório SP</a>
+    <a href="#" class="navbar-brand">Forjuris</a>
     <div class="navbar-actions">
-      <a href="#como-funciona" class="btn btn-ghost btn-sm">Como funciona</a>
-      <a href="#faq" class="btn btn-ghost btn-sm">Dúvidas</a>
-      <button class="btn btn-outline btn-sm" onclick="toggleTheme()">Dark</button>
+      <a href="#como-funciona" class="btn btn-ghost-white btn-sm">Como funciona</a>
+      <a href="#faq" class="btn btn-ghost-white btn-sm">Dúvidas</a>
+      <button class="btn btn-outline-white btn-sm" onclick="toggleTheme()" id="theme-btn">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="5"/><line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/><line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/></svg>
+        Dark
+      </button>
     </div>
   </nav>
 
-  <!-- Hero -->
+  <!-- Hero — Dark Navy BTG -->
   <section class="hero">
     <div>
       <div class="hero-eyebrow">
@@ -36,8 +39,8 @@
 
       <div class="hero-search-box">
         <div class="search-input-wrapper">
-          <input class="search-input" type="text" placeholder="Ex: 0122089-09.2025.8.26.0500" id="search-field">
-          <button class="btn btn-default" style="height:48px;padding:0 20px;white-space:nowrap;">Consultar</button>
+          <input class="search-input" type="text" placeholder="Ex: 0122089-09.2025.8.26.0500" id="search-field" style="background:#fff;box-shadow:var(--shadow-md);">
+          <button class="btn btn-filled-white" style="height:48px;padding:0 20px;white-space:nowrap;font-weight:600;">Consultar</button>
         </div>
         <div class="trust-row">
           <span class="trust-item">
@@ -50,7 +53,7 @@
           </span>
           <span class="trust-item">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg>
-            CNPJ 12.345.678/0001-90
+            Forjuris · CNPJ XX.XXX.XXX/XXXX-XX
           </span>
         </div>
       </div>
@@ -133,11 +136,11 @@
     </div>
   </section>
 
-  <!-- Footer -->
+  <!-- Footer — Dark Navy BTG -->
   <footer class="site-footer">
     <div class="container">
-      <div class="font-semibold" style="color:var(--foreground);margin-bottom:6px;">Consulta Precatório SP</div>
-      <div>CNPJ 12.345.678/0001-90 · <a href="#">Termos de Uso</a> · <a href="#">Privacidade (LGPD)</a></div>
+      <div class="footer-brand">Forjuris</div>
+      <div>Forjuris · CNPJ XX.XXX.XXX/XXXX-XX · <a href="#">Termos de Uso</a> · <a href="#">Privacidade (LGPD)</a></div>
       <div class="mt-2">Dados públicos oficiais do DEPRE/TJSP. Sem relação com o Tribunal de Justiça.</div>
     </div>
   </footer>
@@ -174,15 +177,19 @@
      ===================================================== -->
 <div class="proto-variant-header">VARIANTE 3 — Dark mode</div>
 
-<div data-theme="dark" style="border-radius:var(--radius-xl);overflow:hidden;border:1px solid var(--border);">
+<div style="border-radius:var(--radius-xl);overflow:hidden;border:1px solid var(--border);">
   <nav class="navbar">
-    <a href="#" class="navbar-brand">Consulta Precatório SP</a>
+    <a href="#" class="navbar-brand">Forjuris</a>
     <div class="navbar-actions">
-      <a href="#" class="btn btn-ghost btn-sm">Como funciona</a>
-      <button class="btn btn-outline btn-sm">Light</button>
+      <a href="#" class="btn btn-ghost-white btn-sm">Como funciona</a>
+      <button class="btn btn-outline-white btn-sm">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>
+        Light
+      </button>
     </div>
   </nav>
-  <section class="hero" style="background:var(--background);">
+  <!-- Hero com navy ainda mais escuro no dark mode -->
+  <section class="hero">
     <div>
       <div class="hero-eyebrow">
         <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg>
@@ -192,8 +199,8 @@
       <p class="hero-sub">Base com mais de 200 mil processos do DEPRE.</p>
       <div class="hero-search-box">
         <div class="search-input-wrapper">
-          <input class="search-input" type="text" placeholder="Ex: 0122089-09.2025.8.26.0500">
-          <button class="btn btn-default" style="height:48px;padding:0 20px;">Consultar</button>
+          <input class="search-input" type="text" placeholder="Ex: 0122089-09.2025.8.26.0500" style="background:#fff;color:#0F172A;">
+          <button class="btn btn-filled-white" style="height:48px;padding:0 20px;font-weight:600;">Consultar</button>
         </div>
         <div class="trust-row">
           <span class="trust-item"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg>Sem cadastro</span>
@@ -210,6 +217,12 @@ function toggleTheme() {
   const html = document.documentElement;
   const isDark = html.getAttribute('data-theme') === 'dark';
   html.setAttribute('data-theme', isDark ? 'light' : 'dark');
+  const btn = document.getElementById('theme-btn');
+  if (btn) {
+    btn.innerHTML = isDark
+      ? '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="5"/><line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/><line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/></svg> Dark'
+      : '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg> Light';
+  }
 }
 </script>
 </body>
