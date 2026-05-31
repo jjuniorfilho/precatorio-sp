@@ -22,6 +22,8 @@ import { Route as AdminLoginRouteImport } from './routes/admin.login'
 import { Route as AdminLeadsRouteImport } from './routes/admin.leads'
 import { Route as AdminIncompletosRouteImport } from './routes/admin.incompletos'
 import { Route as AdminFunilRouteImport } from './routes/admin.funil'
+import { Route as ResultadoCpfCpfRouteImport } from './routes/resultado.cpf.$cpf'
+import { Route as ResultadoCnpjCnpjRouteImport } from './routes/resultado.cnpj.$cnpj'
 
 const ObrigadoRoute = ObrigadoRouteImport.update({
   id: '/obrigado',
@@ -88,6 +90,16 @@ const AdminFunilRoute = AdminFunilRouteImport.update({
   path: '/funil',
   getParentRoute: () => AdminRoute,
 } as any)
+const ResultadoCpfCpfRoute = ResultadoCpfCpfRouteImport.update({
+  id: '/resultado/cpf/$cpf',
+  path: '/resultado/cpf/$cpf',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ResultadoCnpjCnpjRoute = ResultadoCnpjCnpjRouteImport.update({
+  id: '/resultado/cnpj/$cnpj',
+  path: '/resultado/cnpj/$cnpj',
+  getParentRoute: () => rootRouteImport,
+} as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
@@ -103,6 +115,8 @@ export interface FileRoutesByFullPath {
   '/verificar/email': typeof VerificarEmailRoute
   '/verificar/whatsapp': typeof VerificarWhatsappRoute
   '/admin/': typeof AdminIndexRoute
+  '/resultado/cnpj/$cnpj': typeof ResultadoCnpjCnpjRoute
+  '/resultado/cpf/$cpf': typeof ResultadoCpfCpfRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
@@ -117,6 +131,8 @@ export interface FileRoutesByTo {
   '/verificar/email': typeof VerificarEmailRoute
   '/verificar/whatsapp': typeof VerificarWhatsappRoute
   '/admin': typeof AdminIndexRoute
+  '/resultado/cnpj/$cnpj': typeof ResultadoCnpjCnpjRoute
+  '/resultado/cpf/$cpf': typeof ResultadoCpfCpfRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -133,6 +149,8 @@ export interface FileRoutesById {
   '/verificar/email': typeof VerificarEmailRoute
   '/verificar/whatsapp': typeof VerificarWhatsappRoute
   '/admin/': typeof AdminIndexRoute
+  '/resultado/cnpj/$cnpj': typeof ResultadoCnpjCnpjRoute
+  '/resultado/cpf/$cpf': typeof ResultadoCpfCpfRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
@@ -150,6 +168,8 @@ export interface FileRouteTypes {
     | '/verificar/email'
     | '/verificar/whatsapp'
     | '/admin/'
+    | '/resultado/cnpj/$cnpj'
+    | '/resultado/cpf/$cpf'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
@@ -164,6 +184,8 @@ export interface FileRouteTypes {
     | '/verificar/email'
     | '/verificar/whatsapp'
     | '/admin'
+    | '/resultado/cnpj/$cnpj'
+    | '/resultado/cpf/$cpf'
   id:
     | '__root__'
     | '/'
@@ -179,6 +201,8 @@ export interface FileRouteTypes {
     | '/verificar/email'
     | '/verificar/whatsapp'
     | '/admin/'
+    | '/resultado/cnpj/$cnpj'
+    | '/resultado/cpf/$cpf'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -190,6 +214,8 @@ export interface RootRouteChildren {
   ResultadoProcessoRoute: typeof ResultadoProcessoRoute
   VerificarEmailRoute: typeof VerificarEmailRoute
   VerificarWhatsappRoute: typeof VerificarWhatsappRoute
+  ResultadoCnpjCnpjRoute: typeof ResultadoCnpjCnpjRoute
+  ResultadoCpfCpfRoute: typeof ResultadoCpfCpfRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -285,6 +311,20 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AdminFunilRouteImport
       parentRoute: typeof AdminRoute
     }
+    '/resultado/cpf/$cpf': {
+      id: '/resultado/cpf/$cpf'
+      path: '/resultado/cpf/$cpf'
+      fullPath: '/resultado/cpf/$cpf'
+      preLoaderRoute: typeof ResultadoCpfCpfRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/resultado/cnpj/$cnpj': {
+      id: '/resultado/cnpj/$cnpj'
+      path: '/resultado/cnpj/$cnpj'
+      fullPath: '/resultado/cnpj/$cnpj'
+      preLoaderRoute: typeof ResultadoCnpjCnpjRouteImport
+      parentRoute: typeof rootRouteImport
+    }
   }
 }
 
@@ -315,7 +355,19 @@ const rootRouteChildren: RootRouteChildren = {
   ResultadoProcessoRoute: ResultadoProcessoRoute,
   VerificarEmailRoute: VerificarEmailRoute,
   VerificarWhatsappRoute: VerificarWhatsappRoute,
+  ResultadoCnpjCnpjRoute: ResultadoCnpjCnpjRoute,
+  ResultadoCpfCpfRoute: ResultadoCpfCpfRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)
   ._addFileTypes<FileRouteTypes>()
+
+import type { getRouter } from './router.tsx'
+import type { startInstance } from './start.ts'
+declare module '@tanstack/react-start' {
+  interface Register {
+    ssr: true
+    router: Awaited<ReturnType<typeof getRouter>>
+    config: Awaited<ReturnType<typeof startInstance.getOptions>>
+  }
+}

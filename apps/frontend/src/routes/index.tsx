@@ -11,7 +11,8 @@ import {
   AccordionTrigger,
 } from "@/components/ui/accordion";
 import { useSearch } from "@/contexts/AppProviders";
-import { findPrecatorio, normalizeProcesso } from "@/lib/format";
+import { normalizeProcesso } from "@/lib/format";
+import { detectInputType, normalizeInput } from "@/lib/search";
 import { mockPrecatorios } from "@/data/mockData";
 
 export const Route = createFileRoute("/")({
@@ -33,16 +34,30 @@ function LandingPage() {
   const { query, setQuery, setResult } = useSearch();
   const [loading, setLoading] = useState(false);
 
+  const [error, setError] = useState<string | null>(null);
+
   const handleSearch = async (e?: React.FormEvent) => {
     e?.preventDefault();
     if (!query.trim()) return;
+    const type = detectInputType(query);
+    if (type === "desconhecido") {
+      setError("Formato não reconhecido. Use processo, CPF ou CNPJ.");
+      return;
+    }
+    setError(null);
     setLoading(true);
     setResult("loading");
-    await new Promise((r) => setTimeout(r, 800));
-    const found = findPrecatorio(query, mockPrecatorios);
-    setResult(found ?? "not_found");
+    await new Promise((r) => setTimeout(r, 600));
     setLoading(false);
-    navigate({ to: "/resultado/$processo", params: { processo: normalizeProcesso(query) } });
+    if (type === "cpf") {
+      navigate({ to: "/resultado/cpf/$cpf", params: { cpf: normalizeInput(query) } });
+    } else if (type === "cnpj") {
+      navigate({ to: "/resultado/cnpj/$cnpj", params: { cnpj: normalizeInput(query) } });
+    } else {
+      // ensure mockPrecatorios import is used downstream
+      void mockPrecatorios;
+      navigate({ to: "/resultado/$processo", params: { processo: normalizeProcesso(query) } });
+    }
   };
 
   return (
@@ -68,9 +83,13 @@ function LandingPage() {
           >
             <Input
               value={query}
-              onChange={(e) => setQuery(e.target.value)}
-              placeholder="Ex: 0122089-09.2025.8.26.0500"
+              onChange={(e) => {
+                setQuery(e.target.value);
+                if (error) setError(null);
+              }}
+              placeholder="Processo, CPF ou CNPJ"
               className="h-12 rounded-lg shadow-sm sm:flex-1"
+              aria-invalid={!!error}
             />
             <Button
               type="submit"
@@ -88,6 +107,12 @@ function LandingPage() {
               )}
             </Button>
           </form>
+          <p className="mx-auto mt-2 max-w-lg text-xs text-muted-foreground">
+            Ex: 0122089-09.2025.8.26.0500 · 123.456.789-00 · 12.345.678/0001-90
+          </p>
+          {error && (
+            <p className="mx-auto mt-2 max-w-lg text-sm text-error">{error}</p>
+          )}
 
           <div className="mt-6 flex flex-wrap justify-center gap-x-5 gap-y-2 text-xs text-muted-foreground">
             <span className="inline-flex items-center gap-1.5">

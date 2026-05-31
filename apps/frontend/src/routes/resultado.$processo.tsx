@@ -9,6 +9,7 @@ import { Separator } from "@/components/ui/separator";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { useSearch, useLead } from "@/contexts/AppProviders";
 import { findPrecatorio, formatCurrency, normalizeProcesso, maskProcesso, firstName, maskCpf } from "@/lib/format";
+import { detectInputType, normalizeInput } from "@/lib/search";
 import { mockPrecatorios, type Precatorio } from "@/data/mockData";
 import { cn } from "@/lib/utils";
 
@@ -44,7 +45,14 @@ function ResultadoPage() {
     e.preventDefault();
     if (!localQuery.trim()) return;
     setQuery(localQuery);
-    navigate({ to: "/resultado/$processo", params: { processo: normalizeProcesso(localQuery) } });
+    const type = detectInputType(localQuery);
+    if (type === "cpf") {
+      navigate({ to: "/resultado/cpf/$cpf", params: { cpf: normalizeInput(localQuery) } });
+    } else if (type === "cnpj") {
+      navigate({ to: "/resultado/cnpj/$cnpj", params: { cnpj: normalizeInput(localQuery) } });
+    } else {
+      navigate({ to: "/resultado/$processo", params: { processo: normalizeProcesso(localQuery) } });
+    }
   };
 
   const goToCadastro = () => {
@@ -67,7 +75,7 @@ function ResultadoPage() {
             value={localQuery}
             onChange={(e) => setLocalQuery(e.target.value)}
             className="h-10 flex-1"
-            placeholder="Número do processo"
+            placeholder="Processo, CPF ou CNPJ"
           />
           <Button type="submit" variant="outline" size="sm" className="h-10">
             <Search className="mr-1.5 h-4 w-4" /> Nova busca

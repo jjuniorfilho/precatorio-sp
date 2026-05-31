@@ -85,13 +85,20 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
         content:
           "Portal gratuito para consultar o saldo do seu precatório do Estado de São Paulo. Base com mais de 200 mil processos do DEPRE.",
       },
-      { property: "og:title", content: "Consulta Precatório SP" },
+      { property: "og:title", content: "Consulta Precatório SP — Consulte grátis o saldo do seu precatório" },
       {
         property: "og:description",
         content:
           "Consulte grátis o saldo do seu precatório SP. Dados oficiais do DEPRE/TJSP.",
       },
       { property: "og:type", content: "website" },
+      { name: "twitter:title", content: "Consulta Precatório SP — Consulte grátis o saldo do seu precatório" },
+      { name: "description", content: "SP Precatórios Simples helps users query and manage precatórios (court-ordered payments) in São Paulo." },
+      { property: "og:description", content: "SP Precatórios Simples helps users query and manage precatórios (court-ordered payments) in São Paulo." },
+      { name: "twitter:description", content: "SP Precatórios Simples helps users query and manage precatórios (court-ordered payments) in São Paulo." },
+      { property: "og:image", content: "https://pub-bb2e103a32db4e198524a2e9ed8f35b4.r2.dev/296f6378-2b3b-4cd2-bf34-1fe184891b47/id-preview-299f1143--56a5acbb-580e-4cf5-96fa-fa8f7fefbcf9.lovable.app-1780246051958.png" },
+      { name: "twitter:image", content: "https://pub-bb2e103a32db4e198524a2e9ed8f35b4.r2.dev/296f6378-2b3b-4cd2-bf34-1fe184891b47/id-preview-299f1143--56a5acbb-580e-4cf5-96fa-fa8f7fefbcf9.lovable.app-1780246051958.png" },
+      { name: "twitter:card", content: "summary_large_image" },
     ],
     links: [
       { rel: "stylesheet", href: appCss },
