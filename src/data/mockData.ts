@@ -24,6 +24,8 @@ export interface Precatorio {
   data_protocolo: string;
   autor: string;
   cpf: string;
+  cpf_titular?: string | null;
+  cnpj_titular?: string | null;
 }
 
 export interface Lead {
@@ -64,6 +66,8 @@ export const mockPrecatorios: Precatorio[] = [
     data_protocolo: "2025-03-15",
     autor: "Maria Aparecida da Silva",
     cpf: "123.456.789-09",
+    cpf_titular: "123.456.789-00",
+    cnpj_titular: null,
   },
   {
     id: "2",
@@ -77,6 +81,8 @@ export const mockPrecatorios: Precatorio[] = [
     data_protocolo: "2023-07-20",
     autor: "João Carlos Pereira",
     cpf: "987.654.321-00",
+    cpf_titular: "123.456.789-00",
+    cnpj_titular: null,
   },
   {
     id: "3",
@@ -90,6 +96,38 @@ export const mockPrecatorios: Precatorio[] = [
     data_protocolo: "2024-01-10",
     autor: "Roberto Henrique Almeida",
     cpf: "456.789.123-45",
+    cpf_titular: "987.654.321-00",
+    cnpj_titular: null,
+  },
+  {
+    id: "4",
+    processo_depre: "0044122-33.2022.8.26.0200",
+    autos: "0044122-33.2022.8.26.0200",
+    devedora: "IPESP",
+    saldo_depre: 5210000,
+    natureza: "Outras",
+    status: "Ativo",
+    suspenso: false,
+    data_protocolo: "2022-05-12",
+    autor: "Empresa Exemplo LTDA",
+    cpf: "000.000.000-00",
+    cpf_titular: null,
+    cnpj_titular: "12.345.678/0001-90",
+  },
+  {
+    id: "5",
+    processo_depre: "0089201-44.2021.8.26.0300",
+    autos: "0089201-44.2021.8.26.0300",
+    devedora: "DER",
+    saldo_depre: 31254000,
+    natureza: "Alimentar",
+    status: "Ativo",
+    suspenso: false,
+    data_protocolo: "2021-09-22",
+    autor: "Empresa Exemplo LTDA",
+    cpf: "000.000.000-00",
+    cpf_titular: null,
+    cnpj_titular: "12.345.678/0001-90",
   },
 ];
 
