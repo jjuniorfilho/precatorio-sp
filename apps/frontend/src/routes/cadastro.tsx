@@ -1,6 +1,7 @@
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { useState } from "react";
 import { PublicFooter } from "@/components/public-layout";
+import { ForjurisLogo } from "@/components/forjuris-logo";
 import { StepIndicator } from "@/components/step-indicator";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -52,8 +53,8 @@ function CadastroPage() {
   return (
     <div className="flex min-h-screen flex-col bg-muted">
       <header className="px-6 py-4">
-        <Link to="/" className="font-semibold tracking-tight">
-          Consulta Precatório SP
+        <Link to="/" aria-label="Forjuris — página inicial">
+          <ForjurisLogo variant="default" size="sm" />
         </Link>
       </header>
       <main className="mx-auto w-full max-w-sm flex-1 px-4 pb-12">

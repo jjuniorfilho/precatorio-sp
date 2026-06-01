@@ -1,6 +1,7 @@
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { CheckCircle2 } from "lucide-react";
 import { PublicFooter } from "@/components/public-layout";
+import { ForjurisLogo } from "@/components/forjuris-logo";
 import { StepIndicator } from "@/components/step-indicator";
 import { Button } from "@/components/ui/button";
 import { Alert, AlertDescription } from "@/components/ui/alert";
@@ -20,8 +21,8 @@ function ObrigadoPage() {
   return (
     <div className="flex min-h-screen flex-col bg-muted">
       <header className="px-6 py-4">
-        <Link to="/" className="font-semibold tracking-tight">
-          Consulta Precatório SP
+        <Link to="/" aria-label="Forjuris — página inicial">
+          <ForjurisLogo variant="default" size="sm" />
         </Link>
       </header>
       <main className="mx-auto w-full max-w-sm flex-1 px-4 pb-12">

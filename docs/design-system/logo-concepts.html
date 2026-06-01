@@ -1,0 +1,210 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Forjuris — Conceitos de Logo</title>
+<link href="https://fonts.googleapis.com/css2?family=Sora:wght@400;600;700;800&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: 'Inter', sans-serif; background: #f8fafc; color: #0f172a; padding: 40px 24px 80px; }
+  h1 { font-size: 14px; font-weight: 600; color: #64748b; text-transform: uppercase; letter-spacing: 0.08em; margin-bottom: 40px; }
+
+  .concept { margin-bottom: 56px; }
+  .concept-label { font-size: 11px; font-weight: 700; color: #94a3b8; text-transform: uppercase; letter-spacing: 0.1em; margin-bottom: 20px; border-bottom: 1px solid #e2e8f0; padding-bottom: 8px; }
+
+  .variants { display: flex; gap: 16px; flex-wrap: wrap; }
+  .variant {
+    flex: 1; min-width: 220px;
+    background: #fff;
+    border: 1px solid #e2e8f0;
+    border-radius: 12px;
+    padding: 32px 28px;
+    display: flex; flex-direction: column; align-items: center; gap: 20px;
+  }
+  .variant.dark { background: #0C1B3D; border-color: #1e3a6e; }
+  .variant.blue { background: #2B4FA8; border-color: #1e3a8a; }
+  .variant-name { font-size: 11px; color: #94a3b8; font-weight: 500; }
+  .variant.dark .variant-name, .variant.blue .variant-name { color: rgba(255,255,255,0.4); }
+
+  .concept-desc {
+    margin-top: 16px;
+    font-size: 13px; color: #64748b; line-height: 1.5;
+    max-width: 700px;
+  }
+</style>
+</head>
+<body>
+
+<h1>Forjuris — Conceitos de Logo</h1>
+
+<!-- ===========================
+     CONCEITO A — Wordmark puro
+     =========================== -->
+<div class="concept">
+  <div class="concept-label">Conceito A — Wordmark bicolor</div>
+  <div class="variants">
+
+    <!-- Light -->
+    <div class="variant">
+      <svg width="160" height="40" viewBox="0 0 160 40" fill="none" xmlns="http://www.w3.org/2000/svg">
+        <text font-family="Sora, sans-serif" font-weight="700" font-size="28" y="30" letter-spacing="-0.5">
+          <tspan fill="#2B4FA8">For</tspan><tspan fill="#0C1B3D">juris</tspan>
+        </text>
+      </svg>
+      <span class="variant-name">Fundo claro</span>
+    </div>
+
+    <!-- Dark -->
+    <div class="variant dark">
+      <svg width="160" height="40" viewBox="0 0 160 40" fill="none" xmlns="http://www.w3.org/2000/svg">
+        <text font-family="Sora, sans-serif" font-weight="700" font-size="28" y="30" letter-spacing="-0.5">
+          <tspan fill="#60a5fa">For</tspan><tspan fill="white">juris</tspan>
+        </text>
+      </svg>
+      <span class="variant-name">Fundo escuro (navbar)</span>
+    </div>
+
+    <!-- Blue navbar -->
+    <div class="variant blue">
+      <svg width="160" height="40" viewBox="0 0 160 40" fill="none" xmlns="http://www.w3.org/2000/svg">
+        <text font-family="Sora, sans-serif" font-weight="700" font-size="28" y="30" letter-spacing="-0.5">
+          <tspan fill="rgba(255,255,255,0.6)">For</tspan><tspan fill="white">juris</tspan>
+        </text>
+      </svg>
+      <span class="variant-name">Navbar azul</span>
+    </div>
+
+  </div>
+  <p class="concept-desc">Limpo e direto. "For" em azul royal, "juris" em navy. Elegante, lembra marcas como Nubank e BTG. Funciona em qualquer tamanho.</p>
+</div>
+
+
+<!-- ===========================
+     CONCEITO B — Ícone + Wordmark
+     =========================== -->
+<div class="concept">
+  <div class="concept-label">Conceito B — Marca geométrica + Wordmark</div>
+  <div class="variants">
+
+    <!-- Light -->
+    <div class="variant">
+      <svg width="180" height="40" viewBox="0 0 180 40" fill="none" xmlns="http://www.w3.org/2000/svg">
+        <!-- Ícone: quadrado arredondado com "FJ" -->
+        <rect x="0" y="2" width="36" height="36" rx="8" fill="#2B4FA8"/>
+        <text font-family="Sora, sans-serif" font-weight="800" font-size="15" fill="white" x="5.5" y="25" letter-spacing="0.5">FJ</text>
+        <!-- Wordmark -->
+        <text font-family="Sora, sans-serif" font-weight="700" font-size="22" fill="#0C1B3D" x="46" y="28" letter-spacing="-0.3">forjuris</text>
+      </svg>
+      <span class="variant-name">Fundo claro</span>
+    </div>
+
+    <!-- Dark -->
+    <div class="variant dark">
+      <svg width="180" height="40" viewBox="0 0 180 40" fill="none" xmlns="http://www.w3.org/2000/svg">
+        <rect x="0" y="2" width="36" height="36" rx="8" fill="rgba(255,255,255,0.15)"/>
+        <text font-family="Sora, sans-serif" font-weight="800" font-size="15" fill="white" x="5.5" y="25" letter-spacing="0.5">FJ</text>
+        <text font-family="Sora, sans-serif" font-weight="700" font-size="22" fill="white" x="46" y="28" letter-spacing="-0.3">forjuris</text>
+      </svg>
+      <span class="variant-name">Fundo escuro</span>
+    </div>
+
+    <!-- Blue -->
+    <div class="variant blue">
+      <svg width="180" height="40" viewBox="0 0 180 40" fill="none" xmlns="http://www.w3.org/2000/svg">
+        <rect x="0" y="2" width="36" height="36" rx="8" fill="rgba(255,255,255,0.2)"/>
+        <text font-family="Sora, sans-serif" font-weight="800" font-size="15" fill="white" x="5.5" y="25" letter-spacing="0.5">FJ</text>
+        <text font-family="Sora, sans-serif" font-weight="700" font-size="22" fill="white" x="46" y="28" letter-spacing="-0.3">forjuris</text>
+      </svg>
+      <span class="variant-name">Navbar azul</span>
+    </div>
+
+  </div>
+  <p class="concept-desc">Badge "FJ" + wordmark. O quadrado azul funciona como favicon/ícone de app independente. "forjuris" em caixa baixa dá leveza moderna sem perder seriedade.</p>
+</div>
+
+
+<!-- ===========================
+     CONCEITO C — Coluna + Wordmark
+     =========================== -->
+<div class="concept">
+  <div class="concept-label">Conceito C — Símbolo pilares + Wordmark</div>
+  <div class="variants">
+
+    <!-- Light -->
+    <div class="variant">
+      <svg width="185" height="40" viewBox="0 0 185 40" fill="none" xmlns="http://www.w3.org/2000/svg">
+        <!-- 3 pilares (justiça/instituição) -->
+        <rect x="0"  y="8"  width="6" height="28" rx="2" fill="#2B4FA8"/>
+        <rect x="9"  y="2"  width="6" height="34" rx="2" fill="#2B4FA8"/>
+        <rect x="18" y="12" width="6" height="24" rx="2" fill="#2B4FA8" opacity="0.6"/>
+        <!-- Linha base -->
+        <rect x="0" y="36" width="24" height="2.5" rx="1.25" fill="#0C1B3D"/>
+        <!-- Wordmark -->
+        <text font-family="Sora, sans-serif" font-weight="700" font-size="22" fill="#0C1B3D" x="34" y="28" letter-spacing="-0.3">Forjuris</text>
+      </svg>
+      <span class="variant-name">Fundo claro</span>
+    </div>
+
+    <!-- Dark -->
+    <div class="variant dark">
+      <svg width="185" height="40" viewBox="0 0 185 40" fill="none" xmlns="http://www.w3.org/2000/svg">
+        <rect x="0"  y="8"  width="6" height="28" rx="2" fill="#60a5fa"/>
+        <rect x="9"  y="2"  width="6" height="34" rx="2" fill="#60a5fa"/>
+        <rect x="18" y="12" width="6" height="24" rx="2" fill="#60a5fa" opacity="0.5"/>
+        <rect x="0" y="36" width="24" height="2.5" rx="1.25" fill="white"/>
+        <text font-family="Sora, sans-serif" font-weight="700" font-size="22" fill="white" x="34" y="28" letter-spacing="-0.3">Forjuris</text>
+      </svg>
+      <span class="variant-name">Fundo escuro</span>
+    </div>
+
+    <!-- Blue -->
+    <div class="variant blue">
+      <svg width="185" height="40" viewBox="0 0 185 40" fill="none" xmlns="http://www.w3.org/2000/svg">
+        <rect x="0"  y="8"  width="6" height="28" rx="2" fill="rgba(255,255,255,0.9)"/>
+        <rect x="9"  y="2"  width="6" height="34" rx="2" fill="white"/>
+        <rect x="18" y="12" width="6" height="24" rx="2" fill="rgba(255,255,255,0.5)"/>
+        <rect x="0" y="36" width="24" height="2.5" rx="1.25" fill="rgba(255,255,255,0.7)"/>
+        <text font-family="Sora, sans-serif" font-weight="700" font-size="22" fill="white" x="34" y="28" letter-spacing="-0.3">Forjuris</text>
+      </svg>
+      <span class="variant-name">Navbar azul</span>
+    </div>
+
+  </div>
+  <p class="concept-desc">3 pilares de alturas diferentes — evoca colunas de tribunal/instituição sem ser literal. Funciona como símbolo standalone. Linha de base ancora a composição.</p>
+</div>
+
+
+<!-- ===========================
+     COMPARAÇÃO — Tamanhos
+     =========================== -->
+<div class="concept">
+  <div class="concept-label">Como ficam em diferentes tamanhos (conceito vencedor vai aqui)</div>
+  <div class="variants">
+
+    <div class="variant" style="gap:28px;align-items:flex-start;">
+      <!-- Grande — navbar desktop -->
+      <div>
+        <p style="font-size:10px;color:#94a3b8;margin-bottom:8px;">Navbar desktop (28px)</p>
+        <svg width="160" height="32" viewBox="0 0 160 32"><text font-family="Sora,sans-serif" font-weight="700" font-size="22" y="24" letter-spacing="-0.5"><tspan fill="#2B4FA8">For</tspan><tspan fill="#0C1B3D">juris</tspan></text></svg>
+      </div>
+      <!-- Médio — mobile -->
+      <div>
+        <p style="font-size:10px;color:#94a3b8;margin-bottom:8px;">Mobile header (20px)</p>
+        <svg width="120" height="26" viewBox="0 0 120 26"><text font-family="Sora,sans-serif" font-weight="700" font-size="18" y="20" letter-spacing="-0.5"><tspan fill="#2B4FA8">For</tspan><tspan fill="#0C1B3D">juris</tspan></text></svg>
+      </div>
+      <!-- Favicon -->
+      <div>
+        <p style="font-size:10px;color:#94a3b8;margin-bottom:8px;">Favicon 32px</p>
+        <svg width="32" height="32" viewBox="0 0 32 32">
+          <rect width="32" height="32" rx="6" fill="#2B4FA8"/>
+          <text font-family="Sora,sans-serif" font-weight="800" font-size="13" fill="white" x="4" y="22" letter-spacing="0.5">FJ</text>
+        </svg>
+      </div>
+    </div>
+
+  </div>
+</div>
+
+</body>
+</html>
