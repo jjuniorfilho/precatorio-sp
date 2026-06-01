@@ -64,7 +64,9 @@ function CadastroPage() {
             <div className="mb-5 grid grid-cols-2 gap-3 rounded-lg bg-muted px-4 py-3">
               <div>
                 <p className="text-[10px] uppercase tracking-wide text-muted-foreground">Processo</p>
-                <p className="font-mono text-sm">{lead.processo}</p>
+                <p className="font-mono text-sm">
+                  {lead.processo.replace(/\d(?=.*\d{4}$)/g, "•")}
+                </p>
               </div>
               <div className="text-right">
                 <p className="text-[10px] uppercase tracking-wide text-muted-foreground">Saldo DEPRE</p>
