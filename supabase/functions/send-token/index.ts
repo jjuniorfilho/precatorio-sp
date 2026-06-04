@@ -10,6 +10,8 @@ const RATE_LIMIT_WINDOW_MINUTES = 30;
 const TOKEN_TTL_MINUTES = 10;
 
 Deno.serve(async (req) => {
+  console.log("[send-token] request:", req.method);
+
   if (req.method === "OPTIONS") {
     return new Response("ok", { headers: corsHeaders });
   }
@@ -26,6 +28,7 @@ Deno.serve(async (req) => {
   }
 
   const { lead_id, canal } = body;
+  console.log("[send-token] body:", JSON.stringify({ lead_id, canal }));
 
   if (!lead_id || !canal) {
     return json({ error: "lead_id e canal são obrigatórios" }, 400);
@@ -81,8 +84,10 @@ Deno.serve(async (req) => {
     .eq("canal", canal)
     .eq("usado", false);
 
-  // 4. Gerar código OTP de 6 dígitos
-  const codigo = String(Math.floor(100000 + Math.random() * 900000));
+  // 4. Gerar código OTP de 6 dígitos com CSPRNG
+  const rand = new Uint32Array(1);
+  crypto.getRandomValues(rand);
+  const codigo = String(100000 + (rand[0] % 900000));
   const expires_at = new Date(Date.now() + TOKEN_TTL_MINUTES * 60 * 1000).toISOString();
 
   // 5. Salvar token
