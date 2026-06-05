@@ -90,10 +90,10 @@ function extractNome(html: string): string | null {
   // Tenta extrair nome do beneficiário da tabela de resultados
   // Padrões comuns no e-SAJ para lista de partes
   const patterns = [
-    /class="[^"]*nomePartes[^"]*"[^>]*>\s*([^<]{5,80})</i,
-    /Requerente[^<]{0,30}:\s*<[^>]*>\s*([^<]{5,80})</i,
-    /Exequente[^<]{0,30}:\s*<[^>]*>\s*([^<]{5,80})</i,
-    /class="[^"]*partePrincipal[^"]*"[^>]*>\s*([A-ZÁÉÍÓÚÀÂÊÔÇÃÕ\s]{10,60})</,
+    /class="[^"]*nomeParte[^"]*"[^>]*>\s*([^<]{5,200})/i,
+    /Requerente[^<]{0,30}:\s*<[^>]*>\s*([^<]{5,80})/i,
+    /Exequente[^<]{0,30}:\s*<[^>]*>\s*([^<]{5,80})/i,
+    /class="[^"]*partePrincipal[^"]*"[^>]*>\s*([A-ZÁÉÍÓÚÀÂÊÔÇÃÕ\s]{10,60})/,
   ];
   for (const pattern of patterns) {
     const m = html.match(pattern);
