@@ -150,33 +150,34 @@ async function sendEmail(to: string, nome: string, codigo: string): Promise<void
 }
 
 async function sendWhatsApp(telefone: string, codigo: string): Promise<void> {
-  const instanceId = Deno.env.get("ZAPI_INSTANCE_ID");
-  const token = Deno.env.get("ZAPI_TOKEN");
-  const clientToken = Deno.env.get("ZAPI_CLIENT_TOKEN");
+  const accountSid = Deno.env.get("TWILIO_ACCOUNT_SID");
+  const authToken = Deno.env.get("TWILIO_AUTH_TOKEN");
+  const fromNumber = Deno.env.get("TWILIO_PHONE_NUMBER");
 
-  if (!instanceId || !token || !clientToken) {
-    throw new Error("Variáveis Z-API não configuradas");
+  if (!accountSid || !authToken || !fromNumber) {
+    throw new Error("Variáveis Twilio não configuradas");
   }
 
-  // Normalizar telefone: remover caracteres não numéricos
-  const phone = telefone.replace(/\D/g, "");
+  const digits = telefone.replace(/\D/g, "");
+  const to = digits.startsWith("55") ? `+${digits}` : `+55${digits}`;
 
-  const url = `https://api.z-api.io/instances/${instanceId}/token/${token}/send-text`;
+  const url = `https://api.twilio.com/2010-04-01/Accounts/${accountSid}/Messages.json`;
   const res = await fetch(url, {
     method: "POST",
     headers: {
-      "Content-Type": "application/json",
-      "Client-Token": clientToken,
+      Authorization: `Basic ${btoa(`${accountSid}:${authToken}`)}`,
+      "Content-Type": "application/x-www-form-urlencoded",
     },
-    body: JSON.stringify({
-      phone,
-      message: `[Forjuris] Seu código: ${codigo}. Válido por 10 minutos.`,
-    }),
+    body: new URLSearchParams({
+      To: to,
+      From: fromNumber,
+      Body: `[Forjuris] Seu código: ${codigo}. Válido por 10 minutos.`,
+    }).toString(),
   });
 
   if (!res.ok) {
-    const body = await res.text();
-    throw new Error(`Z-API error ${res.status}: ${body}`);
+    const errBody = await res.text();
+    throw new Error(`Twilio error ${res.status}: ${errBody}`);
   }
 }
 
