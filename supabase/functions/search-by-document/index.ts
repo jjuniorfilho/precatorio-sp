@@ -135,17 +135,19 @@ Deno.serve(async (req) => {
   // ── 1. DB-first: verifica se já temos o documento enriquecido ────────────────
   const { data: dbRows } = await supabase
     .from("precatorios")
-    .select("processo_depre")
+    .select("processo_depre, autor")
     .eq(col, rawDoc);
 
-  if (dbRows && dbRows.length > 0) {
-    const processos = dbRows.map((r: { processo_depre: string }) => r.processo_depre);
+  const allHaveNome = dbRows && dbRows.length > 0 &&
+    dbRows.every((r: { autor: string | null }) => !!r.autor);
+
+  if (allHaveNome) {
+    const processos = (dbRows as { processo_depre: string }[]).map((r) => r.processo_depre);
     const { data: publicRows } = await supabase
       .from("precatorios_publico")
       .select("*")
       .in("processo_depre", processos);
 
-    // Registra evento (sem o documento por LGPD)
     supabase.from("funnel_events").insert({
       session_id: crypto.randomUUID(),
       event_type: "busca_realizada",
@@ -154,6 +156,7 @@ Deno.serve(async (req) => {
 
     return json({ data: publicRows ?? [], source: "db" });
   }
+  // Se CPF/CNPJ já está no banco mas autor é null → cai no TJSP para enriquecer
 
   // ── 2. Fallback TJSP ─────────────────────────────────────────────────────────
   const session = await getTjspSession();
