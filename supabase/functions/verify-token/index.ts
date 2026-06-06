@@ -43,7 +43,6 @@ Deno.serve(async (req) => {
     { auth: { persistSession: false } },
   );
 
-  // Buscar token ativo mais recente para esse lead+canal
   const { data: token, error: tokenError } = await supabase
     .from("tokens")
     .select("id, codigo, expires_at, usado, tentativas")
@@ -71,7 +70,6 @@ Deno.serve(async (req) => {
     return json({ error: "Muitas tentativas. Solicite um novo código." }, 429);
   }
 
-  // Comparação em tempo constante
   if (!timingSafeEqual(token.codigo, codigo)) {
     await supabase
       .from("tokens")
@@ -80,7 +78,6 @@ Deno.serve(async (req) => {
     return json({ error: "Código incorreto." }, 401);
   }
 
-  // Sucesso: marcar token como usado e atualizar flag no lead
   await supabase.from("tokens").update({ usado: true }).eq("id", token.id);
 
   const leadPatch =
@@ -95,6 +92,23 @@ Deno.serve(async (req) => {
 
   if (updateError) {
     return json({ error: "Erro ao atualizar lead" }, 500);
+  }
+
+  // Se ambos canais já estão validados, carimba verified_at
+  const { data: leadCheck } = await supabase
+    .from("leads")
+    .select("token_email_validado, token_telefone_validado, verified_at")
+    .eq("id", lead_id)
+    .single();
+  if (
+    leadCheck?.token_email_validado &&
+    leadCheck?.token_telefone_validado &&
+    !leadCheck?.verified_at
+  ) {
+    await supabase
+      .from("leads")
+      .update({ verified_at: new Date().toISOString() })
+      .eq("id", lead_id);
   }
 
   await supabase.from("funnel_events").insert({

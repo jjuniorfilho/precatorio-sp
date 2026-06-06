@@ -1,0 +1,1 @@
+DROP POLICY IF EXISTS "service_role full access lead_precatorios" ON public.lead_precatorios;

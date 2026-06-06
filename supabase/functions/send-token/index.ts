@@ -152,32 +152,44 @@ async function sendEmail(to: string, nome: string, codigo: string): Promise<void
 async function sendWhatsApp(telefone: string, codigo: string): Promise<void> {
   const accountSid = Deno.env.get("TWILIO_ACCOUNT_SID");
   const authToken = Deno.env.get("TWILIO_AUTH_TOKEN");
-  const fromNumber = Deno.env.get("TWILIO_PHONE_NUMBER");
+  const fromRaw = Deno.env.get("TWILIO_WHATSAPP_FROM");
 
-  if (!accountSid || !authToken || !fromNumber) {
+  if (!accountSid || !authToken || !fromRaw) {
     throw new Error("Variáveis Twilio não configuradas");
   }
 
+  // Garante prefixo whatsapp: no remetente, mesmo se o secret estiver sem
+  const from = fromRaw.startsWith("whatsapp:") ? fromRaw : `whatsapp:${fromRaw}`;
+
+  // Normalizar telefone para E.164 (Brasil por padrão se vier sem +)
   const digits = telefone.replace(/\D/g, "");
-  const to = digits.startsWith("55") ? `+${digits}` : `+55${digits}`;
+  const e164 = telefone.trim().startsWith("+")
+    ? `+${digits}`
+    : digits.startsWith("55")
+      ? `+${digits}`
+      : `+55${digits}`;
+  const to = `whatsapp:${e164}`;
+  console.log("[send-token] whatsapp from/to:", from, to);
 
   const url = `https://api.twilio.com/2010-04-01/Accounts/${accountSid}/Messages.json`;
+  const auth = btoa(`${accountSid}:${authToken}`);
+
   const res = await fetch(url, {
     method: "POST",
     headers: {
-      Authorization: `Basic ${btoa(`${accountSid}:${authToken}`)}`,
+      Authorization: `Basic ${auth}`,
       "Content-Type": "application/x-www-form-urlencoded",
     },
     body: new URLSearchParams({
       To: to,
-      From: fromNumber,
+      From: from,
       Body: `[Forjuris] Seu código: ${codigo}. Válido por 10 minutos.`,
-    }).toString(),
+    }),
   });
 
   if (!res.ok) {
-    const errBody = await res.text();
-    throw new Error(`Twilio error ${res.status}: ${errBody}`);
+    const body = await res.text();
+    throw new Error(`Twilio error ${res.status}: ${body}`);
   }
 }
 

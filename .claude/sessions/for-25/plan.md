@@ -4,11 +4,11 @@ Se você está trabalhando nesta feature, certifique-se de atualizar este arquiv
 
 ---
 
-## FASE 1 — Edge Function `search-by-document` [Não Iniciada ⏳]
+## FASE 1 — Edge Function `search-by-document` [Completada ✅]
 
 Backend completo antes de tocar no frontend.
 
-### 1.1 Criar estrutura da edge function [Não Iniciada ⏳]
+### 1.1 Criar estrutura da edge function [Completada ✅]
 
 Criar `supabase/functions/search-by-document/index.ts` com:
 - CORS headers (padrão de `send-token` e `verify-token`)
@@ -19,7 +19,7 @@ Criar `supabase/functions/search-by-document/index.ts` com:
 
 Função `json()` utilitária (copiar de `verify-token/index.ts`).
 
-### 1.2 Implementar DB-first (fast path) [Não Iniciada ⏳]
+### 1.2 Implementar DB-first (fast path) [Completada ✅]
 
 ```typescript
 const col = digits.length === 11 ? "cpf_titular" : "cnpj_titular"
@@ -39,7 +39,7 @@ if (data && data.length > 0) {
 }
 ```
 
-### 1.3 Implementar TJSP scraping [Não Iniciada ⏳]
+### 1.3 Implementar TJSP scraping [Completada ✅]
 
 **Passo crítico antes de codar**: fazer uma request manual ao TJSP para confirmar os parâmetros corretos. Comparar com `claude_legacy/busca_cessao.py` linhas 60–80.
 
@@ -75,7 +75,7 @@ async function fetchTjsp(documento: string): Promise<string | null> {
 }
 ```
 
-### 1.4 Implementar parse HTML + cross-reference + enriquecimento [Não Iniciada ⏳]
+### 1.4 Implementar parse HTML + cross-reference + enriquecimento [Completada ✅]
 
 ```typescript
 // Extrai DEPREs do HTML
@@ -121,7 +121,7 @@ const { data: publicRows } = await supabase
 return json({ data: publicRows, source: "tjsp" })
 ```
 
-### 1.5 Registrar `funnel_events` [Não Iniciada ⏳]
+### 1.5 Registrar `funnel_events` [Completada ✅]
 
 ```typescript
 await supabase.from("funnel_events").insert({
@@ -134,17 +134,16 @@ await supabase.from("funnel_events").insert({
 Registrar após retornar resultado (não bloquear a resposta).
 
 ### Comentários da Fase 1:
-- Confirmar params TJSP antes de implementar (passo 1.3 — testar manualmente via curl ou Python)
-- A regex de nome do beneficiário pode precisar de ajuste após ver o HTML real do TJSP
-- Testar a edge function localmente com `supabase functions serve`
+- Params TJSP confirmados via curl: dois passos necessários — GET main page (CSRF + JSESSIONID) → GET search.do?cbPesquisa=DOCPARTE
+- "Não encontrado" detectado via `id="mensagemRetorno"` com texto "Não existem informações disponíveis"
+- Regex extractNome usa 4 padrões heurísticos; pode precisar de ajuste com HTML real
+- CLI Supabase sem acesso ao projeto Lovable (403) — deploy via Lovable AI interface
 
 ---
 
-## FASE 2 — Integração Frontend [Não Iniciada ⏳]
+## FASE 2 — Integração Frontend [Completada ✅]
 
-Só iniciar após Fase 1 estar deployada e testada.
-
-### 2.1 Adicionar `fetchPrecatoriosByDoc()` em `src/lib/api/precatorios.ts` [Não Iniciada ⏳]
+### 2.1 Adicionar `fetchPrecatoriosByDoc()` em `src/lib/api/precatorios.ts` [Completada ✅]
 
 Adicionar ao final do arquivo existente (não substituir o que existe):
 
@@ -165,7 +164,7 @@ export async function fetchPrecatoriosByDoc(documento: string): Promise<DocSearc
 }
 ```
 
-### 2.2 Remover Mock #2 — `resultado.cpf.$cpf.tsx` [Não Iniciada ⏳]
+### 2.2 Remover Mock #2 — `resultado.cpf.$cpf.tsx` [Completada ✅]
 
 **Arquivo:** `frontend/src/routes/resultado.cpf.$cpf.tsx`
 
@@ -212,7 +211,7 @@ Componentes inline necessários:
 - [ ] Testar com CPF sem precatório → exibe "não encontrado" (via `results = []` no GroupedResults)
 - [ ] Network tab → chamada real à edge function (não mock)
 
-### 2.3 Remover Mock #3 — `resultado.cnpj.$cnpj.tsx` [Não Iniciada ⏳]
+### 2.3 Remover Mock #3 — `resultado.cnpj.$cnpj.tsx` [Completada ✅]
 
 **Arquivo:** `frontend/src/routes/resultado.cnpj.$cnpj.tsx`
 
@@ -257,9 +256,9 @@ function ResultadoCnpj() {
 
 ---
 
-## FASE 3 — Deploy e Validação End-to-End [Não Iniciada ⏳]
+## FASE 3 — Deploy e Validação End-to-End [Em Progresso ⏰]
 
-### 3.1 Deploy da edge function [Não Iniciada ⏳]
+### 3.1 Deploy da edge function [Em Progresso ⏰]
 
 ```bash
 supabase functions deploy search-by-document --project-ref nxkvfcrnocdxysqsuozj
