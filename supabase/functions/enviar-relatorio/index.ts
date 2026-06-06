@@ -263,39 +263,22 @@ async function sendEmail(
   }
 }
 
-// ─── Send WhatsApp via Twilio ─────────────────────────────────────────────────
+// ─── Agendar WhatsApp via fila comunicacoes_agendadas ────────────────────────
 
-async function sendWhatsApp(telefone: string, body: string): Promise<void> {
-  const accountSid = Deno.env.get("TWILIO_ACCOUNT_SID");
-  const authToken = Deno.env.get("TWILIO_AUTH_TOKEN");
-  const fromNumber = Deno.env.get("TWILIO_PHONE_NUMBER");
-
-  if (!accountSid || !authToken || !fromNumber) {
-    console.warn("[enviar-relatorio] Twilio não configurado — WhatsApp ignorado");
-    return;
-  }
-
-  const digits = telefone.replace(/\D/g, "");
-  const to = digits.startsWith("55") ? `+${digits}` : `+55${digits}`;
-
-  const url = `https://api.twilio.com/2010-04-01/Accounts/${accountSid}/Messages.json`;
-  const res = await fetch(url, {
-    method: "POST",
-    headers: {
-      Authorization: `Basic ${btoa(`${accountSid}:${authToken}`)}`,
-      "Content-Type": "application/x-www-form-urlencoded",
-    },
-    body: new URLSearchParams({
-      From: `whatsapp:${fromNumber}`,
-      To: `whatsapp:${to}`,
-      Body: body,
-    }),
+async function agendarWhatsApp(
+  supabase: ReturnType<typeof createClient>,
+  leadId: string,
+  mensagem: string,
+): Promise<void> {
+  const { error } = await supabase.from("comunicacoes_agendadas").insert({
+    lead_id: leadId,
+    canal: "whatsapp",
+    tipo: "relatorio",
+    agendado_para: new Date().toISOString(),
+    status: "pendente",
+    payload: { body: mensagem },
   });
-
-  if (!res.ok) {
-    const err = await res.text();
-    console.warn("[enviar-relatorio] Twilio error:", err);
-  }
+  if (error) console.warn("[enviar-relatorio] fila WhatsApp error:", error);
 }
 
 // ─── Main handler ─────────────────────────────────────────────────────────────
@@ -379,11 +362,9 @@ Deno.serve(async (req) => {
     return json({ error: "Falha ao enviar email" }, 500);
   }
 
-  // ── 6. Envia WhatsApp (best-effort — não bloqueia resposta) ───────────────
+  // ── 6. Agenda WhatsApp via fila (processado por processar-comunicacoes) ──────
   const whatsappText = buildWhatsAppText(lead as Lead, allPrecatorios, titularNome, docMasked);
-  sendWhatsApp(lead.telefone, whatsappText).catch((e) =>
-    console.warn("[enviar-relatorio] whatsapp error:", e),
-  );
+  await agendarWhatsApp(supabase, lead.id, whatsappText);
 
   // ── 7. Registra evento ────────────────────────────────────────────────────
   supabase.from("funnel_events").insert({
