@@ -1,0 +1,95 @@
+// FOR-71 — Worker crawler e-SAJ. Loop: claim → crawl → persist → classify → complete/fail.
+import { config, assertConfig, sleep } from "./config.js";
+import { getSession } from "./esaj.js";
+import { crawlSeed } from "./crawl.js";
+import { supabase, claimJobs, completeJob, failJob, classifyProcesso, persistTree } from "./supabase.js";
+import type { QueueJob } from "./types.js";
+
+async function rotinaHabilitada(): Promise<boolean> {
+  const { data } = await supabase.from("coleta_config").select("enabled").eq("rotina", "crawler_esaj").maybeSingle();
+  return data ? (data as { enabled: boolean }).enabled : true; // default ligado
+}
+
+/** Executa fn sobre items com no máximo `limit` em paralelo. */
+async function runPool<T>(items: T[], limit: number, fn: (item: T) => Promise<void>): Promise<void> {
+  let i = 0;
+  const workers = Array.from({ length: Math.min(limit, items.length) }, async () => {
+    while (i < items.length) {
+      const idx = i++;
+      await fn(items[idx]!);
+    }
+  });
+  await Promise.all(workers);
+}
+
+async function processBatch(jobs: QueueJob[]): Promise<{ ok: number; erro: number }> {
+  const session = await getSession();
+  let ok = 0, erro = 0;
+
+  await runPool(jobs, config.concurrency, async (job) => {
+    try {
+      const tree = await crawlSeed(job.processo_codigo, session);
+      const processoId = await persistTree(tree);
+      await classifyProcesso(processoId);
+      await completeJob(job.id);
+      ok++;
+    } catch (err) {
+      await failJob(job.id, String(err)).catch(() => {});
+      erro++;
+      console.error(`[fail] job=${job.id} seed=${job.processo_codigo}:`, err);
+    }
+    await sleep(config.delayMs);
+  });
+
+  return { ok, erro };
+}
+
+async function tick(): Promise<number> {
+  if (!(await rotinaHabilitada())) {
+    console.log("[paused] crawler_esaj desabilitado em coleta_config");
+    return 0;
+  }
+  const jobs = await claimJobs(config.claimBatch);
+  if (jobs.length === 0) return 0;
+
+  const startedAt = new Date().toISOString();
+  const { data: run } = await supabase
+    .from("coleta_runs").insert({ rotina: "crawler_esaj", status: "running", started_at: startedAt })
+    .select("id").single();
+
+  const t0 = Date.now();
+  const { ok, erro } = await processBatch(jobs);
+
+  if (run) {
+    await supabase.from("coleta_runs").update({
+      status: erro === 0 ? "sucesso" : ok === 0 ? "erro" : "erro_parcial",
+      finished_at: new Date().toISOString(),
+      itens_ok: ok, itens_erro: erro, duracao_ms: Date.now() - t0,
+    }).eq("id", (run as { id: string }).id);
+  }
+  console.log(`[batch] claimed=${jobs.length} ok=${ok} erro=${erro} (${Date.now() - t0}ms)`);
+  return jobs.length;
+}
+
+async function main(): Promise<void> {
+  assertConfig();
+  console.log(`worker-crawler iniciando · batch=${config.claimBatch} conc=${config.concurrency} loop=${config.loopEnabled}`);
+
+  if (!config.loopEnabled) { await tick(); return; }
+
+  // loop contínuo; quando a fila esvazia, dorme POLL_EMPTY_MS
+  for (;;) {
+    let processed = 0;
+    try {
+      processed = await tick();
+    } catch (err) {
+      console.error("[tick] erro:", err);
+    }
+    if (processed === 0) await sleep(config.pollEmptyMs);
+  }
+}
+
+main().catch((err) => {
+  console.error("fatal:", err);
+  process.exit(1);
+});
