@@ -12,10 +12,14 @@ import { config, sleep } from "./config.js";
 
 const isCumprimento = (texto: string) => /cumprimento|execu[çc][ãa]o de senten/i.test(texto);
 
-/** lê o código interno da própria página (hidden comum no e-SAJ). */
+/** lê o código interno da própria página. O e-SAJ atual não traz hidden inputs;
+ * o código/foro internos vêm em `saj.env.queryString` (validado em HTML real). */
 function selfCodigo($: ReturnType<typeof load>): { codigo: string; foro: string } | null {
-  const codigo = ($("#processoSelecionado").attr("value") || $("input[name='processo.codigo']").attr("value") || "").trim();
-  const foro = ($("input[name='processo.foro']").attr("value") || "").trim();
+  const qs = $.html().match(/saj\.env\.queryString\s*=\s*'([^']+)'/)?.[1] ?? "";
+  const codigo = (qs.match(/processo\.codigo=([^&]+)/)?.[1]
+    || $("#processoSelecionado").attr("value") || $("input[name='processo.codigo']").attr("value") || "").trim();
+  const foro = (qs.match(/processo\.foro=([^&]+)/)?.[1]
+    || $("input[name='processo.foro']").attr("value") || "").trim();
   return codigo ? { codigo, foro } : null;
 }
 

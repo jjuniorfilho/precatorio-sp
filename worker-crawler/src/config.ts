@@ -1,5 +1,10 @@
 // Configuração via env (ver .env.example). Defaults conservadores.
 import "dotenv/config"; // carrega .env (Node 18 não tem --env-file)
+// Node < 20 não tem `File` global (cheerio/undici exigem). Polyfill via undici.
+import { File as UndiciFile } from "undici";
+if (!(globalThis as { File?: unknown }).File) {
+  (globalThis as { File?: unknown }).File = UndiciFile;
+}
 
 function num(name: string, def: number): number {
   const v = process.env[name];
