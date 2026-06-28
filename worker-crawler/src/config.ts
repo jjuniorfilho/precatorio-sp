@@ -1,4 +1,6 @@
 // Configuração via env (ver .env.example). Defaults conservadores.
+import "dotenv/config"; // carrega .env (Node 18 não tem --env-file)
+
 function num(name: string, def: number): number {
   const v = process.env[name];
   const n = v ? Number(v) : NaN;

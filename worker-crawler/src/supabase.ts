@@ -1,8 +1,14 @@
 // Cliente Supabase (service_role) + RPCs da fila (FOR-73) + persistência (FOR-69).
 import { createClient } from "@supabase/supabase-js";
 import { createHash } from "node:crypto";
+import WebSocketImpl from "ws";
 import { config } from "./config.js";
 import type { ProcessoTree, QueueJob } from "./types.js";
+
+// Node < 22 não tem WebSocket nativo (supabase realtime exige). Fornece o `ws`.
+if (!(globalThis as { WebSocket?: unknown }).WebSocket) {
+  (globalThis as { WebSocket?: unknown }).WebSocket = WebSocketImpl as unknown;
+}
 
 // Usa service_role se houver; senão anon key + login admin (Opção B).
 const usingServiceRole = !!config.serviceRoleKey;
