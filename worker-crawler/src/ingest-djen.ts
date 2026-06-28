@@ -6,7 +6,31 @@
 //   tsx src/ingest-djen.ts --date=2026-06-26
 //   tsx src/ingest-djen.ts --from=2025-01-01 --to=2026-06-27 --backfill
 import { supabase, ensureAuth } from "./supabase.js";
+import { advogadosFromItem, normNome } from "./comunica.js";
 import { config, sleep, assertConfig } from "./config.js";
+
+/** Persiste os advogados do DJEN (fonte de verdade nome+OAB+UF) p/ o CNJ flagueado.
+ * Dedup por chave (oab_normalizada || NOME); upsert idempotente. Best-effort. */
+async function persistAdvogadosDjen(sb: any, cnj: string, item: unknown): Promise<void> {
+  const advs = advogadosFromItem(item as Parameters<typeof advogadosFromItem>[0]);
+  if (!advs.length) return;
+  const cnjNorm = cnj.replace(/\D/g, "");
+  const vistos = new Set<string>();
+  const rows = [];
+  for (const a of advs) {
+    const chave = a.oab_normalizada || normNome(a.nome).toUpperCase();
+    if (vistos.has(chave)) continue;
+    vistos.add(chave);
+    rows.push({
+      cnj, cnj_normalizado: cnjNorm, advogado_nome: a.nome,
+      oab_numero: a.oab_numero, uf_oab: a.uf_oab, oab: a.oab,
+      oab_normalizada: a.oab_normalizada, chave_advogado: chave,
+    });
+  }
+  if (rows.length) {
+    await sb.from("djen_advogados").upsert(rows, { onConflict: "cnj_normalizado,chave_advogado", ignoreDuplicates: true });
+  }
+}
 
 const API = "https://comunicaapi.pje.jus.br/api/v1/comunicacao";
 const HEADERS = {
@@ -89,6 +113,8 @@ export async function ingestDay(date: string, opts: { backfill?: boolean } = {})
           if (!(classeOk && passivoPublico)) continue;
           seen.add(cnj);
           flagueados++;
+          // DJEN-first: estrutura os advogados (nome+OAB+UF) já na ingestão.
+          await persistAdvogadosDjen(sb, cnj, it);
           // O `link` do DJEN aponta p/ o Diário (www.dje.tjsp.jus.br), não p/ o sistema.
           // Logo: só parqueia quando é CLARAMENTE eproc; senão enfileira p/ o crawler e-SAJ
           // (que busca por CNJ; processos eproc-only retornam "não encontrado" e seguem).

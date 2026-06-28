@@ -8,6 +8,7 @@ import {
   incidenteLinks, processoPrincLink, firstProcessoLink, tipoFromTexto,
 } from "./parse.js";
 import { fetchAdvogadosByCnj, normNome } from "./comunica.js";
+import { djenAdvogadosByCnj } from "./supabase.js";
 import type { CumprimentoData, IncidenteData, ProcessoTree } from "./types.js";
 import { config, sleep } from "./config.js";
 
@@ -152,11 +153,14 @@ export async function crawlSeed(seed: string, session?: Session): Promise<Proces
 
   // Enriquecimento de OAB (e-SAJ não traz OAB; vem do DJEN). As publicações estão
   // sob o CNJ do seed (o número que o DJEN flagou) — que pode diferir do CNJ da raiz
-  // quando há subida ao processo de conhecimento. Consulta ambos e mescla. Casa por
-  // nome normalizado. Best-effort: fora da VPS a Comunica dá 403 → mapa vazio.
+  // quando há subida ao processo de conhecimento. Considera ambos. Casa por nome normalizado.
+  // DJEN-first: lê os advogados já estruturados na ingestão; só vai à API ao vivo se o
+  // banco não tiver nada (ex.: processo que não veio do DJEN). Best-effort.
   const cnjsParaOab = [...new Set([isCnj(seed) ? seed : null, capa.cnj].filter(Boolean) as string[])];
-  const oabMap = new Map<string, { oab: string; oab_normalizada: string }>();
-  for (const c of cnjsParaOab) for (const [k, v] of await fetchAdvogadosByCnj(c)) if (!oabMap.has(k)) oabMap.set(k, v);
+  const oabMap = await djenAdvogadosByCnj(cnjsParaOab.map((c) => c.replace(/\D/g, "")));
+  if (oabMap.size === 0) {
+    for (const c of cnjsParaOab) for (const [k, v] of await fetchAdvogadosByCnj(c)) if (!oabMap.has(k)) oabMap.set(k, v);
+  }
   if (oabMap.size) {
     for (const c of cumprimentos) {
       for (const inc of c.incidentes) {

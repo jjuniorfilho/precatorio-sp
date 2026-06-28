@@ -3,6 +3,7 @@ import { createClient } from "@supabase/supabase-js";
 import { createHash } from "node:crypto";
 import WebSocketImpl from "ws";
 import { config } from "./config.js";
+import { normNome } from "./comunica.js";
 import type { ProcessoTree, QueueJob } from "./types.js";
 
 // Node < 22 não tem WebSocket nativo (supabase realtime exige). Fornece o `ws`.
@@ -31,6 +32,22 @@ export async function ensureAuth(): Promise<void> {
 
 const cnjNorm = (cnj: string | null) => (cnj ? cnj.replace(/\D/g, "") : null);
 const md5 = (s: string) => createHash("md5").update(s).digest("hex");
+
+/** DJEN-first: lê os advogados já estruturados na ingestão p/ os CNJs dados.
+ * Retorna nome(normalizado) → OAB. Mapa vazio se a tabela não tiver nada (cai no fallback). */
+export async function djenAdvogadosByCnj(cnjsNorm: string[]): Promise<Map<string, { oab: string; oab_normalizada: string }>> {
+  const out = new Map<string, { oab: string; oab_normalizada: string }>();
+  const list = [...new Set(cnjsNorm.filter(Boolean))];
+  if (!list.length) return out;
+  const { data, error } = await supabase
+    .from("djen_advogados").select("advogado_nome, oab, oab_normalizada").in("cnj_normalizado", list);
+  if (error) return out; // tabela ausente / RLS → fallback ao vivo
+  for (const r of (data ?? []) as Array<{ advogado_nome: string; oab: string | null; oab_normalizada: string | null }>) {
+    if (!r.oab || !r.oab_normalizada) continue;
+    out.set(normNome(r.advogado_nome), { oab: r.oab, oab_normalizada: r.oab_normalizada });
+  }
+  return out;
+}
 
 // ---- RPCs da fila (FOR-73) --------------------------------------------------
 export async function claimJobs(limit: number): Promise<QueueJob[]> {
