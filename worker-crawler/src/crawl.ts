@@ -4,7 +4,7 @@ import {
   getSession, searchByCnj, showByCodigo, isCnj, parseCnj, type Session,
 } from "./esaj.js";
 import {
-  load, extractCapa, extractPartes, extractAndamentos, extractDepre,
+  load, extractCapa, extractPartes, extractAndamentos, extractDepre, extractCnj,
   incidenteLinks, processoPrincLink, firstProcessoLink, tipoFromTexto,
 } from "./parse.js";
 import { fetchAdvogadosByCnj, normNome } from "./comunica.js";
@@ -122,7 +122,8 @@ export async function crawlSeed(seed: string, session?: Session): Promise<Proces
         andamentos: extractAndamentos($c),
       });
     }
-    cumprimentos.push({ processo_codigo: c.codigo, cnj: null, incidentes });
+    // CNJ do cumprimento vem no texto do link (a folha não traz #numeroProcesso).
+    cumprimentos.push({ processo_codigo: c.codigo, cnj: extractCnj(c.texto), incidentes });
   }
 
   // incidentes pendurados direto na raiz (sem cumprimento) → cumprimento sintético
