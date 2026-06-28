@@ -89,16 +89,18 @@ export async function ingestDay(date: string, opts: { backfill?: boolean } = {})
           if (!(classeOk && passivoPublico)) continue;
           seen.add(cnj);
           flagueados++;
-          const sistema = sistemaFromLink(it.link ?? null);
-          if (sistema === "esaj") {
-            const { error } = await sb.rpc("enqueue_crawler_job", { p_processo_codigo: cnj, p_origem: origem });
-            if (!error) enfileirados++;
-          } else if (sistema === "eproc") {
+          // O `link` do DJEN aponta p/ o Diário (www.dje.tjsp.jus.br), não p/ o sistema.
+          // Logo: só parqueia quando é CLARAMENTE eproc; senão enfileira p/ o crawler e-SAJ
+          // (que busca por CNJ; processos eproc-only retornam "não encontrado" e seguem).
+          if (sistemaFromLink(it.link ?? null) === "eproc") {
             eprocCount++;
             await sb.from("eproc_pendentes").upsert({
               cnj, numero_processo: it.numero_processo ?? null, link: it.link ?? null,
               nome_orgao: it.nomeOrgao ?? null, nome_classe: it.nomeClasse ?? null, data_disponibilizacao: date,
             }, { onConflict: "cnj", ignoreDuplicates: true });
+          } else {
+            const { error } = await sb.rpc("enqueue_crawler_job", { p_processo_codigo: cnj, p_origem: origem });
+            if (!error) enfileirados++;
           }
         }
         if (items.length < pageSize) break;
