@@ -112,7 +112,7 @@ export async function persistTree(tree: ProcessoTree): Promise<string> {
         if (inc.parte_ativa.advogados.length === 0) {
           partesRows.push({
             incidente_id: incidenteId, processo_id: processoId, papel: "ativa",
-            nome: inc.parte_ativa.nome, documento: inc.parte_ativa.documento, fonte: "esaj",
+            nome: inc.parte_ativa.nome, documento: inc.parte_ativa.documento, sem_oab: false, fonte: "esaj",
           });
         }
         for (const adv of inc.parte_ativa.advogados) {
@@ -127,7 +127,7 @@ export async function persistTree(tree: ProcessoTree): Promise<string> {
       if (inc.parte_passiva) {
         partesRows.push({
           incidente_id: incidenteId, processo_id: processoId, papel: "passiva",
-          nome: inc.parte_passiva.nome, fonte: "esaj",
+          nome: inc.parte_passiva.nome, sem_oab: false, fonte: "esaj",
         });
       }
       if (partesRows.length) {
