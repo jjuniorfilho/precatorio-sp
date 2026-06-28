@@ -35,3 +35,29 @@ Processo gerenciado por **systemd** ou **pm2**. Env mínimo: `SUPABASE_URL`, `SU
 ## Referências
 - Doc técnica: `../docs/business-context/crawler-tjsp-esaj/Documentacao_Crawler_TJSP_eSAJ.md`
 - Schema: FOR-69 · Fila/RPCs: FOR-73 · Classificação: FOR-72
+
+## Ingestão DJEN na VPS (FOR-70) — contorna 403 de IP
+A API do Comunica/PJe bloqueia IP de datacenter da edge function (403). Por isso a
+ingestão roda **aqui na VPS** (mesma do projeto Vitis/RN, IP aceito pelo PJe):
+
+```bash
+npm run ingest                              # ontem
+npm run ingest -- --date=2026-06-27         # um dia específico
+npm run ingest -- --from=2025-01-01 --to=2026-06-27 --backfill   # backfill (loop por dia)
+# produção: node dist/ingest-djen.js --date=...
+```
+Lê `coleta_config.caderno_dje` (classes/itens_por_pagina), flag SP por parte passiva,
+enfileira e-SAJ em `crawler_queue` (RPC `enqueue_crawler_job`), parqueia eproc em
+`eproc_pendentes`, grava `djen_dias`/`coleta_runs`. Idempotente por dia.
+
+### Agendar o diário (cron da VPS, ex.: 05:10 BRT)
+```cron
+10 8 * * *  cd /caminho/worker-crawler && /usr/bin/node dist/ingest-djen.js >> ingest.log 2>&1
+```
+(08 UTC ≈ 05 BRT). Mantém o crawler (`node dist/index.js`) rodando em paralelo via pm2/systemd.
+
+### Desligar o cron da edge function (já que a ingestão agora é na VPS)
+No SQL Editor:
+```sql
+SELECT cron.unschedule('caderno-dje-diario');
+```
