@@ -2,7 +2,7 @@
 import { config, assertConfig, sleep } from "./config.js";
 import { getSession } from "./esaj.js";
 import { crawlSeed } from "./crawl.js";
-import { supabase, claimJobs, completeJob, failJob, classifyProcesso, persistTree } from "./supabase.js";
+import { supabase, ensureAuth, claimJobs, completeJob, failJob, classifyProcesso, persistTree } from "./supabase.js";
 import type { QueueJob } from "./types.js";
 
 async function rotinaHabilitada(): Promise<boolean> {
@@ -73,6 +73,7 @@ async function tick(): Promise<number> {
 
 async function main(): Promise<void> {
   assertConfig();
+  await ensureAuth();
   console.log(`worker-crawler iniciando · batch=${config.claimBatch} conc=${config.concurrency} loop=${config.loopEnabled}`);
 
   if (!config.loopEnabled) { await tick(); return; }

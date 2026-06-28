@@ -4,9 +4,24 @@ import { createHash } from "node:crypto";
 import { config } from "./config.js";
 import type { ProcessoTree, QueueJob } from "./types.js";
 
-export const supabase = createClient(config.supabaseUrl, config.serviceRoleKey, {
-  auth: { persistSession: false },
+// Usa service_role se houver; senão anon key + login admin (Opção B).
+const usingServiceRole = !!config.serviceRoleKey;
+export const supabase = createClient(config.supabaseUrl, config.serviceRoleKey || config.anonKey, {
+  auth: { persistSession: false, autoRefreshToken: !usingServiceRole },
 });
+
+let _authed = false;
+/** Garante sessão: service_role não precisa; admin faz signInWithPassword uma vez. */
+export async function ensureAuth(): Promise<void> {
+  if (usingServiceRole || _authed) return;
+  const { error } = await supabase.auth.signInWithPassword({
+    email: config.adminEmail,
+    password: config.adminPassword,
+  });
+  if (error) throw new Error(`login admin falhou: ${error.message}`);
+  _authed = true;
+  console.log(`autenticado como admin (${config.adminEmail})`);
+}
 
 const cnjNorm = (cnj: string | null) => (cnj ? cnj.replace(/\D/g, "") : null);
 const md5 = (s: string) => createHash("md5").update(s).digest("hex");

@@ -4,7 +4,7 @@
 //   tsx src/ingest-djen.ts                      -> ontem
 //   tsx src/ingest-djen.ts --date=2026-06-27
 //   tsx src/ingest-djen.ts --from=2025-01-01 --to=2026-06-27 --backfill
-import { supabase } from "./supabase.js";
+import { supabase, ensureAuth } from "./supabase.js";
 import { config, sleep, assertConfig } from "./config.js";
 
 const API = "https://comunicaapi.pje.jus.br/api/v1/comunicacao";
@@ -101,6 +101,7 @@ function yesterdayIso(): string { return new Date(Date.now() - 864e5).toISOStrin
 
 async function main() {
   assertConfig();
+  await ensureAuth();
   const backfill = process.argv.includes("--backfill");
   const from = arg("from"), to = arg("to"), date = arg("date");
   const dias = from && to ? [...dateRange(from, to)] : [date ?? yesterdayIso()];
