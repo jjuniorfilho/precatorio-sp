@@ -66,7 +66,13 @@ Deno.serve(async (req) => {
     for (;;) {
       if (Date.now() - t0 > TIME_BUDGET_MS) { parcial = true; break; }
       const url = `${API}?siglaTribunal=TJSP&dataDisponibilizacaoInicio=${date}&dataDisponibilizacaoFim=${date}&pagina=${pagina}&itensPorPagina=${pageSize}`;
-      const res = await fetch(url, { headers: { "User-Agent": "Mozilla/5.0", Accept: "application/json" }, signal: AbortSignal.timeout(20_000) });
+      const res = await fetch(url, { headers: {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+        "Accept": "application/json, text/plain, */*",
+        "Accept-Language": "pt-BR,pt;q=0.9",
+        "Referer": "https://comunica.pje.jus.br/",
+        "Origin": "https://comunica.pje.jus.br",
+      }, signal: AbortSignal.timeout(20_000) });
       if (!res.ok) throw new Error(`Comunica HTTP ${res.status} (pagina ${pagina})`);
       const payload = await res.json();
       const items: any[] = payload.items ?? [];
