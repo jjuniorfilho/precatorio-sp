@@ -114,8 +114,9 @@ Deno.serve(async (req) => {
   const seen = new Set<string>(); const merged = items.filter((x) => { const k = x.numero_depre ?? x.cnj ?? Math.random().toString(); if (seen.has(k)) return false; seen.add(k); return true; });
 
   if (merged.length > 0) {
-    logBusca({ tipo: tipoBusca, source: "db", found: true, count: merged.length });
-    return json({ flag: "encontrado", source: "db", items: merged });
+    const ramo = computeRamo(merged);
+    logBusca({ tipo: tipoBusca, source: "db", found: true, count: merged.length, ramo });
+    return json({ flag: "encontrado", ramo, source: "db", items: merged });
   }
 
   // ---- miss → DOCPARTE no e-SAJ (só descobre + enfileira) ----
@@ -128,5 +129,13 @@ Deno.serve(async (req) => {
     }
   }
   logBusca({ tipo: tipoBusca, source: "db", found: false });
-  return json({ flag: "nao_encontrado" });
+  return json({ flag: "nao_encontrado", ramo: "nao_encontrado" });
 });
+
+/** Deriva o ramo da resposta pública (FOR-75) a partir dos itens mesclados. */
+function computeRamo(items: any[]): "com_saldo" | "possivelmente_pago" | "em_formacao" {
+  const comSaldo = items.some((x) => (x.saldo && x.saldo > 0) || (x.oficio_expedido && x.valor_acao));
+  if (comSaldo) return "com_saldo";
+  if (items.length > 0 && items.every((x) => x.possivelmente_pago)) return "possivelmente_pago";
+  return "em_formacao";
+}
