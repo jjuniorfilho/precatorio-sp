@@ -56,6 +56,14 @@ export function processoPrincLink($: $): { codigo: string; foro: string } | null
   return codigoForoFromHref(href);
 }
 
+/** 1º link de processo numa página de listagem (a.incidente cobre incidentes;
+ * aqui pegamos qualquer link de ficha — fallback quando a busca não redireciona
+ * direto ao detalhe e cai numa lista de resultados). */
+export function firstProcessoLink($: $): { codigo: string; foro: string } | null {
+  const href = $("a[href*='show.do'][href*='processo.codigo']").first().attr("href");
+  return codigoForoFromHref(href);
+}
+
 /** Links de incidentes/cumprimentos (a.incidente) com texto da classe. */
 export function incidenteLinks($: $): Array<{ codigo: string; foro: string; texto: string }> {
   const out: Array<{ codigo: string; foro: string; texto: string }> = [];
