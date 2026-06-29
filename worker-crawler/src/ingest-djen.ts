@@ -122,7 +122,16 @@ export async function ingestDay(date: string, opts: { backfill?: boolean } = {})
           // Logo: só parqueia quando é CLARAMENTE eproc; senão enfileira p/ o crawler e-SAJ
           // (que busca por CNJ; processos eproc-only retornam "não encontrado" e seguem).
           if (isDepre(cnj)) {
-            depreCount++; // não champeável no cpopg; advogados já persistidos acima
+            depreCount++;
+            // .0500 (precatório): não é champeável no cpopg. Persiste o registro para
+            // relacionar depois com o incidente que referencie esse número (via numero_depre,
+            // extraído dos andamentos). O saldo vem da base `precatorios` por processo_depre.
+            await sb.from("djen_depre").upsert({
+              cnj, cnj_normalizado: cnj.replace(/\D/g, ""),
+              numero_processo: it.numero_processo ?? null, link: it.link ?? null,
+              nome_orgao: it.nomeOrgao ?? null, nome_classe: it.nomeClasse ?? null,
+              data_disponibilizacao: date,
+            }, { onConflict: "cnj_normalizado", ignoreDuplicates: true });
           } else if (sistemaFromLink(it.link ?? null) === "eproc") {
             eprocCount++;
             await sb.from("eproc_pendentes").upsert({
