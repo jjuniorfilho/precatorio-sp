@@ -56,6 +56,9 @@ function esfera(nome: string): "Estadual" | "Municipal" | "Outro" {
 }
 const sistemaFromLink = (link: string | null): "esaj" | "eproc" | "outro" =>
   !link ? "outro" : /esaj\.tjsp\.jus\.br/i.test(link) ? "esaj" : /eproc.*\.tjsp\.jus\.br/i.test(link) ? "eproc" : "outro";
+// DEPRE/precatório (.0500): vive no sistema de precatórios, não no cpopg de 1º grau →
+// não é champeável pelo crawler e-SAJ. Não enfileira (evita churn de retries).
+const isDepre = (cnj: string): boolean => /\.8\.26\.0500$/.test(cnj);
 const norm = (s: string) => (s ?? "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().trim();
 
 /** GET de uma página da Comunica com retry/backoff (a API dá 500 esporádico). */
@@ -78,25 +81,25 @@ async function fetchPage(date: string, parte: string, pagina: number, pageSize: 
   throw new Error(`Comunica falhou (parte=${parte} pagina=${pagina}): ${String(lastErr)}`);
 }
 
-export async function ingestDay(date: string, opts: { backfill?: boolean } = {}): Promise<{ date: string; status: string; total: number; flagueados: number; enfileirados: number; eproc: number }> {
+export async function ingestDay(date: string, opts: { backfill?: boolean } = {}): Promise<{ date: string; status: string; total: number; flagueados: number; enfileirados: number; eproc: number; depre: number }> {
   const origem = opts.backfill ? "backfill" : "dje_diario";
   const sb = supabase as any;
 
   const { data: cfg } = await sb.from("coleta_config").select("enabled, params").eq("rotina", "caderno_dje").maybeSingle();
-  if (cfg && cfg.enabled === false) return { date, status: "skipped", total: 0, flagueados: 0, enfileirados: 0, eproc: 0 };
+  if (cfg && cfg.enabled === false) return { date, status: "skipped", total: 0, flagueados: 0, enfileirados: 0, eproc: 0, depre: 0 };
   const params = (cfg?.params ?? {}) as { classes_relevantes?: string[]; itens_por_pagina?: number; partes_alvo?: string[] };
   const classes = (params.classes_relevantes ?? []).map(norm);
   const partes = params.partes_alvo?.length ? params.partes_alvo : PARTES_ALVO_DEFAULT;
   const pageSize = params.itens_por_pagina ?? 100;
 
   const { data: dia } = await sb.from("djen_dias").select("status").eq("data", date).maybeSingle();
-  if (dia?.status === "ok") return { date, status: "ja_processado", total: 0, flagueados: 0, enfileirados: 0, eproc: 0 };
+  if (dia?.status === "ok") return { date, status: "ja_processado", total: 0, flagueados: 0, enfileirados: 0, eproc: 0, depre: 0 };
 
   await sb.from("djen_dias").upsert({ data: date, status: "parcial", erro: null }, { onConflict: "data" });
   const { data: run } = await sb.from("coleta_runs").insert({ rotina: origem === "backfill" ? "backfill" : "caderno_dje", status: "running" }).select("id").single();
 
   const t0 = Date.now();
-  let total = 0, flagueados = 0, enfileirados = 0, eprocCount = 0;
+  let total = 0, flagueados = 0, enfileirados = 0, eprocCount = 0, depreCount = 0;
   const seen = new Set<string>(); // dedupe de CNJ entre as várias partes-alvo
   try {
     for (const parte of partes) {
@@ -118,7 +121,9 @@ export async function ingestDay(date: string, opts: { backfill?: boolean } = {})
           // O `link` do DJEN aponta p/ o Diário (www.dje.tjsp.jus.br), não p/ o sistema.
           // Logo: só parqueia quando é CLARAMENTE eproc; senão enfileira p/ o crawler e-SAJ
           // (que busca por CNJ; processos eproc-only retornam "não encontrado" e seguem).
-          if (sistemaFromLink(it.link ?? null) === "eproc") {
+          if (isDepre(cnj)) {
+            depreCount++; // não champeável no cpopg; advogados já persistidos acima
+          } else if (sistemaFromLink(it.link ?? null) === "eproc") {
             eprocCount++;
             await sb.from("eproc_pendentes").upsert({
               cnj, numero_processo: it.numero_processo ?? null, link: it.link ?? null,
@@ -136,8 +141,8 @@ export async function ingestDay(date: string, opts: { backfill?: boolean } = {})
     }
 
     await sb.from("djen_dias").upsert({ data: date, status: "ok", total, flagueados, enfileirados, eproc: eprocCount, processado_em: new Date().toISOString() }, { onConflict: "data" });
-    if (run) await sb.from("coleta_runs").update({ status: "sucesso", finished_at: new Date().toISOString(), itens_ok: enfileirados, itens_erro: 0, duracao_ms: Date.now() - t0, detalhe: { date, total, flagueados, enfileirados, eproc: eprocCount } }).eq("id", run.id);
-    return { date, status: "ok", total, flagueados, enfileirados, eproc: eprocCount };
+    if (run) await sb.from("coleta_runs").update({ status: "sucesso", finished_at: new Date().toISOString(), itens_ok: enfileirados, itens_erro: 0, duracao_ms: Date.now() - t0, detalhe: { date, total, flagueados, enfileirados, eproc: eprocCount, depre: depreCount } }).eq("id", run.id);
+    return { date, status: "ok", total, flagueados, enfileirados, eproc: eprocCount, depre: depreCount };
   } catch (err) {
     await sb.from("djen_dias").upsert({ data: date, status: "erro", erro: String(err) }, { onConflict: "data" });
     if (run) await sb.from("coleta_runs").update({ status: "erro", finished_at: new Date().toISOString(), detalhe: { date, erro: String(err) } }).eq("id", run.id);
@@ -166,7 +171,7 @@ async function main() {
   for (const d of dias) {
     try {
       const r = await ingestDay(d, { backfill });
-      console.log(`[${d}] ${r.status} total=${r.total} flag=${r.flagueados} fila=${r.enfileirados} eproc=${r.eproc}`);
+      console.log(`[${d}] ${r.status} total=${r.total} flag=${r.flagueados} fila=${r.enfileirados} eproc=${r.eproc} depre=${r.depre}`);
     } catch (e) {
       console.error(`[${d}] ERRO:`, e);
     }
