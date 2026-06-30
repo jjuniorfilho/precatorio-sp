@@ -74,6 +74,11 @@ async function tick(): Promise<number> {
 async function main(): Promise<void> {
   assertConfig();
   await ensureAuth();
+  // Self-heal: reinícios (ex.: max-memory-restart do pm2) deixam runs "running"
+  // órfãos. Na subida, fecha os pendentes do crawler como erro.
+  await supabase.from("coleta_runs")
+    .update({ status: "erro", finished_at: new Date().toISOString() })
+    .eq("rotina", "crawler_esaj").eq("status", "running");
   console.log(`worker-crawler iniciando · batch=${config.claimBatch} conc=${config.concurrency} loop=${config.loopEnabled}`);
 
   if (!config.loopEnabled) { await tick(); return; }
