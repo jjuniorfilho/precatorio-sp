@@ -36,6 +36,14 @@ const CNJ_RE = /\d{7}-\d{2}\.\d{4}\.\d\.\d{2}\.\d{4}/;
 /** Extrai um CNJ de um texto livre (ex.: texto do link do cumprimento). */
 export const extractCnj = (text: string | null | undefined): string | null => (text ?? "").match(CNJ_RE)?.[0] ?? null;
 
+/** CNJs de origem citados na ficha de um requisitório (.0500): "Outros números" da
+ * capa + "Processo de Origem: ..." nas movimentações. Exclui o próprio .0500 e dedup. */
+export function extractOrigemCnjs($: $): string[] {
+  const text = $("body").text();
+  return [...new Set([...text.matchAll(/\d{7}-\d{2}\.\d{4}\.\d\.\d{2}\.\d{4}/g)].map((m) => m[0]))]
+    .filter((c) => !/\.8\.26\.0500$/.test(c));
+}
+
 /** href do e-SAJ → { codigo, foro }. */
 export function codigoForoFromHref(href: string | undefined): { codigo: string; foro: string } | null {
   if (!href) return null;

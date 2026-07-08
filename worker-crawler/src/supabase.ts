@@ -67,6 +67,11 @@ export async function classifyProcesso(processoId: string): Promise<void> {
   const { error } = await supabase.rpc("classify_processo", { p_processo_id: processoId });
   if (error) throw new Error(`classify_processo: ${error.message}`);
 }
+/** Enfileira um CNJ (ex.: processo de origem de um requisitório). Best-effort. */
+export async function enqueueJob(cnj: string, origem: string): Promise<void> {
+  const { error } = await supabase.rpc("enqueue_crawler_job", { p_processo_codigo: cnj, p_origem: origem });
+  if (error) console.error(`enqueue_crawler_job(${cnj}): ${error.message}`);
+}
 
 async function upsertReturningId(table: string, row: Record<string, unknown>, onConflict: string): Promise<string> {
   const { data, error } = await supabase.from(table).upsert(row, { onConflict }).select("id").single();
@@ -170,4 +175,42 @@ export async function persistTree(tree: ProcessoTree): Promise<string> {
   }
 
   return processoId;
+}
+
+/**
+ * Persiste um requisitório .0500 na tabela DEPRE (djen_depre) — ficha + andamentos —
+ * SEM criar processo principal. Regra de negócio: nenhum .0500 é principal; o
+ * vínculo ocorre depois, quando o processo de ORIGEM é crawleado e um dos seus
+ * incidentes referencia este .0500 pelo numero_depre. `origem` são os CNJs de
+ * origem extraídos da ficha do requisitório (já enfileirados pelo caller).
+ */
+export async function persistRequisitorio(tree: ProcessoTree, origem: string[]): Promise<void> {
+  const inc = tree.cumprimentos[0]?.incidentes[0];
+  const cnj = tree.cnj ?? inc?.cnj ?? null;
+  if (!cnj) throw new Error("persistRequisitorio: requisitório sem CNJ");
+
+  const andamentos = (inc?.andamentos ?? []).map((a) => ({
+    data: a.data,
+    descricao: a.descricao,
+    arquivo_url: a.arquivo_url,
+  }));
+
+  const row = {
+    cnj,
+    cnj_normalizado: cnjNorm(cnj),
+    valor_acao: inc?.valor_acao ?? tree.valor_acao ?? null,
+    status: inc?.status ?? tree.status ?? null,
+    classe: tree.classe ?? null,
+    data_base: inc?.data_base ?? tree.data_base ?? null,
+    devedora: inc?.parte_passiva?.nome ?? null,
+    origem_cnjs: origem.length ? origem : null,
+    andamentos,
+    ficha_crawled_at: new Date().toISOString(),
+  };
+
+  // upsert por cnj_normalizado (mescla com o registro criado na ingestão DJEN).
+  const { error } = await supabase
+    .from("djen_depre")
+    .upsert(row, { onConflict: "cnj_normalizado" });
+  if (error) throw new Error(`upsert djen_depre (requisitório): ${error.message}`);
 }
