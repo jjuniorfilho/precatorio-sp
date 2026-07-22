@@ -375,28 +375,87 @@ HTTP puro sem TLS). Domínio já existente do usuário (`forjuris.com.br`, Hosti
 
 **Testado de ponta a ponta via HTTPS externo** (da máquina local, não da VPS): 200 com
 resultado real e correto, 401 sem secret, redirect 301 de HTTP pra HTTPS. Servidor de teste
-rodou numa cópia isolada (`/root/test-https`), removida depois do teste — o
-`WORKER_HTTP_SECRET` real de produção ainda precisa ser gerado e configurado (ainda não
-existe uma instância do `http-server.ts` rodando em `/opt/precatorio-worker`, só as cópias
-de teste usadas nas Fases 5/6).
+rodou numa cópia isolada (`/root/test-https`), removida depois do teste.
 
-### `supabase/functions/buscar-precatorio/index.ts` [Não Iniciada ⏳]
+**Atualização 2026-07-22 (verificado ao vivo)**: `http-server.ts` de produção **já está
+rodando** — faz parte do mesmo processo pm2 `precatorio-crawler` em `/opt/precatorio-worker`
+(`index.ts` chama `startHttpServer()` antes do loop de crawl, como planejado). Log confirma
+`[http-server] ouvindo em 127.0.0.1:3200 (POST /valor-pago)`. `WORKER_HTTP_SECRET` real (64
+chars) já está gerado e configurado no `.env` da VPS. Externamente, `https://crawler.forjuris.com.br/valor-pago`
+responde 401 sem secret e 401 com secret errado — endpoint público protegido e no ar.
 
-Quando o processo encontrado tem `.0500` (ou o `numero_depre` do incidente termina em `.0500`),
-chamar `https://crawler.forjuris.com.br/valor-pago` de forma síncrona antes de montar a
-resposta; incorporar `pagamentos`/`situacao`/`pagamentos_consultado_em` no payload retornado.
-Vai precisar do `WORKER_HTTP_SECRET` real como secret da edge function (Supabase Secrets).
+### `supabase/functions/buscar-precatorio/index.ts` [Código pronto, deploy no Lovable pendente ⏳]
+
+Código implementado e commitado (`438f982`): quando um item tem `numero_depre` terminando em
+`.0500`, chama `https://crawler.forjuris.com.br/valor-pago` de forma síncrona antes de montar
+a resposta; incorpora `situacao_pagamento`/`pagamentos` no payload. Falha graciosamente
+(timeout/erro não derruba a busca).
+
+**Falta**: como as edge functions deste projeto deployam via Lovable AI (API interna, não
+git — ver `project_lovable_integration` na memória), o usuário precisa (1) colar esse código
+no editor de edge functions do Lovable (ou pedir ao Lovable AI via chat pra criar/atualizar
+`buscar-precatorio` com ele) e (2) configurar `WORKER_HTTP_SECRET` em Cloud → Secrets do
+Lovable com o mesmo valor que já está no `.env` da VPS.
 
 ### Teste end-to-end de busca real no site [Não Iniciada ⏳]
 
-Validar a latência adicionada e o conteúdo da resposta com um processo real.
+Validar a latência adicionada e o conteúdo da resposta com um processo real, após o deploy no
+Lovable.
 
 ### Comentários:
 - Endpoint interno (`http-server.ts`) e exposição pública (nginx/HTTPS) são preocupações
   separadas — o primeiro não sabe nada sobre domínio/certificado, só escuta em
-  `127.0.0.1:3200`. Isso significa que o deploy real do worker em produção (subir o
-  `http-server.ts` de verdade dentro de `/opt/precatorio-worker`, com o `WORKER_HTTP_SECRET`
-  definitivo) ainda está pendente — hoje só validamos com processos de teste isolados.
+  `127.0.0.1:3200`. Confirmado ao vivo em 2026-07-22 que os dois já estão de pé em produção;
+  o único elo que falta na Fase 6 é o deploy da edge function no Lovable.
+
+### Achado + extensão (2026-07-22): titular (nome/documento) nunca chegava no relatório [Código pronto, migration+deploy pendentes ⏳]
+
+Usuário testou o fluxo de relatório por email (`enviar-relatorio`) com o processo real
+`0150268-84.2024.8.26.0500` e "Titular do Precatório" saiu em branco (Nome e Documento). Causa
+raiz investigada e confirmada (consulta direta via anon REST em `precatorios_publico`: `autor`
+null pra esse processo):
+- O único código que já preencheu `precatorios.autor`/`cpf_titular`/`cnpj_titular` era
+  `search-by-document/index.ts` (scraping DOCPARTE no e-SAJ) — **órfão**: nenhuma tela chama
+  mais essa function desde que `buscarPublico`/`buscar-precatorio` virou o fluxo único (CPF,
+  CNPJ e processo). `buscar-precatorio` nunca lia nem gravava titular em lugar nenhum.
+- Achado bônus: o crawler **já parseia** o nome do requerente (Reqte) toda vez que visita a
+  ficha de um `.0500` (`extractPartes`/`parte_ativa.nome` em `parse.ts`, chamado por
+  `crawlRequisitorio`) — confirmado pelo usuário com print real do e-SAJ (`Carlos Alberto
+  Teixeira` como Reqte). Só que `persistRequisitorio` (supabase.ts) descartava esse nome —
+  só gravava `devedora` (parte passiva) em `djen_depre`, nunca o titular.
+- Documento (CPF/CNPJ) nunca aparece na ficha do e-SAJ — só existe se o próprio titular
+  informar buscando por ele no site (aí sim é uma auto-declaração, tudo bem persistir).
+
+**Implementado:**
+1. `sql/2026-07-22_djen_depre_titular.sql` — `titular_nome`/`titular_documento` em
+   `djen_depre`. **Não aplicado ainda** (usuário aplica no SQL Editor do Lovable).
+2. `worker-crawler/src/supabase.ts` (`persistRequisitorio`) — grava `titular_nome` a partir de
+   `parte_ativa.nome` sempre que o crawler visita a ficha do `.0500`. **Já buildado e deployado
+   em produção** (`/opt/precatorio-worker`, pm2 restart em 2026-07-22 22:59) — mas só populará
+   `djen_depre.titular_nome` nos próximos re-crawls (não retroage sozinho pros já coletados).
+3. `supabase/functions/buscar-precatorio/index.ts` — `buscarTitulares()` lê
+   `djen_depre.titular_nome/titular_documento` por `numero_depre` pra todo item `.0500` do
+   resultado; expõe `titular_nome` no payload (documento nunca volta, mesmo princípio de LGPD
+   que já tirou `cpf_titular`/`cnpj_titular` da view pública). Backfill best-effort:
+   `precatorios.autor` quando descobre nome via djen_depre (fecha o loop pro
+   `enviar-relatorio`, que lê direto da tabela legada); `djen_depre.titular_documento` +
+   `precatorios.cpf_titular`/`cnpj_titular` quando a busca é por CPF/CNPJ e bate num `.0500`.
+   Também corrigido bug pré-existente: o campo de titular do braço legado estava hardcoded
+   `maskCpf(null)` (sempre null, mesmo quando `precatorios.autor` tinha dado real).
+4. `frontend/src/lib/api/precatorios.ts` — `PublicItem.titular_nome` adicionado ao tipo.
+
+**Falta**: (a) aplicar a migration no SQL Editor do Lovable; (b) levar o `buscar-precatorio`
+atualizado pro Lovable (mesmo passo pendente já registrado acima — agora com titular incluído
+junto); (c) validar de ponta a ponta com o processo de teste (`0150268-84.2024.8.26.0500`) —
+esse específico só vai mostrar nome depois de um re-crawl (não é automático; pode precisar
+enfileirar manualmente ou esperar o próximo ciclo de refresh).
+
+**Limitação conhecida, não resolvida agora**: busca por CPF/CNPJ no schema novo
+(`partes.documento`) é código morto na prática — nada popula `partes.documento` hoje (o e-SAJ
+nunca expõe CPF na ficha), então esse branch nunca encontra nada por CPF a menos que já exista
+match prévio. Buscas por CPF real hoje só funcionam via a tabela legada
+(`precatorios.cpf_titular`/`cnpj_titular`, vindo da carga inicial). Não é bug desta sessão —
+é uma lacuna de produto pré-existente, registrada aqui pra não se perder.
 
 ---
 

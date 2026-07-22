@@ -203,6 +203,10 @@ export async function persistRequisitorio(tree: ProcessoTree, origem: string[]):
     classe: tree.classe ?? null,
     data_base: inc?.data_base ?? tree.data_base ?? null,
     devedora: inc?.parte_passiva?.nome ?? null,
+    // Reqte/requerente: sempre presente na ficha (PARTES DO PROCESSO), diferente do
+    // documento (CPF/CNPJ), que o TJSP nunca expõe aqui — só chega via busca informada
+    // pelo próprio titular (buscar-precatorio grava titular_documento nesse caso).
+    titular_nome: inc?.parte_ativa?.nome ?? null,
     origem_cnjs: origem.length ? origem : null,
     andamentos,
     ficha_crawled_at: new Date().toISOString(),

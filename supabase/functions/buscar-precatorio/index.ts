@@ -32,6 +32,24 @@ async function consultarValorPago(processoDepre: string): Promise<{ situacao: st
   }
 }
 
+/** Busca titular (nome + documento) já conhecido em djen_depre pra um lote de .0500
+ * (numero_depre). Nome vem sempre da ficha do requisitório (crawler); documento só existe
+ * se já foi informado alguma vez numa busca por CPF/CNPJ que bateu nesse .0500 — ver
+ * abaixo, onde persistimos isso. */
+async function buscarTitulares(
+  sb: ReturnType<typeof createClient>,
+  deps: string[],
+): Promise<Map<string, { nome: string | null; documento: string | null }>> {
+  const map = new Map<string, { nome: string | null; documento: string | null }>();
+  if (!deps.length) return map;
+  const { data } = await sb.from("djen_depre").select("cnj_normalizado, titular_nome, titular_documento").in("cnj_normalizado", deps.map(digits));
+  for (const row of (data ?? []) as { cnj_normalizado: string; titular_nome: string | null; titular_documento: string | null }[]) {
+    const dep = deps.find((d) => digits(d) === row.cnj_normalizado);
+    if (dep) map.set(dep, { nome: row.titular_nome, documento: row.titular_documento });
+  }
+  return map;
+}
+
 const TJSP = "https://esaj.tjsp.jus.br/cpopg";
 const TJSP_HEADERS = {
   "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/120.0 Safari/537.36",
@@ -43,7 +61,6 @@ const DEPRE_RE = /\d{7}-\d{2}\.\d{4}\.\d\.\d{2}\.0500/g;
 const cors = { "Access-Control-Allow-Origin": "*", "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type" };
 const json = (d: unknown, s = 200) => new Response(JSON.stringify(d), { status: s, headers: { ...cors, "Content-Type": "application/json" } });
 const digits = (s: string) => (s ?? "").replace(/\D/g, "");
-const maskCpf = (doc: string | null) => !doc ? null : doc.length === 11 ? `${doc.slice(0,3)}.***.***-${doc.slice(9)}` : doc;
 // 20 dígitos → CNJ canônico NNNNNNN-DD.AAAA.J.TR.OOOO (numero_depre/incidentes.cnj são gravados formatados).
 const toCnjMask = (d: string) => d.length === 20
   ? `${d.slice(0,7)}-${d.slice(7,9)}.${d.slice(9,13)}.${d.slice(13,14)}.${d.slice(14,16)}.${d.slice(16,20)}`
@@ -141,17 +158,18 @@ Deno.serve(async (req) => {
   for (const cnj of staleCnjs) await sb.rpc("enqueue_crawler_job", { p_processo_codigo: cnj, p_origem: "refresh" });
 
   // ---- merge + máscara ----
-  const items = [
+  const items: any[] = [
     ...novos.map((i) => ({
       fonte: "base", cnj: i.cnj ?? i.processos?.cnj, instrumento: i.tipo_previsto, macrofase: i.macrofase, fase: i.fase,
       status: i.status, elegivel: i.elegivel, possivelmente_pago: i.possivelmente_pago, oficio_expedido: i.oficio_expedido,
       tramitacao_prioritaria: i.tramitacao_prioritaria, valor_acao: i.valor_acao, numero_depre: i.numero_depre,
       ente_nome: i.processos?.ente_nome, ente_esfera: i.processos?.ente_esfera,
+      titular_nome: null as string | null,
     })),
     ...legado.map((p) => ({
       fonte: "depre", cnj: p.autos ?? p.processo_depre, instrumento: "Precatorio", macrofase: "precatorio_efetivo",
       fase: "oc", status: p.status, oficio_expedido: true, saldo: p.saldo_depre, numero_depre: p.processo_depre,
-      ente_nome: p.devedora, autor: maskCpf(null),
+      ente_nome: p.devedora, titular_nome: (p.autor ?? null) as string | null,
     })),
   ];
   // dedupe por numero_depre/cnj
@@ -175,6 +193,34 @@ Deno.serve(async (req) => {
         item.situacao_pagamento = resultado.situacao;
         item.pagamentos = resultado.pagamentos;
       }
+    }
+
+    // Titular: nome sempre que o crawler já capturou na ficha do .0500 (djen_depre) —
+    // sobrepõe o que veio do legado se este ainda não tinha. Backfill best-effort no
+    // legado (`precatorios.autor`) pra quem lê de lá direto (ex.: enviar-relatorio).
+    const deps500 = [...new Set(merged.map((i) => i.numero_depre as string | null).filter((d): d is string => !!d && d.endsWith(".0500")))];
+    const titulares = await buscarTitulares(sb, deps500);
+    for (const item of merged) {
+      const dep = item.numero_depre as string | undefined;
+      const nome = dep ? titulares.get(dep)?.nome : null;
+      if (nome && !item.titular_nome) item.titular_nome = nome;
+    }
+    for (const dep of deps500) {
+      const nome = titulares.get(dep)?.nome;
+      if (nome) sb.from("precatorios").update({ autor: nome }).eq("processo_depre", dep).is("autor", null).then(() => {});
+    }
+
+    // Documento: só existe se o próprio titular informou (buscou por CPF/CNPJ e bateu aqui).
+    // Nunca volta no payload (mesmo princípio que já tirou cpf_titular/cnpj_titular da view
+    // pública) — só persiste pra próximas buscas/relatório acharem o dado.
+    if ((tipoBusca === "cpf" || tipoBusca === "cnpj") && deps500.length) {
+      const col = tipoBusca === "cpf" ? "cpf_titular" : "cnpj_titular";
+      for (const dep of deps500) {
+        if (!titulares.get(dep)?.documento) {
+          sb.from("djen_depre").update({ titular_documento: docRaw }).eq("cnj_normalizado", digits(dep)).is("titular_documento", null).then(() => {});
+        }
+      }
+      sb.from("precatorios").update({ [col]: docRaw }).in("processo_depre", deps500).is(col, null).then(() => {});
     }
 
     const ramo = computeRamo(merged);
