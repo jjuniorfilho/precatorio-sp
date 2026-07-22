@@ -265,23 +265,52 @@ e contra ao menos um processo sem nenhum pagamento.
 
 ---
 
-## FASE 4 — Persistência (`supabase.ts`) [Não Iniciada ⏳]
+## FASE 4 — Persistência (`supabase.ts`) [Completada ✅]
 
-### `upsertPagamentos(processoDepre, pagamentos[])` [Não Iniciada ⏳]
+### `upsertPagamentos(processoDepre, pagamentos[])` [Completada ✅]
 
-Upsert idempotente na `precatorios_pagamentos` (limpar+reinserir por `processo_depre`, ou upsert por
-chave composta `processo_depre+data_pagamento+valor` — decidir na implementação).
+Upsert por chave composta `processo_depre+data_pagamento+valor+tipo` (índice único).
+`tipo` vira `''` em vez de `NULL` (NULL não conflita com NULL num índice único do Postgres —
+duas linhas com `tipo=NULL` não seriam consideradas duplicatas, quebrando a idempotência).
 
-### `markPagamentosConsultado(processoDepre)` [Não Iniciada ⏳]
+**Duas correções de schema/RLS descobertas só ao testar de verdade:**
+1. O índice único da migration original (Fase 1) usava `COALESCE(tipo, '')` — uma
+   **expressão**. O `.upsert(..., {onConflict})` do Supabase só aceita nomes de coluna
+   simples, nunca batia com esse índice (`"no unique or exclusion constraint matching the
+   ON CONFLICT specification"`). Corrigido tornando `tipo`/`data_pagamento` NOT NULL e
+   trocando por um índice direto nas colunas
+   (`sql/2026-07-22_fix_precatorios_pagamentos_index.sql`).
+2. RLS só tinha policy de leitura — faltava permitir escrita pro worker (que autentica como
+   `authenticated`, não `service_role` cru; ver "Opção B" em `config.ts`). Adicionado
+   `admin_write_precatorios_pagamentos` (`sql/2026-07-22_fix_precatorios_pagamentos_rls_write.sql`).
 
-Seta `precatorios.pagamentos_consultado_em = now()` mesmo quando não há pagamentos.
+### `markPagamentosConsultado(processoDepre)` [Completada ✅]
 
-### Teste de idempotência [Não Iniciada ⏳]
+**Não é update direto na tabela** — `precatorios` só permite escrita via `service_role` (dado
+público DEPRE, não deve abrir UPDATE geral pra `authenticated`). Implementado como RPC
+`SECURITY DEFINER` (`sql/2026-07-22_marcar_pagamentos_consultado_rpc.sql`), mesmo padrão já
+usado em `claim_crawler_jobs`/`classify_processo`.
 
-Rodar a mesma consulta 2x e confirmar que não duplica registros.
+### Teste de idempotência [Completada ✅]
+
+Rodei a mesma consulta 2x contra o Supabase real (processo `0150268-84.2024.8.26.0500`) —
+continuam só 3 linhas na segunda vez, sem duplicar.
 
 ### Comentários:
--
+- **Achado bônus**: a soma dos 3 pagamentos que o crawler encontrou (R$ 81.483,75) bate
+  **exatamente** com o `precatorios.valor_pago` legado que já estava na base (import manual
+  da carga inicial do MVP). Valida cruzadamente que o crawler está extraindo certo, e sugere
+  que `valor_pago` poderia futuramente virar um valor computado (soma de
+  `precatorios_pagamentos`) em vez de dado estático — não fiz essa mudança agora, só registro
+  a possibilidade.
+- Toda a validação rodou numa cópia isolada na VPS (`/root/test-for102b`, fora de
+  `/opt/precatorio-worker`), autenticando com as mesmas credenciais reais do worker
+  (`ensureAuth()` — "Opção B", anon key + login admin) contra o Supabase de produção. Os
+  dados gravados (pagamentos de um processo real) são dados reais, não de teste — ficam
+  válidos pra uso.
+- Lição pra próximas fases: sempre chamar `ensureAuth()` antes de testar qualquer persistência
+  isoladamente — sem isso, as chamadas vão como `anon` (RLS bloqueia silenciosamente, sem erro
+  óbvio até você checar o motivo certo).
 
 ---
 

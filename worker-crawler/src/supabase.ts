@@ -214,3 +214,40 @@ export async function persistRequisitorio(tree: ProcessoTree, origem: string[]):
     .upsert(row, { onConflict: "cnj_normalizado" });
   if (error) throw new Error(`upsert djen_depre (requisitório): ${error.message}`);
 }
+
+// ---- FOR-102: pagamentos por processo_depre (portal TJSP "Pagamentos Precatórios") -------
+
+/** Upsert idempotente dos pagamentos encontrados. Re-consultar não duplica (índice único
+ * em processo_depre+data_pagamento+valor+tipo — colunas NOT NULL, ver
+ * sql/2026-07-22_fix_precatorios_pagamentos_index.sql). `tipo` vira `''` em vez de NULL
+ * (NULL não conflita com NULL num índice único do Postgres, o que quebraria a idempotência). */
+export async function upsertPagamentos(
+  processoDepre: string,
+  pagamentos: Array<{ data: string | null; valorCentavos: number; tipo: string | null }>,
+): Promise<void> {
+  if (pagamentos.length === 0) return;
+  const rows = pagamentos
+    .filter((p) => p.data) // data_pagamento é NOT NULL na tabela
+    .map((p) => ({
+      processo_depre: processoDepre,
+      data_pagamento: p.data,
+      valor: p.valorCentavos,
+      tipo: p.tipo ?? "",
+    }));
+  const { error } = await supabase
+    .from("precatorios_pagamentos")
+    .upsert(rows, { onConflict: "processo_depre,data_pagamento,valor,tipo", ignoreDuplicates: true });
+  if (error) throw new Error(`upsert precatorios_pagamentos: ${error.message}`);
+}
+
+/** Marca que a consulta de pagamentos foi feita (mesmo sem pagamentos encontrados —
+ * ausência é resultado válido, não erro; ver context.md da sessão FOR-102).
+ *
+ * Via RPC (não update direto na tabela): `precatorios` só permite escrita via
+ * service_role (dado público DEPRE); o worker autentica como `authenticated`, então precisa
+ * da RPC SECURITY DEFINER `marcar_pagamentos_consultado` (sql/2026-07-22_marcar_pagamentos_
+ * consultado_rpc.sql) em vez de abrir UPDATE geral na tabela pra authenticated. */
+export async function marcarPagamentosConsultado(processoDepre: string): Promise<void> {
+  const { error } = await supabase.rpc("marcar_pagamentos_consultado", { p_processo_depre: processoDepre });
+  if (error) throw new Error(`marcarPagamentosConsultado: ${error.message}`);
+}

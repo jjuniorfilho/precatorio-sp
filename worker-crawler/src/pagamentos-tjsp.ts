@@ -22,6 +22,7 @@ import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import { solveCaptcha } from "./captcha.js";
 import { comFilaPlaywright } from "./fila.js";
+import { upsertPagamentos, marcarPagamentosConsultado } from "./supabase.js";
 
 const execFileAsync = promisify(execFile);
 const BASE = "https://www.tjsp.jus.br/cac/scp";
@@ -45,6 +46,23 @@ export async function consultarPagamentos(
   maxTentativas = 4,
 ): Promise<ConsultaPagamento> {
   return comFilaPlaywright(() => consultarInterno(processoDepre, maxTentativas));
+}
+
+/** Consulta e já persiste no Supabase (upsert dos pagamentos + marca `pagamentos_consultado_em`
+ * mesmo quando não há pagamentos — ausência é resultado válido, não erro). É esta a função que
+ * o endpoint HTTP (Fase 5) e o disparo manual do admin devem chamar, não `consultarPagamentos`
+ * diretamente. Se o processo não for encontrado no portal, não grava nada (não sabemos se é
+ * erro de busca ou processo genuinamente ausente — evita marcar "consultado" incorretamente). */
+export async function consultarEPersistirPagamentos(
+  processoDepre: string,
+  maxTentativas = 4,
+): Promise<ConsultaPagamento> {
+  const consulta = await consultarPagamentos(processoDepre, maxTentativas);
+  if (consulta.encontrado) {
+    await upsertPagamentos(processoDepre, consulta.pagamentos);
+    await marcarPagamentosConsultado(processoDepre);
+  }
+  return consulta;
 }
 
 async function consultarInterno(
