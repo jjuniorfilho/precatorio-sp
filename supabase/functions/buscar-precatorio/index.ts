@@ -2,7 +2,35 @@
 // precatorios legada; refresh por TTL (enqueue, sem crawl inline); miss → DOCPARTE no e-SAJ.
 // FOR-77: busca por processo também casa numero_depre/cnj do incidente (o cidadão digita
 // o número do precatório .0500, que é numero_depre — não o CNJ de origem).
+// FOR-102: para itens com numero_depre .0500, consulta síncrona ao worker (VPS) o status/
+// pagamentos reais no portal TJSP — dado não vem do banco, é ao vivo a cada busca (ver
+// context.md/architecture.md da sessão FOR-102: decisão deliberada de não ter TTL/cache
+// aqui, só dispara em busca pública nova ou disparo manual do admin).
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+
+const WORKER_URL = "https://crawler.forjuris.com.br/valor-pago";
+const WORKER_SECRET = Deno.env.get("WORKER_HTTP_SECRET") ?? "";
+
+/** Consulta o worker (Playwright na VPS) pro status/pagamentos reais de um processo_depre
+ * .0500. Timeout de 90s (folga contra o teto ~150s da edge function, considerando retry de
+ * captcha do lado do worker) — falha graciosamente (a busca segue sem esse dado). */
+async function consultarValorPago(processoDepre: string): Promise<{ situacao: string | null; pagamentos: unknown[] } | null> {
+  if (!WORKER_SECRET) return null;
+  try {
+    const r = await fetch(WORKER_URL, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "X-Worker-Secret": WORKER_SECRET },
+      body: JSON.stringify({ processo_depre: processoDepre }),
+      signal: AbortSignal.timeout(90_000),
+    });
+    if (!r.ok) return null;
+    const data = await r.json();
+    if (!data.encontrado) return null;
+    return { situacao: data.situacao ?? null, pagamentos: data.pagamentos ?? [] };
+  } catch {
+    return null; // portal fora do ar, timeout, etc. — não derruba a busca
+  }
+}
 
 const TJSP = "https://esaj.tjsp.jus.br/cpopg";
 const TJSP_HEADERS = {
@@ -130,6 +158,25 @@ Deno.serve(async (req) => {
   const seen = new Set<string>(); const merged = items.filter((x) => { const k = x.numero_depre ?? x.cnj ?? Math.random().toString(); if (seen.has(k)) return false; seen.add(k); return true; });
 
   if (merged.length > 0) {
+    // FOR-102: pra cada .0500 distinto em merged, consulta o worker (síncrono) e injeta
+    // situacao_pagamento/pagamentos no item. Processos sem .0500 (direito creditório, ainda
+    // sem ofício expedido) não têm o que consultar — seguem sem esses campos.
+    const consultas = new Map<string, ReturnType<typeof consultarValorPago>>();
+    for (const item of merged) {
+      const dep = item.numero_depre as string | undefined;
+      if (dep && dep.endsWith(".0500") && !consultas.has(dep)) {
+        consultas.set(dep, consultarValorPago(dep));
+      }
+    }
+    for (const item of merged) {
+      const dep = item.numero_depre as string | undefined;
+      const resultado = dep ? await consultas.get(dep) : null;
+      if (resultado) {
+        item.situacao_pagamento = resultado.situacao;
+        item.pagamentos = resultado.pagamentos;
+      }
+    }
+
     const ramo = computeRamo(merged);
     logBusca({ tipo: tipoBusca, source: "db", found: true, count: merged.length, ramo });
     return json({ flag: "encontrado", ramo, source: "db", items: merged });
