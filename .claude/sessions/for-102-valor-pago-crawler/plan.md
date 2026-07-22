@@ -171,12 +171,41 @@ expõe o MD5 da resposta de cada uma das 191 imagens (`cword[n-1]`), então bati
 
 ---
 
-## FASE 3 — Navegação do portal (`pagamentos-tjsp.ts`) [Não Iniciada ⏳]
+## FASE 3 — Navegação do portal (`pagamentos-tjsp.ts`) [Em Progresso ⏰ — bloqueada, ver Comentários]
 
-### Sessão + busca por `processo_depre` [Não Iniciada ⏳]
+### Sessão + busca por `processo_depre` [Em Progresso ⏰ — implementado, não funcional ainda]
 
-Seguindo o estilo de `esaj.ts` (HTTP puro via `undici`, captura de cookies/campos ocultos via
-`cheerio`): abrir o form, resolver captcha (Fase 2), submeter a busca por Nº EP/Ano ou Processo DEPRE.
+Escrito `worker-crawler/src/pagamentos-tjsp.ts` seguindo o estilo de `esaj.ts` (HTTP puro via
+`undici`): `abrirSessaoPagamentos()` (GET `webmenupesquisa.aspx` → token → GET
+`pesquisainternetv2.aspx?<token>` → `GXState` inicial) + `ajaxCall()` (replica uma chamada AJAX do
+GeneXus: headers `ajax_security_token`/`gxajaxrequest`, URL `?<nonce>,<token>,gx-no-cache=<ts>`,
+corpo com `GXState` + campos do form) + `buscarPagamentos()` (encadeia os 3 eventos
+`EVENT_ID.ISVALID.` → `ERFR.` → `E'PESQUISAR'.`, com retry de captcha).
+
+**🚧 Bloqueada**: testei o módulo de verdade (não script solto — o próprio `.ts`, rodando com
+`tsx` numa cópia isolada fora da produção) contra o portal real, com logging de request/response.
+**Toda chamada retorna HTTP 440 "Session timeout" imediatamente**, mesmo a primeira da sequência,
+mesmo com cookies (`ASP.NET_SessionId`, `GX_SESSION_ID`, `X-Mapping-mkemcnbb` — esse último parece
+cookie de afinidade de load balancer) sendo capturados e reenviados corretamente. Headers, URL e
+corpo conferem com a captura real do navegador. Não consegui isolar a causa exata (candidatos:
+diferença sutil na serialização do `GXState` ao fazer `JSON.parse`+`JSON.stringify` — o servidor
+pode ser sensível a formatação/ordem exata dos campos; algum comportamento de cookie-jar do
+`undici` diferente do Chrome; ou o `X-Mapping-mkemcnbb` de fato exigir alguma outra coisa do load
+balancer que curl/undici não replicam da mesma forma que um navegador real).
+
+**Recomendação para retomar**: dado que replicar esse protocolo GeneXus via HTTP puro já consumiu
+esforço considerável sem sucesso (diferente do e-SAJ, que é bem mais simples), a essa altura
+**Playwright só pra este fluxo específico** provavelmente compensa mais do que continuar
+depurando o AJAX manualmente — deixa o navegador real cuidar de cookies/sessão/timing, que é
+exatamente o tipo de coisa que esse protocolo está exigindo. Isso muda o trade-off registrado em
+`architecture.md` ("HTTP puro vs Playwright") — vale revisitar essa decisão com o usuário antes de
+continuar.
+
+### Parse do resultado + navegação pro detalhe [Não Iniciada ⏳]
+
+Parsear a lista de resultados (EP/Ano, Processo DEPRE, Entidade Devedora) e seguir o link/postback
+do ícone de detalhe. **Bloqueado pelo item acima** — sem conseguir completar uma busca, não há
+HTML de resultado real pra desenvolver/testar este parser contra.
 
 ### Parse do resultado + navegação pro detalhe [Não Iniciada ⏳]
 
