@@ -352,20 +352,51 @@ anteriores — 3 pagamentos, valores batendo).
 
 ---
 
-## FASE 6 — Integração na busca pública [Não Iniciada ⏳]
+## FASE 6 — Integração na busca pública [Em Progresso ⏰]
+
+### Exposição pública do endpoint (HTTPS) [Completada ✅]
+
+Decisão tomada com o usuário: subdomínio + Let's Encrypt (em vez de Cloudflare Tunnel ou
+HTTP puro sem TLS). Domínio já existente do usuário (`forjuris.com.br`, Hostinger).
+
+- DNS: registro A `crawler.forjuris.com.br` → `31.97.242.130` (criado pelo usuário no
+  Hostinger, propagação confirmada via `dig`).
+- `certbot` + `python3-certbot-nginx` instalados na VPS; certificado emitido via
+  `certbot --nginx -d crawler.forjuris.com.br` (expira 2026-10-20, renovação automática já
+  agendada pelo certbot).
+- Novo site nginx (`/etc/nginx/sites-available/crawler-worker`, habilitado em
+  `sites-enabled/`): proxy HTTPS → `127.0.0.1:3200` (onde o `http-server.ts` da Fase 5
+  escuta). HTTP puro redireciona automaticamente pra HTTPS (configurado pelo certbot).
+  Cópia de referência salva em `worker-crawler/infra/nginx-crawler-worker.conf` (o arquivo
+  real vive só na VPS, em `/etc/nginx/sites-enabled/` — útil só se a VPS precisar ser
+  reprovisionada).
+- **`proxy_read_timeout` ajustado pra 300s** (default do nginx, 60s, dava 504 — a consulta
+  real ao TJSP com retries de captcha pode passar de 60s).
+
+**Testado de ponta a ponta via HTTPS externo** (da máquina local, não da VPS): 200 com
+resultado real e correto, 401 sem secret, redirect 301 de HTTP pra HTTPS. Servidor de teste
+rodou numa cópia isolada (`/root/test-https`), removida depois do teste — o
+`WORKER_HTTP_SECRET` real de produção ainda precisa ser gerado e configurado (ainda não
+existe uma instância do `http-server.ts` rodando em `/opt/precatorio-worker`, só as cópias
+de teste usadas nas Fases 5/6).
 
 ### `supabase/functions/buscar-precatorio/index.ts` [Não Iniciada ⏳]
 
 Quando o processo encontrado tem `.0500` (ou o `numero_depre` do incidente termina em `.0500`),
-chamar o endpoint da Fase 5 de forma síncrona antes de montar a resposta; incorporar `pagamentos`/
-`pagamentos_consultado_em` no payload retornado.
+chamar `https://crawler.forjuris.com.br/valor-pago` de forma síncrona antes de montar a
+resposta; incorporar `pagamentos`/`situacao`/`pagamentos_consultado_em` no payload retornado.
+Vai precisar do `WORKER_HTTP_SECRET` real como secret da edge function (Supabase Secrets).
 
 ### Teste end-to-end de busca real no site [Não Iniciada ⏳]
 
 Validar a latência adicionada e o conteúdo da resposta com um processo real.
 
 ### Comentários:
--
+- Endpoint interno (`http-server.ts`) e exposição pública (nginx/HTTPS) são preocupações
+  separadas — o primeiro não sabe nada sobre domínio/certificado, só escuta em
+  `127.0.0.1:3200`. Isso significa que o deploy real do worker em produção (subir o
+  `http-server.ts` de verdade dentro de `/opt/precatorio-worker`, com o `WORKER_HTTP_SECRET`
+  definitivo) ainda está pendente — hoje só validamos com processos de teste isolados.
 
 ---
 
