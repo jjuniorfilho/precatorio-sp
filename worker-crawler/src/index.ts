@@ -3,6 +3,7 @@ import { config, assertConfig, sleep } from "./config.js";
 import { getSession, getRequisitorioSession, isDepre } from "./esaj.js";
 import { crawlSeed, crawlRequisitorio } from "./crawl.js";
 import { supabase, ensureAuth, claimJobs, completeJob, failJob, classifyProcesso, persistTree, persistRequisitorio, enqueueJob } from "./supabase.js";
+import { startHttpServer } from "./http-server.js";
 import type { QueueJob } from "./types.js";
 
 async function rotinaHabilitada(): Promise<boolean> {
@@ -94,6 +95,10 @@ async function main(): Promise<void> {
     .update({ status: "erro", finished_at: new Date().toISOString() })
     .eq("rotina", "crawler_esaj").eq("status", "running");
   console.log(`worker-crawler iniciando · batch=${config.claimBatch} conc=${config.concurrency} loop=${config.loopEnabled}`);
+
+  // FOR-102: endpoint HTTP roda no mesmo processo, em paralelo ao loop de coleta —
+  // não bloqueia nem é bloqueado por ele (event loop do Node cuida disso sozinho).
+  startHttpServer();
 
   if (!config.loopEnabled) { await tick(); return; }
 

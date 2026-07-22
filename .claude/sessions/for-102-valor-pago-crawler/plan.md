@@ -314,24 +314,41 @@ continuam só 3 linhas na segunda vez, sem duplicar.
 
 ---
 
-## FASE 5 — Endpoint HTTP síncrono no worker [Não Iniciada ⏳]
+## FASE 5 — Endpoint HTTP síncrono no worker [Completada ✅]
 
-### `worker-crawler/src/http-server.ts` [Não Iniciada ⏳]
+### `worker-crawler/src/http-server.ts` [Completada ✅]
 
-`POST /valor-pago { processo_depre }` (Node `http` nativo) → chama Fase 3+4 on-demand → retorna
-`{ pagamentos: [...], consultado_em }`. Timeout interno definido com folga contra o teto da edge function.
+`POST /valor-pago { processo_depre }` (Node `http` nativo, sem framework novo). Valida
+`processo_depre` (precisa terminar em `.8.26.0500`), autentica via header `X-Worker-Secret`
+(env `WORKER_HTTP_SECRET`), chama `consultarEPersistirPagamentos` (Fases 3+4) e devolve o
+`ConsultaPagamento` completo (`encontrado`/`situacao`/`pagamentos`) como JSON.
 
-### Subir o servidor junto ao loop existente [Não Iniciada ⏳]
+**Escuta só em `127.0.0.1`** nesta fase — a exposição pública fica pra Fase 6 (quando o
+`buscar-precatorio`, fora da VPS, precisar alcançá-lo de verdade pela internet; aí é o
+momento certo de decidir nginx/HTTPS com o usuário, já que a VPS não tem TLS configurado em
+nenhum serviço hoje).
 
-Modificar `worker-crawler/src/index.ts` para iniciar o `http-server.ts` em paralelo ao loop de
-`claim/crawl/persist` já existente, sem interferir um no outro.
+### Subir o servidor junto ao loop existente [Completada ✅]
 
-### Teste via curl direto na VPS [Não Iniciada ⏳]
+`index.ts` chama `startHttpServer()` logo após `ensureAuth()`, antes de entrar no loop de
+`claim/crawl/persist` — os dois rodam no mesmo processo/event-loop do Node sem se atrapalhar
+(o servidor HTTP é assíncrono/orientado a evento, não bloqueia o loop de polling).
 
-Confirmar que o endpoint responde corretamente antes de integrar com o resto do sistema.
+### Teste via curl direto na VPS [Completada ✅]
+
+Testado numa cópia isolada (`/root/test-http`, fora de `/opt/precatorio-worker`) via `curl`
+local na própria VPS: 401 sem secret/com secret errado, 400 com `processo_depre` inválido,
+404 em rota inexistente, e 200 com o resultado real e correto (mesmo processo das fases
+anteriores — 3 pagamentos, valores batendo).
 
 ### Comentários:
--
+- Achei um bug bobo no processo: esqueci de copiar o `config.ts` atualizado (com
+  `HTTP_PORT`/`WORKER_HTTP_SECRET`) pro diretório de teste isolado na primeira tentativa —
+  o servidor subiu escutando numa porta aleatória do SO em vez de 3200. Lição: ao criar um
+  diretório de teste isolado, conferir que TODOS os arquivos alterados na sessão foram
+  copiados, não só os que mudaram nesta fase específica.
+- `WORKER_HTTP_SECRET` ainda não tem um valor real gerado — só um placeholder no
+  `.env.example`. Gerar e configurar na VPS antes do deploy real.
 
 ---
 

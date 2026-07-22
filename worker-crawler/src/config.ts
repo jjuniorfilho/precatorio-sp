@@ -29,6 +29,10 @@ export const config = {
   delayMs: num("DELAY_MS", 400),
   requestTimeoutMs: num("REQUEST_TIMEOUT_MS", 15_000),
   maxHttpRetry: num("MAX_HTTP_RETRY", 3),
+
+  // FOR-102 — endpoint HTTP síncrono (buscar-precatorio + admin chamam /valor-pago).
+  httpPort: num("HTTP_PORT", 3200),
+  httpSecret: process.env.WORKER_HTTP_SECRET ?? "",
 };
 
 export function assertConfig(): void {
