@@ -94,11 +94,27 @@ este projeto, não uma reaplicação de algo existente. Trade-off a decidir na i
 
 | Dependência | Novo? | Observação |
 |---|---|---|
-| `undici` (HTTP client) | não, já existe | Reaproveitado do `esaj.ts` |
+| `undici` (HTTP client) | não, já existe | Reaproveitado do `esaj.ts` (segue valendo pro e-SAJ) |
 | `cheerio` (parse HTML) | não, já existe | Reaproveitado |
-| OCR (ex. `tesseract.js` ou binário `tesseract` via `child_process`) | **sim** | Escolher entre lib pura JS (mais fácil de deployar) vs binário do sistema (mais preciso, exige instalar na VPS) |
+| `tesseract` + `imagemagick` (binários de sistema) | **sim, instalado na VPS** | OCR do captcha — 50% de acerto/tentativa, com retry (ver Fase 2 do plan.md) |
+| **Playwright** (navegador headless) | **sim — decisão revista na Fase 3** | HTTP puro se provou inviável contra o protocolo AJAX do GeneXus (todas as tentativas retornaram HTTP 440 "Session timeout", causa não isolada mesmo com headers/cookies/URL conferindo com captura real de navegador). Playwright fica restrito a **este fluxo específico** (`pagamentos-tjsp.ts`); o e-SAJ continua HTTP puro. |
 | Node `http` nativo | não é lib nova | Suficiente para um endpoint único síncrono; não precisa de Express/Fastify |
 | 2captcha (fallback) | condicional | Só se o OCR não for confiável o bastante em produção |
+
+### ⚠️ Restrição de capacidade da VPS (descoberta na Fase 3)
+
+A VPS (`31.97.242.130`) tem **apenas 1 vCPU e ~2GB de RAM livre**, compartilhada com outros
+serviços de produção já rodando (`comunica-web-api`, `comunica-saas-api`, `precatorio-crawler`).
+Cada instância do Chromium headless consome ~150-300MB de RAM; rodar múltiplas em paralelo (ex.:
+2-3 buscas públicas simultâneas de processos `.0500`) arrisca esgotar a memória/CPU da VPS e
+degradar **os outros serviços**, não só esta feature.
+
+**Decisão**: o uso do Playwright dentro do `worker-crawler` é **serializado por uma fila interna
+(concorrência máxima = 1)** — só um Chromium ativo por vez; requisições concorrentes (tanto do
+disparo público síncrono quanto do manual) esperam na fila em vez de rodar em paralelo.
+**Consequência aceita**: a busca pública pode ficar mais lenta em picos de tráfego simultâneo pra
+processos `.0500` (fila, não erro) — trade-off deliberado pra proteger a estabilidade da VPS
+compartilhada em vez de degradar todos os serviços.
 
 ## Premissas e limitações
 
@@ -134,7 +150,8 @@ este projeto, não uma reaplicação de algo existente. Trade-off a decidir na i
 | Vínculo só por `processo_depre` | FK também para `incidente_id` | Mais simples, funciona pros dois schemas (legado + novo) sem exigir join adicional |
 | Entrega manual + automático juntos | Faseamento manual-first | Decisão do usuário — aceita o risco de expor o fluxo síncrono público já na primeira entrega |
 | OCR leve primeiro, 2captcha como fallback | 2captcha desde o início | Usuário pediu explicitamente para evitar custo dado quão simples é o captcha observado |
-| HTTP puro (undici+cheerio) | Playwright desde já | Mantém consistência com o resto do worker; só migra pra Playwright se o postback ASP.NET provar inviável sem JS |
+| ~~HTTP puro (undici+cheerio)~~ **→ Playwright** | HTTP puro (tentado primeiro, por consistência) | **Revertido na Fase 3**: todas as tentativas de replicar o protocolo AJAX do GeneXus via HTTP puro retornaram HTTP 440, sem causa isolável no tempo investido. Playwright fica restrito a este fluxo; e-SAJ continua HTTP puro. |
+| Playwright serializado (fila, máx. 1 concorrente) | Playwright sem limite de concorrência | VPS tem só 1 vCPU/~2GB livres, compartilhada com outros serviços de produção — concorrência sem limite arrisca derrubar a VPS inteira, não só esta feature |
 
 ## Consequências adversas (a monitorar, não bloqueantes)
 

@@ -171,41 +171,80 @@ expõe o MD5 da resposta de cada uma das 191 imagens (`cword[n-1]`), então bati
 
 ---
 
-## FASE 3 — Navegação do portal (`pagamentos-tjsp.ts`) [Em Progresso ⏰ — bloqueada, ver Comentários]
+## FASE 3 — Navegação do portal (`pagamentos-tjsp.ts`) [Completada ✅]
 
-### Sessão + busca por `processo_depre` [Em Progresso ⏰ — implementado, não funcional ainda]
+### Tentativa HTTP puro (undici) [Abandonada — ver Playwright abaixo]
 
-Escrito `worker-crawler/src/pagamentos-tjsp.ts` seguindo o estilo de `esaj.ts` (HTTP puro via
-`undici`): `abrirSessaoPagamentos()` (GET `webmenupesquisa.aspx` → token → GET
-`pesquisainternetv2.aspx?<token>` → `GXState` inicial) + `ajaxCall()` (replica uma chamada AJAX do
-GeneXus: headers `ajax_security_token`/`gxajaxrequest`, URL `?<nonce>,<token>,gx-no-cache=<ts>`,
-corpo com `GXState` + campos do form) + `buscarPagamentos()` (encadeia os 3 eventos
-`EVENT_ID.ISVALID.` → `ERFR.` → `E'PESQUISAR'.`, com retry de captcha).
+Primeira tentativa seguiu o estilo de `esaj.ts` (HTTP puro): replicar a sequência de eventos
+AJAX do GeneXus (`EVENT_ID.ISVALID.` → `ERFR.` → `E'PESQUISAR'.`) via `undici`, com headers
+`ajax_security_token`/`gxajaxrequest`, URL `?<nonce>,<token>,gx-no-cache=<ts>` etc. **Toda
+chamada retornava HTTP 440 "Session timeout"**, mesmo com cookies/headers/URL conferindo com
+captura real de navegador. Causa exata não isolada em tempo razoável — **decisão: trocar para
+Playwright** só neste fluxo (ver `architecture.md`, seção de restrição de capacidade da VPS,
+pra decisão de concorrência).
 
-**🚧 Bloqueada**: testei o módulo de verdade (não script solto — o próprio `.ts`, rodando com
-`tsx` numa cópia isolada fora da produção) contra o portal real, com logging de request/response.
-**Toda chamada retorna HTTP 440 "Session timeout" imediatamente**, mesmo a primeira da sequência,
-mesmo com cookies (`ASP.NET_SessionId`, `GX_SESSION_ID`, `X-Mapping-mkemcnbb` — esse último parece
-cookie de afinidade de load balancer) sendo capturados e reenviados corretamente. Headers, URL e
-corpo conferem com a captura real do navegador. Não consegui isolar a causa exata (candidatos:
-diferença sutil na serialização do `GXState` ao fazer `JSON.parse`+`JSON.stringify` — o servidor
-pode ser sensível a formatação/ordem exata dos campos; algum comportamento de cookie-jar do
-`undici` diferente do Chrome; ou o `X-Mapping-mkemcnbb` de fato exigir alguma outra coisa do load
-balancer que curl/undici não replicam da mesma forma que um navegador real).
+### Sessão + busca por `processo_depre` (Playwright) [Completada ✅]
 
-**Recomendação para retomar**: dado que replicar esse protocolo GeneXus via HTTP puro já consumiu
-esforço considerável sem sucesso (diferente do e-SAJ, que é bem mais simples), a essa altura
-**Playwright só pra este fluxo específico** provavelmente compensa mais do que continuar
-depurando o AJAX manualmente — deixa o navegador real cuidar de cookies/sessão/timing, que é
-exatamente o tipo de coisa que esse protocolo está exigindo. Isso muda o trade-off registrado em
-`architecture.md` ("HTTP puro vs Playwright") — vale revisitar essa decisão com o usuário antes de
-continuar.
+`worker-crawler/src/pagamentos-tjsp.ts`: `webmenupesquisa.aspx` → token de "Pagamentos
+Precatórios" → `pesquisainternetv2.aspx` → preenche `vPRP_PROCESSO` (tipo "Processo DEPRE") →
+resolve captcha (`captcha.ts`) → clica "Pesquisar". Testado ao vivo contra
+`0150268-84.2024.8.26.0500` (o mesmo do PDF de exemplo do usuário) — funciona.
 
-### Parse do resultado + navegação pro detalhe [Não Iniciada ⏳]
+**Duas corridas (race conditions) resolvidas, ambas pelo mesmo padrão** (esperar
+`networkidle` + folga antes de agir):
+1. Clicar "Pesquisar" antes da validação assíncrona do captcha (disparada no `blur` do campo)
+   terminar faz a busca ser ignorada silenciosamente (reexibe o mesmo formulário).
+2. Timeout curto demais no `waitForURL` do resultado fazia o código desistir e pedir um
+   captcha novo **antes** da navegação anterior realmente completar — a navegação tardia
+   deixava a próxima tentativa num formulário parcialmente desabilitado (trava em "aguardando
+   elemento ficar visível/habilitado"). Aumentado o timeout pra 25s e adicionado
+   `networkidle` também após o reload do captcha.
 
-Parsear a lista de resultados (EP/Ano, Processo DEPRE, Entidade Devedora) e seguir o link/postback
-do ícone de detalhe. **Bloqueado pelo item acima** — sem conseguir completar uma busca, não há
-HTML de resultado real pra desenvolver/testar este parser contra.
+### Extração do status da grade [Completada ✅]
+
+Campo `span[id^="span_PRP_SITUACAO_ANDAMENTO_"]` (ex. "Pendente de Pagamento") já vem na
+própria grade de resultado, sem precisar clicar em mais nada.
+
+**Achado**: a mensagem "Não foram encontrados Processos com estes filtros !!!" fica **sempre**
+presente no HTML (só oculta via CSS), mesmo quando há resultado — não é sinal confiável de
+"não encontrado". O sinal correto é a presença do próprio campo de status.
+
+### Download e parse do PDF de pagamentos [Completada ✅]
+
+**Descoberta principal da sessão**: clicar no ícone "Selecionar" (`input[type="image"]
+name="vSELECIONAR_NNNN"`) da linha **não navega pra uma página de detalhe HTML** — abre uma
+aba nova que o Chromium trata como **download** de um PDF gerado sob demanda
+(`arelpesquisainternetprecatorio.aspx`), com a seção "Pagamentos do Processo" (Data | Valor R$
+| Tipo). Confirmado pelo usuário navegando manualmente e me mostrando a sequência real.
+
+Isso muda (de volta) o modelo de dados: a tabela `precatorios_pagamentos` da Fase 1 **estava
+certa desde o início** — pagamentos individuais por `processo_depre` existem sim, só chegam via
+PDF, não HTML. (Uma tentativa no meio do caminho de simplificar pra só "status" foi descartada
+depois desta descoberta.)
+
+**Duas armadilhas de implementação, ambas resolvidas:**
+1. A aba do PDF não expõe uma URL utilizável via `page.url()` (fica presa em `":"`, mesmo
+   depois de carregado) — não dá pra usar `page.request.get(novaPagina.url())`.
+2. Como o Chromium trata como *download* (não navegação normal), ler o corpo via evento
+   `response`/CDP falha com `"No resource with given identifier found"` — é preciso usar a
+   API de download do Playwright (`page.on("download")` + `download.path()`, contexto criado
+   com `acceptDownloads: true`), não tentar capturar via rede.
+
+**Resultado do teste final** (mesmo processo do PDF do usuário): 3 pagamentos, mesmas datas
+(28/07/2025), mesmos valores (R$ 77.791,89 / R$ 3.123,89 / R$ 567,97) e tipo "Preferência" —
+bateu exatamente.
+
+`pdftotext` (poppler, já usado no pipeline DEPRE — `bin/extract_depre.py`) extrai o texto do
+PDF; `parsePagamentosPdf` faz o parse da seção de pagamentos por regex.
+
+### Comentários:
+- Toda a exploração foi feita numa VPS de teste isolada (`/root/test-playwright`, fora do
+  diretório de produção `/opt/precatorio-worker`) — nada tocou o worker em produção.
+- `tesseract-ocr`, `imagemagick` e `poppler-utils` (`pdftotext`) precisam estar instalados na
+  VPS de produção antes do deploy — nenhum script de provisionamento documenta isso ainda
+  (mesma pendência já registrada na Fase 2).
+- O teste do bypass do captcha (Fase 1) ficou definitivamente irrelevante — com Playwright +
+  OCR real funcionando de ponta a ponta, não há mais motivo pra revisitar isso.
 
 ### Parse do resultado + navegação pro detalhe [Não Iniciada ⏳]
 

@@ -1,15 +1,31 @@
 // FOR-102 — Navegação do portal TJSP "Pagamentos Precatórios" (pesquisainternetv2.aspx),
-// busca por processo_depre (.0500). App GeneXus (ASP.NET + AJAX próprio, não postback
-// clássico) — protocolo mapeado em .claude/sessions/for-102-valor-pago-crawler/plan.md
-// a partir de uma captura real de tráfego de navegador (DevTools → Copy as fetch).
-import { request } from "undici";
-import { randomBytes } from "node:crypto";
+// busca por processo_depre (.0500), via Playwright.
+//
+// Por que Playwright (e não HTTP puro, como o e-SAJ em esaj.ts): esse portal é uma
+// aplicação GeneXus (ASP.NET + AJAX próprio, sessão/estado bem mais complexos que os
+// forms Struts do e-SAJ). Tentativas de replicar o protocolo AJAX via undici bateram em
+// HTTP 440 "Session timeout" de forma consistente — ver plan.md da sessão FOR-102 (Fase 3).
+//
+// Fluxo real (confirmado ao vivo, inclusive por captura de navegador do usuário):
+// webmenupesquisa.aspx → token de "Pagamentos Precatórios" → pesquisainternetv2.aspx
+// (busca por Processo DEPRE + captcha) → grade de resultado (status já visível) → clicar
+// no ícone "Selecionar" da linha abre uma ABA NOVA com um PDF gerado sob demanda
+// (arelpesquisainternetprecatorio.aspx) contendo a seção "Pagamentos do Processo"
+// (Data | Valor R$ | Tipo) quando há pagamentos.
+//
+// Concorrência: a VPS tem só 1 vCPU / ~2GB livres, compartilhada com outros serviços em
+// produção (comunica-web-api, comunica-saas-api, o próprio precatorio-crawler). Rodar
+// múltiplos Chromiums em paralelo arrisca derrubar a VPS inteira — por isso todo acesso
+// a este módulo passa pela fila de concorrência-1 em `fila.ts`.
+import { chromium, type Browser, type BrowserContext, type Page } from "playwright";
+import { execFile } from "node:child_process";
+import { promisify } from "node:util";
 import { solveCaptcha } from "./captcha.js";
-import { config, sleep } from "./config.js";
+import { comFilaPlaywright } from "./fila.js";
 
-const UA =
-  "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36";
+const execFileAsync = promisify(execFile);
 const BASE = "https://www.tjsp.jus.br/cac/scp";
+const RESULTADO_RE = /pesquisainternetnumanoep\.aspx/;
 
 export interface Pagamento {
   data: string | null; // ISO (YYYY-MM-DD) quando possível
@@ -17,174 +33,158 @@ export interface Pagamento {
   tipo: string | null;
 }
 
-interface Session {
-  cookie: string;
-  gxState: Record<string, unknown>;
-  pageToken: string; // token assinado, parte da URL de pesquisainternetv2.aspx
-  referer: string;
+export interface ConsultaPagamento {
+  encontrado: boolean;
+  situacao: string | null; // texto da grade, ex. "Pendente de Pagamento"
+  pagamentos: Pagamento[]; // linhas do PDF "Pagamentos do Processo" (pode ser vazia)
 }
 
-function mergeSetCookie(current: string, headers: Record<string, string | string[] | undefined>): string {
-  const raw = ([] as string[]).concat(headers["set-cookie"] ?? []);
-  if (raw.length === 0) return current;
-  const jar = new Map<string, string>();
-  for (const part of current.split(";").map((s) => s.trim()).filter(Boolean)) {
-    const [k, v] = part.split("=");
-    if (k) jar.set(k, v ?? "");
-  }
-  for (const setCookie of raw) {
-    const [pair] = setCookie.split(";");
-    const [k, v] = (pair ?? "").split("=");
-    if (k) jar.set(k.trim(), (v ?? "").trim());
-  }
-  return [...jar.entries()].map(([k, v]) => `${k}=${v}`).join("; ");
-}
-
-/** Abre a sessão pública (sem login) e captura o token assinado de "Pagamentos Precatórios". */
-export async function abrirSessaoPagamentos(): Promise<Session> {
-  let cookie = "";
-  const res1 = await request(`${BASE}/webmenupesquisa.aspx`, {
-    method: "GET",
-    headers: { "User-Agent": UA, "Accept-Language": "pt-BR,pt;q=0.9" },
-    signal: AbortSignal.timeout(config.requestTimeoutMs),
-  });
-  cookie = mergeSetCookie(cookie, res1.headers as Record<string, string | string[] | undefined>);
-  const menuHtml = await res1.body.text();
-  const linkMatch = menuHtml.match(/"LBLPAGAMENTOSV2_Link":"([^"]+)"/);
-  if (!linkMatch) throw new Error("token de Pagamentos Precatórios não encontrado em webmenupesquisa.aspx");
-  const link = linkMatch[1]!.replace(/\\\//g, "/");
-  const pageToken = link.split("?")[1]!;
-  const referer = `${BASE}/${link}`;
-
-  const res2 = await request(referer, {
-    method: "GET",
-    headers: { "User-Agent": UA, "Accept-Language": "pt-BR,pt;q=0.9", Cookie: cookie },
-    signal: AbortSignal.timeout(config.requestTimeoutMs),
-  });
-  cookie = mergeSetCookie(cookie, res2.headers as Record<string, string | string[] | undefined>);
-  const formHtml = await res2.body.text();
-  const stateMatch = formHtml.match(/name="GXState" value='(\{.*?\})'>/s);
-  if (!stateMatch) throw new Error("GXState inicial não encontrado no form de Pagamentos Precatórios");
-  const gxState = JSON.parse(stateMatch[1]!) as Record<string, unknown>;
-
-  return { cookie, gxState, pageToken, referer };
-}
-
-/** Uma chamada AJAX do GeneXus (POST, corpo x-www-form-urlencoded, GXState embutido). */
-async function ajaxCall(
-  session: Session,
-  eventName: string,
-  fields: Record<string, string>,
-): Promise<{ bodyText: string; statusCode: number }> {
-  const state = { ...session.gxState, _EventName: eventName, _EventGridId: "", _EventRowId: "" };
-  const nonce = randomBytes(16).toString("hex");
-  const url = `${BASE}/pesquisainternetv2.aspx?${nonce},${session.pageToken},gx-no-cache=${Date.now()}`;
-  const body = new URLSearchParams({ ...fields, GXState: JSON.stringify(state) }).toString();
-
-  const res = await request(url, {
-    method: "POST",
-    headers: {
-      "User-Agent": UA,
-      "Accept-Language": "pt-BR,pt;q=0.9",
-      Accept: "*/*",
-      "Content-Type": "application/x-www-form-urlencoded",
-      Cookie: session.cookie,
-      ajax_security_token: String(session.gxState.AJAX_SECURITY_TOKEN ?? ""),
-      gxajaxrequest: "1",
-      Referer: session.referer,
-      "sec-fetch-dest": "empty",
-      "sec-fetch-mode": "cors",
-      "sec-fetch-site": "same-origin",
-    },
-    body,
-    signal: AbortSignal.timeout(config.requestTimeoutMs),
-  });
-  session.cookie = mergeSetCookie(session.cookie, res.headers as Record<string, string | string[] | undefined>);
-  const bodyText = await res.body.text();
-  // Se a resposta trouxer GXState atualizado, acumula pro próximo call da sequência
-  // (padrão observado: cada AJAX response pode devolver o estado revisado do lado servidor).
-  const m = bodyText.match(/"GXState"\s*:\s*(\{.*\})\s*\}?\s*$/s) ?? bodyText.match(/^(\{.*\})$/s);
-  if (m) {
-    try {
-      const maybeState = JSON.parse(m[1]!);
-      session.gxState = { ...session.gxState, ...maybeState };
-    } catch {
-      /* resposta não é JSON puro — ver nota no plan.md, ainda em investigação */
-    }
-  }
-  return { bodyText, statusCode: res.statusCode };
-}
-
-/**
- * Busca os pagamentos de um processo_depre (.0500). Tenta até `maxTentativas` captchas
- * diferentes (cada um é de graça pra recarregar) antes de desistir.
- *
- * NOTA (FOR-102, ver plan.md): a sequência exata de eventos (`EVENT_ID.ISVALID.` →
- * `ERFR.` → `E'PESQUISAR'.`) foi mapeada a partir de uma captura real de navegador, mas
- * ainda não foi validada rodando este módulo de ponta a ponta — as tentativas via script
- * solto (Python/curl) bateram em "440 Session timeout" por um motivo ainda não isolado
- * (possivelmente serialização exata do GXState, ou detalhe de cookie/sessão). Este é o
- * ponto exato onde continuar a depuração, preferencialmente com logging do `bodyText`
- * de cada `ajaxCall` pra ver a resposta real do servidor.
- */
-export async function buscarPagamentos(
+/** Consulta a situação/pagamentos de um processo_depre (.0500). Serializado (fila, 1 por vez). */
+export async function consultarPagamentos(
   processoDepre: string,
-  maxTentativas = 3,
-): Promise<Pagamento[]> {
-  const session = await abrirSessaoPagamentos();
-
-  const baseFields: Record<string, string> = {
-    vTIPOPESQUISA: "1",
-    vENT_ID: "",
-    vPRP_PROCESSO: processoDepre,
-    vOPCAOPESQUISA: "01", // "Processo DEPRE"
-    vPRP_NUM_AUTOS: "",
-    vPRP_NUM_ORDEM: "",
-    vPRP_ANO_ORDEM: "",
-    vPRP_NUM_PROTOCOLO: "",
-    vPRP_DT_PROTOCOLO: "   /  /     ",
-    vNAT_ID: "0",
-    vNOME: "",
-    vTIPOPARTICIPACAO: "3",
-    vISNOMECOMPLETO: "",
-    vTIPOCOMBINACAOFONEMA: "C",
-    vCRE_CPF_CNPJ: "",
-    BUTTON3: "Pesquisar",
-    BUTTON1: "Limpar",
-    BUTTON4: "Voltar",
-  };
-
-  for (let tentativa = 1; tentativa <= maxTentativas; tentativa++) {
-    // TODO: baixar a imagem do captcha de verdade (Captcha/images/<n>.jpg) em vez de usar
-    // um placeholder — depende de descobrir como o servidor comunica qual <n> foi sorteado
-    // (hoje é 100% client-side JS; ver discussão de arquitetura no plan.md).
-    const cfield = await solveCaptcha(Buffer.alloc(0)).catch(() => "");
-    session.gxState.CAPTCHA1_Validationresult = 1;
-
-    await ajaxCall(session, "EVENT_ID.ISVALID.", { ...baseFields, cfield });
-    await ajaxCall(session, "ERFR.", { ...baseFields, cfield });
-    const { bodyText, statusCode } = await ajaxCall(session, "E'PESQUISAR'.", { ...baseFields, cfield });
-
-    if (statusCode === 200 && !/session timeout/i.test(bodyText)) {
-      return parsePagamentos(bodyText);
-    }
-    await sleep(config.delayMs);
-  }
-  throw new Error(`buscarPagamentos: falhou após ${maxTentativas} tentativas (processo=${processoDepre})`);
+  maxTentativas = 4,
+): Promise<ConsultaPagamento> {
+  return comFilaPlaywright(() => consultarInterno(processoDepre, maxTentativas));
 }
 
-/** Extrai {data, valor, tipo} da tabela "Pagamentos do Processo" no HTML de detalhe. */
-function parsePagamentos(html: string): Pagamento[] {
+async function consultarInterno(
+  processoDepre: string,
+  maxTentativas: number,
+): Promise<ConsultaPagamento> {
+  const browser: Browser = await chromium.launch({ headless: true });
+  try {
+    const context = await browser.newContext({ acceptDownloads: true });
+    const page = await context.newPage();
+
+    // 1) Menu público (sem login) → link assinado por sessão de "Pagamentos Precatórios".
+    await page.goto(`${BASE}/webmenupesquisa.aspx`, { waitUntil: "domcontentloaded" });
+    const link = await page.locator("#LBLPAGAMENTOSV2 a").getAttribute("href");
+    if (!link) throw new Error("link de Pagamentos Precatórios não encontrado no menu");
+    await page.goto(`${BASE}/${link}`, { waitUntil: "networkidle" });
+
+    for (let tentativa = 1; tentativa <= maxTentativas; tentativa++) {
+      if (RESULTADO_RE.test(page.url())) break; // busca de uma tentativa anterior já completou
+      const ok = await tentarBusca(page, processoDepre);
+      if (ok) break;
+      if (tentativa === maxTentativas) {
+        throw new Error(`consultarPagamentos: captcha não resolvido após ${maxTentativas} tentativas`);
+      }
+      // pede captcha novo (é de graça); espera o AJAX do reload assentar antes da próxima
+      // tentativa — sem isso, o próximo fill() pode cair no meio de um form temporariamente
+      // desabilitado e travar (mesma classe de corrida do fix em tentarBusca).
+      await page.locator("#CAPTCHA1Container a").click().catch(() => {});
+      await page.waitForLoadState("networkidle").catch(() => {});
+      await page.waitForTimeout(500);
+    }
+
+    const { encontrado, situacao } = await extrairSituacao(page);
+    if (!encontrado) return { encontrado: false, situacao: null, pagamentos: [] };
+
+    const pagamentos = await abrirRelatorioEExtrairPagamentos(context, page);
+    return { encontrado: true, situacao, pagamentos };
+  } finally {
+    await browser.close();
+  }
+}
+
+/** Preenche o form (Processo DEPRE) + resolve o captcha atual + clica Pesquisar. Retorna
+ * `false` se o captcha foi rejeitado (chamador deve pedir um novo e tentar de novo).
+ *
+ * Ordem importa: o `blur` do campo do captcha dispara uma validação assíncrona (AJAX) no
+ * servidor — clicar em "Pesquisar" antes dela terminar faz a busca ser ignorada. Por isso
+ * esperamos `networkidle` + uma folga entre o blur e o clique, e damos um timeout generoso
+ * pra navegação (o backend pode demorar) antes de desistir e pedir um captcha novo — timeout
+ * curto demais causa uma corrida onde a busca anterior completa DEPOIS que já pedimos outro
+ * captcha, deixando a página num estado inconsistente pra próxima tentativa (ver plan.md).
+ */
+async function tentarBusca(page: Page, processoDepre: string): Promise<boolean> {
+  await page.locator('select[name="vOPCAOPESQUISA"], #vOPCAOPESQUISA').selectOption("01").catch(() => {});
+  await page.locator('input[name="vPRP_PROCESSO"]').fill(processoDepre);
+
+  const captchaImg = page.locator("#CAPTCHA1Container img");
+  const imgSrc = await captchaImg.getAttribute("src");
+  if (!imgSrc) throw new Error("imagem do captcha não encontrada");
+  const imgUrl = new URL(imgSrc, page.url()).toString();
+  const imgResponse = await page.request.get(imgUrl);
+  const imgBuffer = await imgResponse.body();
+  const guess = await solveCaptcha(imgBuffer);
+
+  const cfield = page.locator('input[name="cfield"], #_cfield');
+  await cfield.fill(guess);
+  await cfield.blur();
+  await page.waitForLoadState("networkidle");
+  await page.waitForTimeout(500); // folga pra validação assíncrona do captcha assentar
+
+  await page.locator('input[name="BUTTON3"]').click();
+  try {
+    await page.waitForURL(RESULTADO_RE, { timeout: 25_000 });
+    return true;
+  } catch {
+    await page.waitForLoadState("networkidle").catch(() => {});
+    return RESULTADO_RE.test(page.url());
+  }
+}
+
+/** Lê o status da 1ª linha da grade de resultado (`span_PRP_SITUACAO_ANDAMENTO_NNNN`).
+ *
+ * Nota: a mensagem "Não foram encontrados Processos com estes filtros !!!" fica sempre
+ * presente no HTML (só oculta via CSS), mesmo quando HÁ resultado — não é um sinal
+ * confiável de "não encontrado". O sinal correto é a presença da própria linha da grade
+ * (`span_PRP_SITUACAO_ANDAMENTO_NNNN`), que só existe quando há resultado.
+ */
+async function extrairSituacao(page: Page): Promise<{ encontrado: boolean; situacao: string | null }> {
+  const status = page.locator('span[id^="span_PRP_SITUACAO_ANDAMENTO_"]').first();
+  if ((await status.count()) === 0) return { encontrado: false, situacao: null };
+  const texto = (await status.innerText()).trim();
+  return { encontrado: true, situacao: texto || null };
+}
+
+/** Clica no ícone "Selecionar" da 1ª linha — o GeneXus abre uma aba nova (via
+ * `RCOOpenWindowRender.js` + `window.open`) que o Chromium trata como **download** (não
+ * navegação normal): a aba não expõe uma URL utilizável (`page.url()` fica preso em `":"`)
+ * e o corpo da resposta via CDP não é lido de forma confiável quando é tratado como
+ * download ("No resource with given identifier found"). A forma correta é usar a própria
+ * API de download do Playwright (`page.on("download")` + `download.path()`), com o
+ * contexto criado com `acceptDownloads: true`. */
+async function abrirRelatorioEExtrairPagamentos(context: BrowserContext, page: Page): Promise<Pagamento[]> {
+  const icone = page.locator('input[type="image"][name^="vSELECIONAR_"]').first();
+  if ((await icone.count()) === 0) return [];
+
+  const downloadPromise = page.waitForEvent("download", { timeout: 20_000 }).catch(() => null);
+  const novaPaginaPromise = context.waitForEvent("page", { timeout: 20_000 }).catch(() => null);
+
+  await icone.click({ timeout: 10_000 });
+  const download = await downloadPromise;
+
+  const novaPagina = await novaPaginaPromise;
+  await novaPagina?.close().catch(() => {});
+
+  if (!download) return [];
+  const path = await download.path();
+  if (!path) return [];
+
+  return parsePagamentosPdf(await pdfToText(path));
+}
+
+/** `pdftotext` (poppler) — mesma ferramenta já usada no pipeline DEPRE deste projeto
+ * (bin/extract_depre.py) — extrai o texto do PDF do relatório (já salvo em disco pelo
+ * Playwright via `download.path()`). */
+async function pdfToText(pdfPath: string): Promise<string> {
+  const { stdout } = await execFileAsync("pdftotext", ["-layout", pdfPath, "-"]);
+  return stdout;
+}
+
+/** Extrai {data, valor, tipo} da seção "Pagamentos do Processo" do texto do PDF. */
+function parsePagamentosPdf(texto: string): Pagamento[] {
   const pagamentos: Pagamento[] = [];
-  // TODO: ajustar o parser assim que tivermos um HTML de resposta real (ver nota acima) —
-  // o formato abaixo é uma primeira aproximação baseada no PDF de exemplo (Data | Valor R$ | Tipo).
-  const rowRe = /(\d{2}\/\d{2}\/\d{4})\s*<\/td>\s*<td[^>]*>\s*([\d.,]+)\s*<\/td>\s*<td[^>]*>\s*([^<]+)</g;
+  const linhaRe = /(\d{2}\/\d{2}\/\d{4})\s+([\d.,]+)\s+(\S.*\S|\S)$/gm;
   let m: RegExpExecArray | null;
-  while ((m = rowRe.exec(html))) {
+  while ((m = linhaRe.exec(texto))) {
     const [, dataBr, valorStr, tipo] = m;
     const [dd, mm, yyyy] = dataBr!.split("/");
     const valorCentavos = Math.round(parseFloat(valorStr!.replace(/\./g, "").replace(",", ".")) * 100);
-    pagamentos.push({ data: `${yyyy}-${mm}-${dd}`, valorCentavos, tipo: tipo!.trim() });
+    if (!Number.isFinite(valorCentavos)) continue;
+    pagamentos.push({ data: `${yyyy}-${mm}-${dd}`, valorCentavos, tipo: tipo!.trim() || null });
   }
   return pagamentos;
 }
