@@ -444,11 +444,12 @@ null pra esse processo):
    `maskCpf(null)` (sempre null, mesmo quando `precatorios.autor` tinha dado real).
 4. `frontend/src/lib/api/precatorios.ts` — `PublicItem.titular_nome` adicionado ao tipo.
 
-**Falta**: (a) aplicar a migration no SQL Editor do Lovable; (b) levar o `buscar-precatorio`
-atualizado pro Lovable (mesmo passo pendente já registrado acima — agora com titular incluído
-junto); (c) validar de ponta a ponta com o processo de teste (`0150268-84.2024.8.26.0500`) —
-esse específico só vai mostrar nome depois de um re-crawl (não é automático; pode precisar
-enfileirar manualmente ou esperar o próximo ciclo de refresh).
+**Concluído em 2026-07-22**: migration aplicada, `buscar-precatorio` deployado no Lovable,
+validado de ponta a ponta (curl real: `titular_nome` retornando, `precatorios.autor`
+backfilled). O processo de teste (`0150268-84.2024.8.26.0500`) precisou de um upsert manual em
+`djen_depre` pra retestar na hora — o re-crawl automático via fila não pegou o job em tempo
+hábil durante a sessão (fila com bastante atividade concorrente, provável cron DJEN). Não
+investigado a fundo — se o padrão se repetir, vale revisitar. Commit: `d4fdb4f`.
 
 **Limitação conhecida, não resolvida agora**: busca por CPF/CNPJ no schema novo
 (`partes.documento`) é código morto na prática — nada popula `partes.documento` hoje (o e-SAJ
@@ -459,18 +460,32 @@ match prévio. Buscas por CPF real hoje só funcionam via a tabela legada
 
 ---
 
-## FASE 7 — Disparo manual no admin [Não Iniciada ⏳]
+## FASE 7 — Disparo manual no admin [Código pronto, deploy+commit frontend pendentes ⏳]
 
-### `frontend/src/lib/api/processos.ts` [Não Iniciada ⏳]
+### `supabase/functions/consultar-pagamento-manual/index.ts` [Completada ✅]
 
-Nova função client que chama o endpoint da Fase 5 (via edge function ponte, se necessário, ou
-diretamente — decidir conforme exposição de rede do worker).
+Ponte fina pro endpoint HTTP do worker (`/valor-pago`) — só existe pra manter
+`WORKER_HTTP_SECRET` fora do browser. O worker já persiste o resultado sozinho
+(`consultarEPersistirPagamentos`); a function só repassa a resposta. Commit `0ae01bd` no
+cortex-v1. **Falta deployar no Lovable** (mesmo fluxo das outras edge functions).
 
-### `frontend/src/routes/admin.processos.tsx` [Não Iniciada ⏳]
+### `frontend/src/lib/api/processos.ts` [Completada ✅]
 
-UI de disparo — **padrão novo** (sem precedente no admin): checkbox por linha + botão em lote, ou
-botão por linha (mais simples) — decidir na implementação conforme trade-off já registrado em
-`architecture.md`.
+`consultarPagamentoManual(processoDepre)` chama a edge function acima via
+`supabase.functions.invoke`.
+
+### `frontend/src/routes/admin.processos.$id.tsx` [Completada ✅]
+
+Decisão: **botão por incidente** (não checkbox+lote) — mais simples, e o caso de uso real é
+"reconsultar esse .0500 específico que parece desatualizado", não lote. Botão "Reconsultar
+valor pago" aparece só em incidentes com `numero_depre` terminando em `.8.26.0500` (mesma
+validação do worker), mostra situação + tabela de pagamentos inline após a consulta.
+
+**Falta**: commitar no repo do frontend — não commitei ainda porque o working tree tinha
+mudanças externas em andamento (Lovable/edição direta) em `admin.processos.tsx` e
+`lib/api/precatorios.ts` que não são desta sessão; e o branch atual do frontend
+(`jjuniorfilho/for-83-frontend-resultado`) não é o `jjuniorfilho/precatorio-sp` que o Lovable
+sincroniza. Decidir com o usuário onde/como commitar antes de seguir.
 
 ### Teste manual no browser [Não Iniciada ⏳]
 
