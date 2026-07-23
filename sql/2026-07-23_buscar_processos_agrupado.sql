@@ -39,51 +39,66 @@ returns table(
   valor_total bigint, has_more boolean)
 language sql stable security definer set search_path = public
 as $function$
-  with inc_valor as (
+  -- Filtra PRIMEIRO (mesma estrutura indexada da buscar_processos/FOR-104, já validada
+  -- rápida) — só depois de já ter um conjunto pequeno é que enriquece com djen_depre e
+  -- agrega por processo. A primeira versão fazia o LEFT JOIN djen_depre + rank de fase
+  -- pra TODOS os incidentes antes de filtrar, o que estourava timeout mesmo com filtro
+  -- bem seletivo (o enriquecimento rodava pra tabela inteira de qualquer jeito).
+  with filtrado as (
     select i.id as incidente_id, i.processo_id, i.tipo_previsto, i.fase, i.fase_desde,
-           i.numero_depre, i.status, i.elegivel, i.macrofase,
-           coalesce(dd.valor_acao, i.valor_acao) as valor_incidente,
-           case i.fase
+           i.numero_depre, i.status, i.elegivel, i.macrofase, i.valor_acao
+      from incidentes i
+      join processos p on p.id = i.processo_id
+     where p.flag_sp
+       and (p_esfera    is null or p.ente_esfera = p_esfera)
+       and (p_tipo      is null or i.tipo_previsto = p_tipo)
+       and (p_fase      is null or i.fase = p_fase)
+       and (p_macrofase is null or i.macrofase = p_macrofase)
+       and (p_status    is null or i.status = p_status)
+       -- valor_min/max filtra pelo valor_acao bruto (pré-enriquecimento djen_depre) —
+       -- aproximação deliberada pra manter o filtro sargable; na prática os dois valores
+       -- raramente divergem o suficiente pra mudar se o processo entra ou não.
+       and (p_valor_min is null or i.valor_acao >= p_valor_min)
+       and (p_valor_max is null or i.valor_acao <= p_valor_max)
+       and (p_elegivel  is null or i.elegivel = p_elegivel)
+       and (p_andamento_de  is null or (select max(a.data) from andamentos a where a.incidente_id = i.id) >= p_andamento_de)
+       and (p_andamento_ate is null or (select max(a.data) from andamentos a where a.incidente_id = i.id) <= p_andamento_ate)
+       and (p_q is null or i.cnj_normalizado ilike '%'||regexp_replace(p_q,'\D','','g')||'%'
+            or p.cnj_normalizado ilike '%'||regexp_replace(p_q,'\D','','g')||'%'
+            or regexp_replace(coalesce(i.numero_depre,''),'\D','','g') ilike '%'||regexp_replace(p_q,'\D','','g')||'%'
+            or exists (select 1 from partes d where d.incidente_id = i.id and d.documento ilike '%'||regexp_replace(p_q,'\D','','g')||'%'))
+       and (p_advogado is null or exists (select 1 from partes a where a.incidente_id = i.id and a.papel='ativa'
+              and btrim(regexp_replace(replace(a.advogado_nome, chr(160), ' '), '\s+', ' ', 'g'))
+                  ilike '%'||btrim(regexp_replace(replace(p_advogado, chr(160), ' '), '\s+', ' ', 'g'))||'%'))
+       and (p_oab is null or exists (select 1 from partes a where a.incidente_id = i.id and a.papel='ativa' and a.oab_normalizada = upper(regexp_replace(p_oab,'[^0-9A-Za-z]','','g'))))
+  ),
+  enriquecido as (
+    select f.*,
+           coalesce(dd.valor_acao, f.valor_acao) as valor_incidente,
+           case f.fase
              when 'oc' then 8 when 'oficio' then 7 when 'depre' then 6
              when 'oficio_deferido' then 5 when 'termo' then 4 when 'incidente' then 3
              when 'calculo' then 2 when 'inicial' then 1 else 0
            end as fase_rank
-      from incidentes i
+      from filtrado f
       left join djen_depre dd
-        on i.numero_depre is not null
-       and dd.cnj_normalizado = regexp_replace(i.numero_depre, '\D', '', 'g')
+        on f.numero_depre is not null
+       and dd.cnj_normalizado = regexp_replace(f.numero_depre, '\D', '', 'g')
   ),
-  base as (
-    select p.id as processo_id, p.cnj, p.processo_codigo, p.ente_nome, p.ente_esfera, p.status,
-           count(iv.incidente_id) as n_incidentes,
-           sum(iv.valor_incidente) as valor_total,
-           (array_agg(iv.fase order by iv.fase_rank desc, iv.fase_desde desc nulls last))[1] as fase_mais_avancada,
-           (array_agg(iv.fase_desde order by iv.fase_rank desc, iv.fase_desde desc nulls last))[1] as fase_desde
-      from processos p
-      join inc_valor iv on iv.processo_id = p.id
-     where p.flag_sp
-       and (p_esfera    is null or p.ente_esfera = p_esfera)
-       and (p_tipo      is null or iv.tipo_previsto = p_tipo)
-       and (p_fase      is null or iv.fase = p_fase)
-       and (p_macrofase is null or iv.macrofase = p_macrofase)
-       and (p_status    is null or iv.status = p_status)
-       and (p_valor_min is null or iv.valor_incidente >= p_valor_min)
-       and (p_valor_max is null or iv.valor_incidente <= p_valor_max)
-       and (p_elegivel  is null or iv.elegivel = p_elegivel)
-       and (p_andamento_de  is null or (select max(a.data) from andamentos a where a.incidente_id = iv.incidente_id) >= p_andamento_de)
-       and (p_andamento_ate is null or (select max(a.data) from andamentos a where a.incidente_id = iv.incidente_id) <= p_andamento_ate)
-       and (p_q is null or p.cnj_normalizado ilike '%'||regexp_replace(p_q,'\D','','g')||'%'
-            or regexp_replace(coalesce(iv.numero_depre,''),'\D','','g') ilike '%'||regexp_replace(p_q,'\D','','g')||'%'
-            or exists (select 1 from partes d where d.incidente_id = iv.incidente_id and d.documento ilike '%'||regexp_replace(p_q,'\D','','g')||'%'))
-       and (p_advogado is null or exists (select 1 from partes a where a.incidente_id = iv.incidente_id and a.papel='ativa'
-              and btrim(regexp_replace(replace(a.advogado_nome, chr(160), ' '), '\s+', ' ', 'g'))
-                  ilike '%'||btrim(regexp_replace(replace(p_advogado, chr(160), ' '), '\s+', ' ', 'g'))||'%'))
-       and (p_oab is null or exists (select 1 from partes a where a.incidente_id = iv.incidente_id and a.papel='ativa' and a.oab_normalizada = upper(regexp_replace(p_oab,'[^0-9A-Za-z]','','g'))))
-     group by p.id, p.cnj, p.processo_codigo, p.ente_nome, p.ente_esfera, p.status
+  agregado as (
+    select processo_id,
+           count(*) as n_incidentes,
+           sum(valor_incidente) as valor_total,
+           (array_agg(fase order by fase_rank desc, fase_desde desc nulls last))[1] as fase_mais_avancada,
+           (array_agg(fase_desde order by fase_rank desc, fase_desde desc nulls last))[1] as fase_desde
+      from enriquecido
+     group by processo_id
   ),
   page as (
-    select * from base
-     order by valor_total desc nulls last
+    select a.*, p.cnj, p.processo_codigo, p.ente_nome, p.ente_esfera, p.status
+      from agregado a
+      join processos p on p.id = a.processo_id
+     order by a.valor_total desc nulls last
      limit greatest(p_limit,1) + 1 offset greatest(p_offset,0)
   ),
   paged as (
