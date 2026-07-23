@@ -36,6 +36,61 @@ Processo gerenciado por **systemd** ou **pm2**. Env mínimo: `SUPABASE_URL`, `SU
 - Doc técnica: `../docs/business-context/crawler-tjsp-esaj/Documentacao_Crawler_TJSP_eSAJ.md`
 - Schema: FOR-69 · Fila/RPCs: FOR-73 · Classificação: FOR-72
 
+## Valor pago — portal "Pagamentos Precatórios" (FOR-102)
+Consulta a situação/pagamentos reais de um requisitório `.0500` no portal TJSP
+(`pesquisainternetv2.aspx`, GeneXus). Diferente do crawler e-SAJ acima: é **síncrono**,
+sob demanda (não roda no loop de `claim/crawl/persist`), e usa **Playwright** — o portal
+é uma aplicação AJAX própria com sessão/estado que não deu pra replicar via HTTP puro
+(bateu em `440 Session timeout` consistentemente; ver `.claude/sessions/for-102-valor-pago-crawler/plan.md`
+Fase 3 pra detalhes da investigação).
+
+**Módulos:**
+- `src/pagamentos-tjsp.ts` — navegação completa (sessão → busca por `processo_depre` →
+  captcha → grade de resultado → PDF "Pagamentos do Processo"). `consultarEPersistirPagamentos`
+  já persiste no Supabase (`precatorios_pagamentos` + `precatorios.pagamentos_consultado_em`)
+  — é essa a função que os callers (abaixo) devem chamar, não `consultarPagamentos` direto.
+- `src/captcha.ts` — OCR leve (`tesseract` + `convert`/ImageMagick via CLI, não libs Node) —
+  ~50% de acerto por tentativa, mas o captcha é de graça pra recarregar, então o retry
+  (dentro de `pagamentos-tjsp.ts`) compensa (~87,5% acumulado em 3 tentativas).
+- `src/fila.ts` — serializa todo acesso ao Playwright (concorrência 1) — a VPS tem só 1
+  vCPU/~2GB livres, compartilhada com outros serviços (`comunica-web-api`,
+  `comunica-saas-api`); rodar múltiplos Chromiums em paralelo arrisca derrubar tudo.
+- `src/http-server.ts` — expõe `POST /valor-pago { processo_depre }` (Node `http` nativo),
+  autenticado via header `X-Worker-Secret` (env `WORKER_HTTP_SECRET`). Escuta só em
+  `127.0.0.1:${HTTP_PORT}` — sobe junto com o loop principal (`startHttpServer()` em
+  `index.ts`, antes de entrar no `claim/crawl/persist`), não é um processo separado.
+
+**Dependências de sistema na VPS** (fora do `npm install`) — instalar antes do deploy:
+```bash
+apt-get install tesseract-ocr tesseract-ocr-por tesseract-ocr-eng imagemagick poppler-utils
+npx playwright install --with-deps chromium
+```
+
+**Exposição pública (produção):** o `http-server.ts` só escuta em loopback — quem expõe pra
+fora é um site nginx dedicado + Let's Encrypt em `crawler.forjuris.com.br` → proxy pra
+`127.0.0.1:${HTTP_PORT}` (`proxy_read_timeout 300s`, acima do default de 60s — a consulta
+real com retry de captcha pode passar disso). Config de referência em
+`infra/nginx-crawler-worker.conf` (o arquivo real vive só na VPS,
+`/etc/nginx/sites-enabled/`).
+
+**Callers:**
+- `supabase/functions/buscar-precatorio` (busca pública) — síncrono, a cada busca que bate
+  num `.0500`, sem TTL/cache (decisão deliberada — ver plan.md).
+- `supabase/functions/disparar-valor-pago` (disparo manual no `/admin/processos/:id`) —
+  ponte fina, só existe pra manter `WORKER_HTTP_SECRET` fora do browser.
+- Ambas as edge functions deployam via Lovable AI (API interna, não git) — atualizar o
+  código aqui não propaga sozinho, precisa levar manualmente.
+
+**Titular do requisitório:** `crawlRequisitorio`/`persistRequisitorio` (no crawler e-SAJ
+acima, não neste módulo) já captura o nome do requerente (Reqte) toda vez que visita a
+ficha de um `.0500` e grava em `djen_depre.titular_nome` — não depende do módulo de
+pagamentos. Documento (CPF/CNPJ) nunca vem da ficha (TJSP não expõe); só é gravado
+(`djen_depre.titular_documento`) quando o próprio titular busca por ele publicamente.
+
+**Pendente (Fase 8):** validar taxa de sucesso do OCR contra volume real de produção antes
+de decidir entre manter OCR ou plugar 2captcha como fallback (interface já isolada em
+`captcha.ts` desde a Fase 2 pra trocar sem mexer no resto).
+
 ## Ingestão DJEN na VPS (FOR-70) — contorna 403 de IP
 A API do Comunica/PJe bloqueia IP de datacenter da edge function (403). Por isso a
 ingestão roda **aqui na VPS** (mesma do projeto Vitis/RN, IP aceito pelo PJe):
