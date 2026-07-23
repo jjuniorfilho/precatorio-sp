@@ -54,7 +54,9 @@ as $function$
        and (p_tipo      is null or i.tipo_previsto = p_tipo)
        and (p_fase      is null or i.fase = p_fase)
        and (p_macrofase is null or i.macrofase = p_macrofase)
-       and (p_status    is null or i.status = p_status)
+       -- p_status aceita lista separada por vírgula (ex.: 'extinto,arquivado' pro filtro
+       -- "Encerrado" da UI) sem precisar de outro parâmetro/array — mantém simples.
+       and (p_status    is null or i.status = any(string_to_array(p_status, ',')))
        -- valor_min/max filtra pelo valor_acao bruto (pré-enriquecimento djen_depre) —
        -- aproximação deliberada pra manter o filtro sargable; na prática os dois valores
        -- raramente divergem o suficiente pra mudar se o processo entra ou não.
