@@ -460,32 +460,34 @@ match prévio. Buscas por CPF real hoje só funcionam via a tabela legada
 
 ---
 
-## FASE 7 — Disparo manual no admin [Código pronto, deploy+commit frontend pendentes ⏳]
+## FASE 7 — Disparo manual no admin [Completada ✅]
 
-### `supabase/functions/consultar-pagamento-manual/index.ts` [Completada ✅]
+### `supabase/functions/disparar-valor-pago/index.ts` [Completada ✅ — deployada]
 
 Ponte fina pro endpoint HTTP do worker (`/valor-pago`) — só existe pra manter
 `WORKER_HTTP_SECRET` fora do browser. O worker já persiste o resultado sozinho
-(`consultarEPersistirPagamentos`); a function só repassa a resposta. Commit `0ae01bd` no
-cortex-v1. **Falta deployar no Lovable** (mesmo fluxo das outras edge functions).
+(`consultarEPersistirPagamentos`); a function só repassa a resposta.
 
-### `frontend/src/lib/api/processos.ts` [Completada ✅]
+**Achado da sessão**: eu tinha escrito e commitado essa function no cortex-v1 como
+`consultar-pagamento-manual` (commit `0ae01bd`) e dado o código pro usuário levar ao Lovable —
+só que o usuário/Lovable já tinha criado e deployado ela horas antes, direto via Lovable AI,
+com o nome `disparar-valor-pago` (commit `48206f2` em `precatorio-sp`, mesmo código
+byte-a-byte). Removido o duplicado `consultar-pagamento-manual` do cortex-v1; o nome real em
+produção é `disparar-valor-pago`, e é esse que o frontend chama.
 
-`consultarPagamentoManual(processoDepre)` chama a edge function acima via
-`supabase.functions.invoke`.
-
-### `frontend/src/routes/admin.processos.$id.tsx` [Completada ✅]
+### `frontend/src/lib/api/processos.ts` + `frontend/src/routes/admin.processos.$id.tsx` [Completada ✅]
 
 Decisão: **botão por incidente** (não checkbox+lote) — mais simples, e o caso de uso real é
 "reconsultar esse .0500 específico que parece desatualizado", não lote. Botão "Reconsultar
-valor pago" aparece só em incidentes com `numero_depre` terminando em `.8.26.0500` (mesma
-validação do worker), mostra situação + tabela de pagamentos inline após a consulta.
+valor pago" no card do requisitório `.0500` (`RequisitorioDepre`, já existente por outra
+sessão — `becf402`), mostra situação + tabela de pagamentos inline após a consulta.
 
-**Falta**: commitar no repo do frontend — não commitei ainda porque o working tree tinha
-mudanças externas em andamento (Lovable/edição direta) em `admin.processos.tsx` e
-`lib/api/precatorios.ts` que não são desta sessão; e o branch atual do frontend
-(`jjuniorfilho/for-83-frontend-resultado`) não é o `jjuniorfilho/precatorio-sp` que o Lovable
-sincroniza. Decidir com o usuário onde/como commitar antes de seguir.
+**Nota de branch**: o frontend tinha 65 commits de atraso entre `for-83-frontend-resultado`
+(onde eu commitei primeiro) e `precatorio-sp` (o que o Lovable sincroniza) — inclusive um
+`DepreRow`/UI de requisitório que já não existia mais do jeito antigo. Reaplicado limpo num
+branch novo a partir do `precatorio-sp` atual, via `git worktree` (não mexeu no branch/working
+tree original, que tinha outras mudanças em andamento não relacionadas). PR aberto:
+[#30](https://github.com/jjuniorfilho/sp-precat-rios-simples-c2fc47c1/pull/30).
 
 ### Teste manual no browser [Não Iniciada ⏳]
 
