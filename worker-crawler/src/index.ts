@@ -2,7 +2,7 @@
 import { config, assertConfig, sleep } from "./config.js";
 import { getSession, getRequisitorioSession, isDepre } from "./esaj.js";
 import { crawlSeed, crawlRequisitorio } from "./crawl.js";
-import { supabase, ensureAuth, claimJobs, completeJob, failJob, classifyProcesso, persistTree, persistRequisitorio, enqueueJob } from "./supabase.js";
+import { supabase, ensureAuth, claimJobs, completeJob, failJob, classifyProcesso, persistTree, persistRequisitorio, enqueueJob, resetOrfaosCrawlerQueue } from "./supabase.js";
 import { startHttpServer } from "./http-server.js";
 import type { QueueJob } from "./types.js";
 
@@ -11,21 +11,20 @@ async function rotinaHabilitada(): Promise<boolean> {
   return data ? (data as { enabled: boolean }).enabled : true; // default ligado
 }
 
-const ORFAO_LIMITE_MS = 60 * 60 * 1000; // 1h — nenhum job legítimo fica "processando" tanto tempo
+const ORFAO_LIMITE_MIN = 60; // 1h — nenhum job legítimo fica "processando" tanto tempo
 
 /** Self-heal: jobs travados em "processando" nunca são reclamados de novo por
  * claim_crawler_jobs (que só pega "pendente") — acontece quando o worker morre no meio de
- * um lote (ex.: pm2 max-memory-restart). Reseta pra "pendente" na subida. */
+ * um lote (ex.: pm2 max-memory-restart). Reseta pra "pendente" na subida. Via RPC (não
+ * UPDATE direto): RLS bloqueia escrita em crawler_queue quando o worker roda sem
+ * service_role (anon key + login admin) — confirmado em produção (ver commit). */
 async function selfHealOrfaos(): Promise<void> {
-  const limite = new Date(Date.now() - ORFAO_LIMITE_MS).toISOString();
-  const { data, error } = await supabase
-    .from("crawler_queue")
-    .update({ status: "pendente" })
-    .eq("status", "processando")
-    .lt("claimed_at", limite)
-    .select("id");
-  if (error) { console.error("[self-heal] erro ao resetar órfãos:", error.message); return; }
-  if (data?.length) console.log(`[self-heal] ${data.length} job(s) "processando" órfão(s) resetado(s) pra "pendente"`);
+  try {
+    const n = await resetOrfaosCrawlerQueue(ORFAO_LIMITE_MIN);
+    if (n > 0) console.log(`[self-heal] ${n} job(s) "processando" órfão(s) resetado(s) pra "pendente"`);
+  } catch (err) {
+    console.error("[self-heal] erro ao resetar órfãos:", err);
+  }
 }
 
 /** Executa fn sobre items com no máximo `limit` em paralelo. */

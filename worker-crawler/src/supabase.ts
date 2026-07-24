@@ -63,6 +63,14 @@ export async function failJob(id: string, erro: string): Promise<void> {
   const { error } = await supabase.rpc("fail_crawler_job", { p_id: id, p_erro: erro.slice(0, 2000) });
   if (error) throw new Error(`fail_crawler_job: ${error.message}`);
 }
+/** FOR-107: reseta jobs "processando" órfãos (claimed_at > p_limiteMinutos atrás) pra
+ * "pendente". RPC porque UPDATE direto em crawler_queue esbarra em RLS quando o worker
+ * roda sem service_role (anon key + login admin — "Opção B" acima). Retorna quantos. */
+export async function resetOrfaosCrawlerQueue(limiteMinutos = 60): Promise<number> {
+  const { data, error } = await supabase.rpc("reset_orfaos_crawler_queue", { p_limite_minutos: limiteMinutos });
+  if (error) throw new Error(`reset_orfaos_crawler_queue: ${error.message}`);
+  return (data as number) ?? 0;
+}
 export async function classifyProcesso(processoId: string): Promise<void> {
   const { error } = await supabase.rpc("classify_processo", { p_processo_id: processoId });
   if (error) throw new Error(`classify_processo: ${error.message}`);

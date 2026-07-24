@@ -30,32 +30,26 @@ async function main() {
   const t0 = Date.now();
   try {
     for (;;) {
-      const { data: lote, error } = await sb
-        .from("incidentes")
-        .select("id, processos!inner(cnj, flag_sp, next_crawl_at)")
-        .neq("fase", "inicial")
-        .eq("status", "ativo")
-        .eq("processos.flag_sp", true)
-        .gt("id", cursor)
-        .order("id")
-        .limit(PAGE);
+      // Via RPC security definer (não SELECT direto) — RLS bloqueia leitura de
+      // incidentes/processos pro role anon+admin que o worker usa na VPS (mesmo motivo do
+      // reset_orfaos_crawler_queue: só service_role ou RPC dedicada furam o bloqueio).
+      const { data: lote, error } = await sb.rpc("listar_incidentes_para_refresh", { p_cursor: cursor, p_limit: PAGE });
       if (error) throw new Error(`erro paginando incidentes: ${error.message}`);
       if (!lote || lote.length === 0) break;
       totalIncidentes += lote.length;
 
-      for (const inc of lote as any[]) {
-        const proc = inc.processos;
-        if (!proc?.cnj) continue;
+      for (const inc of lote as Array<{ incidente_id: string; cnj: string | null; next_crawl_at: string | null }>) {
+        if (!inc.cnj) continue;
         // respeita o mesmo TTL do refresh por CNJ (buscar-precatorio) — não reenfileira
         // quem já tem next_crawl_at no futuro.
-        if (proc.next_crawl_at && new Date(proc.next_crawl_at).getTime() > Date.now()) { jaAgendados++; continue; }
-        if (cnjsEnfileirados.has(proc.cnj)) continue;
-        cnjsEnfileirados.add(proc.cnj);
-        const { error: enqErr } = await sb.rpc("enqueue_crawler_job", { p_processo_codigo: proc.cnj, p_origem: "refresh" });
+        if (inc.next_crawl_at && new Date(inc.next_crawl_at).getTime() > Date.now()) { jaAgendados++; continue; }
+        if (cnjsEnfileirados.has(inc.cnj)) continue;
+        cnjsEnfileirados.add(inc.cnj);
+        const { error: enqErr } = await sb.rpc("enqueue_crawler_job", { p_processo_codigo: inc.cnj, p_origem: "refresh" });
         if (!enqErr) enfileirados++;
       }
 
-      cursor = lote[lote.length - 1].id;
+      cursor = lote[lote.length - 1].incidente_id;
       console.log(`  +${lote.length} incidentes (total=${totalIncidentes}, processos distintos enfileirados até agora=${enfileirados})`);
       if (lote.length < PAGE) break;
       await sleep(config.delayMs);
