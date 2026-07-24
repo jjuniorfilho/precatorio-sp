@@ -72,8 +72,19 @@ async function processBatch(jobs: QueueJob[]): Promise<{ ok: number; erro: numbe
         for (const cnj of origem) await enqueueJob(cnj, "manual");
       } else {
         const tree = await crawlSeed(job.processo_codigo, session);
-        const processoId = await persistTree(tree);
-        await classifyProcesso(processoId);
+        if (tree.cnj && isDepre(tree.cnj)) {
+          // O seed não era .0500, mas o "climb" por link de Processo Principal (dentro de
+          // crawlSeed/normalizeToRoot) subiu até um requisitório .0500 — a checagem de
+          // isDepre() lá em cima só olha o seed original, não a raiz resolvida. Sem essa
+          // segunda checagem aqui, esse .0500 seria persistido como processo raiz via
+          // persistTree, violando a regra do FOR-70 (nenhum .0500 é principal). Em vez
+          // disso, reenfileira como requisitório de verdade — a próxima claim cai no ramo
+          // isDepre() acima e persiste corretamente em djen_depre.
+          await enqueueJob(tree.cnj, "manual");
+        } else {
+          const processoId = await persistTree(tree);
+          await classifyProcesso(processoId);
+        }
       }
       await completeJob(job.id);
       ok++;

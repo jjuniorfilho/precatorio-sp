@@ -69,7 +69,14 @@ async function consultarInterno(
   processoDepre: string,
   maxTentativas: number,
 ): Promise<ConsultaPagamento> {
-  const browser: Browser = await chromium.launch({ headless: true });
+  // --disable-dev-shm-usage: VPS com pouca memória (1 vCPU/~2GB, compartilhada — ver
+  // comentário no topo do arquivo) tem /dev/shm pequeno demais pro Chromium default, o que
+  // derruba o processo no meio de uma tentativa ("Target page, context or browser has been
+  // closed", visto em produção). --no-sandbox: necessário rodando como root na VPS.
+  const browser: Browser = await chromium.launch({
+    headless: true,
+    args: ["--disable-dev-shm-usage", "--no-sandbox"],
+  });
   try {
     const context = await browser.newContext({ acceptDownloads: true });
     const page = await context.newPage();
