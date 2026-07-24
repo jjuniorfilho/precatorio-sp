@@ -18,13 +18,26 @@ const ORFAO_LIMITE_MIN = 60; // 1h — nenhum job legítimo fica "processando" t
  * um lote (ex.: pm2 max-memory-restart). Reseta pra "pendente" na subida. Via RPC (não
  * UPDATE direto): RLS bloqueia escrita em crawler_queue quando o worker roda sem
  * service_role (anon key + login admin) — confirmado em produção (ver commit). */
-async function selfHealOrfaos(): Promise<void> {
+async function selfHealOrfaos(): Promise<number> {
   try {
     const n = await resetOrfaosCrawlerQueue(ORFAO_LIMITE_MIN);
     if (n > 0) console.log(`[self-heal] ${n} job(s) "processando" órfão(s) resetado(s) pra "pendente"`);
+    return n;
   } catch (err) {
     console.error("[self-heal] erro ao resetar órfãos:", err);
+    return 0;
   }
+}
+
+/** FOR-108: registra cada subida do processo em coleta_runs — dá histórico de restart
+ * visível no admin (hoje só dava pra ver via `pm2 describe` na VPS). */
+async function logStartup(orfaosResetados: number): Promise<void> {
+  await supabase.from("coleta_runs").insert({
+    rotina: "worker_startup", status: "sucesso",
+    started_at: new Date().toISOString(), finished_at: new Date().toISOString(),
+    itens_ok: 0, itens_erro: 0, duracao_ms: 0,
+    detalhe: { orfaos_resetados: orfaosResetados },
+  }).then(() => {}, () => {});
 }
 
 /** Executa fn sobre items com no máximo `limit` em paralelo. */
@@ -109,7 +122,18 @@ async function tick(): Promise<{ processed: number; circuitoAberto: boolean }> {
   }
   console.log(`[batch] claimed=${jobs.length} ok=${ok} erro=${erro} (${Date.now() - t0}ms)`);
 
-  const circuitoAberto = jobs.length >= CIRCUITO_LOTE_MINIMO && erro / jobs.length >= CIRCUITO_TAXA_ERRO;
+  const taxaErro = erro / jobs.length;
+  const circuitoAberto = jobs.length >= CIRCUITO_LOTE_MINIMO && taxaErro >= CIRCUITO_TAXA_ERRO;
+  if (circuitoAberto) {
+    // FOR-108: log do disparo do circuit breaker em coleta_runs — antes só existia no
+    // console/pm2 logs, sem histórico visível no admin.
+    await supabase.from("coleta_runs").insert({
+      rotina: "circuit_breaker", status: "erro_parcial",
+      started_at: startedAt, finished_at: new Date().toISOString(),
+      itens_ok: ok, itens_erro: erro, duracao_ms: Date.now() - t0,
+      detalhe: { taxa_erro: Math.round(taxaErro * 1000) / 10, lote: jobs.length, cooldown_ms: CIRCUITO_COOLDOWN_MS },
+    }).then(() => {}, () => {});
+  }
   return { processed: jobs.length, circuitoAberto };
 }
 
@@ -121,7 +145,8 @@ async function main(): Promise<void> {
   await supabase.from("coleta_runs")
     .update({ status: "erro", finished_at: new Date().toISOString() })
     .eq("rotina", "crawler_esaj").eq("status", "running");
-  await selfHealOrfaos();
+  const orfaosResetados = await selfHealOrfaos();
+  await logStartup(orfaosResetados);
   console.log(`worker-crawler iniciando · batch=${config.claimBatch} conc=${config.concurrency} loop=${config.loopEnabled}`);
 
   // FOR-102: endpoint HTTP roda no mesmo processo, em paralelo ao loop de coleta —
