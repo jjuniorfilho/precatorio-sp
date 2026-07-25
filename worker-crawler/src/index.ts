@@ -40,6 +40,23 @@ async function logStartup(orfaosResetados: number): Promise<void> {
   }).then(() => {}, () => {});
 }
 
+/** FOR-116 — teto de tempo geral por job (não confundir com o timeout por requisição
+ * HTTP individual em esaj.ts). Não cancela o trabalho em andamento de verdade (o
+ * fetch/DB call "perdedor" continua rodando em segundo plano até resolver sozinho) —
+ * mas libera a vaga do pool pra seguir pro próximo job, que é o que evita um
+ * mega-processo travar o lote inteiro. */
+class JobTimeoutError extends Error {}
+
+function withJobTimeout<T>(promise: Promise<T>, ms: number): Promise<T> {
+  return new Promise((resolve, reject) => {
+    const timer = setTimeout(() => reject(new JobTimeoutError(`job excedeu o teto de ${ms}ms`)), ms);
+    promise.then(
+      (v) => { clearTimeout(timer); resolve(v); },
+      (e) => { clearTimeout(timer); reject(e); },
+    );
+  });
+}
+
 /** Executa fn sobre items com no máximo `limit` em paralelo. */
 async function runPool<T>(items: T[], limit: number, fn: (item: T) => Promise<void>): Promise<void> {
   let i = 0;
@@ -60,32 +77,34 @@ async function processBatch(jobs: QueueJob[]): Promise<{ ok: number; erro: numbe
 
   await runPool(jobs, config.concurrency, async (job) => {
     try {
-      if (isDepre(job.processo_codigo)) {
-        // Requisitório (.0500): ficha na Consulta de Requisitórios. NUNCA vira processo
-        // principal — persiste na tabela DEPRE (djen_depre) com ficha + andamentos, e
-        // enfileira a(s) ORIGEM(ns). O vínculo com o principal acontece depois: quando
-        // a origem é crawleada, um dos seus incidentes referencia este .0500 (numero_depre).
-        const { tree, origem } = await crawlRequisitorio(job.processo_codigo, reqSession ?? undefined);
-        await persistRequisitorio(tree, origem);
-        // origem do requisitório → cpopg. p_origem deve respeitar crawler_queue_origem_check
-        // (valores aceitos: manual/refresh/backfill/caderno_dje). Usa "manual" como a edge.
-        for (const cnj of origem) await enqueueJob(cnj, "manual");
-      } else {
-        const tree = await crawlSeed(job.processo_codigo, session);
-        if (tree.cnj && isDepre(tree.cnj)) {
-          // O seed não era .0500, mas o "climb" por link de Processo Principal (dentro de
-          // crawlSeed/normalizeToRoot) subiu até um requisitório .0500 — a checagem de
-          // isDepre() lá em cima só olha o seed original, não a raiz resolvida. Sem essa
-          // segunda checagem aqui, esse .0500 seria persistido como processo raiz via
-          // persistTree, violando a regra do FOR-70 (nenhum .0500 é principal). Em vez
-          // disso, reenfileira como requisitório de verdade — a próxima claim cai no ramo
-          // isDepre() acima e persiste corretamente em djen_depre.
-          await enqueueJob(tree.cnj, "manual");
+      await withJobTimeout((async () => {
+        if (isDepre(job.processo_codigo)) {
+          // Requisitório (.0500): ficha na Consulta de Requisitórios. NUNCA vira processo
+          // principal — persiste na tabela DEPRE (djen_depre) com ficha + andamentos, e
+          // enfileira a(s) ORIGEM(ns). O vínculo com o principal acontece depois: quando
+          // a origem é crawleada, um dos seus incidentes referencia este .0500 (numero_depre).
+          const { tree, origem } = await crawlRequisitorio(job.processo_codigo, reqSession ?? undefined);
+          await persistRequisitorio(tree, origem);
+          // origem do requisitório → cpopg. p_origem deve respeitar crawler_queue_origem_check
+          // (valores aceitos: manual/refresh/backfill/caderno_dje). Usa "manual" como a edge.
+          for (const cnj of origem) await enqueueJob(cnj, "manual");
         } else {
-          const processoId = await persistTree(tree);
-          await classifyProcesso(processoId);
+          const tree = await crawlSeed(job.processo_codigo, session);
+          if (tree.cnj && isDepre(tree.cnj)) {
+            // O seed não era .0500, mas o "climb" por link de Processo Principal (dentro de
+            // crawlSeed/normalizeToRoot) subiu até um requisitório .0500 — a checagem de
+            // isDepre() lá em cima só olha o seed original, não a raiz resolvida. Sem essa
+            // segunda checagem aqui, esse .0500 seria persistido como processo raiz via
+            // persistTree, violando a regra do FOR-70 (nenhum .0500 é principal). Em vez
+            // disso, reenfileira como requisitório de verdade — a próxima claim cai no ramo
+            // isDepre() acima e persiste corretamente em djen_depre.
+            await enqueueJob(tree.cnj, "manual");
+          } else {
+            const processoId = await persistTree(tree);
+            await classifyProcesso(processoId);
+          }
         }
-      }
+      })(), config.jobTimeoutMs);
       await completeJob(job.id);
       ok++;
     } catch (err) {

@@ -29,6 +29,11 @@ export const config = {
   delayMs: num("DELAY_MS", 400),
   requestTimeoutMs: num("REQUEST_TIMEOUT_MS", 15_000),
   maxHttpRetry: num("MAX_HTTP_RETRY", 3),
+  // FOR-116 — teto de tempo por job (não por requisição HTTP individual, que já tem
+  // requestTimeoutMs/maxHttpRetry). Sem isso, um "mega-processo" (ex.: um caso já visto
+  // com 8.513 incidentes) pode encadear milhares de fetches — cada um bounded, mas a soma
+  // não — e travar uma vaga inteira do pool por horas, refém do lote inteiro junto.
+  jobTimeoutMs: num("JOB_TIMEOUT_MS", 5 * 60_000),
 
   // FOR-102 — endpoint HTTP síncrono (buscar-precatorio + admin chamam /valor-pago).
   httpPort: num("HTTP_PORT", 3200),
