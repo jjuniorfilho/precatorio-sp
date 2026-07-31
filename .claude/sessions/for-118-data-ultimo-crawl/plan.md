@@ -178,22 +178,25 @@ Adicionar as 2 colunas ao `head` (linha ~116) e às linhas (linha ~120).
 
 ---
 
-## FASE 5 — Fechamento [Em Progresso ⏰]
+## FASE 5 — Fechamento [Completada ✅]
 
-### Revisão cruzada dos critérios de aceite da issue [Não Iniciada ⏳]
-Conferir um a um os 5 critérios de aceite da FOR-118 (grid, filtro, URL, CSV, performance) nas duas telas.
+### Revisão cruzada dos critérios de aceite da issue [Completada ✅]
+5 critérios revisados um a um contra a implementação nas duas telas — todos atendidos (detalhe: critério 5, performance, aceito com base no índice dedicado + confirmação de sucesso do usuário, sem `EXPLAIN ANALYZE` colado na sessão).
 
-### Reconciliar com a branch `jjuniorfilho/precatorio-sp` (frontend) [Não Iniciada ⏳]
-A branch conectada ao Lovable (`jjuniorfilho/precatorio-sp`, `origin/HEAD` do repo frontend) está 8 commits à frente da cadeia local de onde `for-118` nasceu (`for-115-definir-senha`). Precisa reconciliar (merge/rebase) antes do PR, sem perder esses 8 commits.
+### Reconciliar com a branch `jjuniorfilho/precatorio-sp` (frontend) [Completada ✅]
+Rebase de `for-118` sobre `origin/jjuniorfilho/precatorio-sp` — sem conflitos (os 8 commits só tocavam `routeTree.gen.ts` e `integrations/supabase/types.ts`, nenhum arquivo em comum com esta feature).
 
-### Commitar o SQL no cortex-v1 [Não Iniciada ⏳]
-`sql/2026-07-31_for118_data_ultimo_crawl.sql` foi aplicado em produção mas ainda não commitado no git.
+### Commitar o SQL no cortex-v1 [Completada ✅]
+Commit único com `sql/2026-07-31_for118_data_ultimo_crawl.sql` + os 3 arquivos de sessão (`context.md`/`architecture.md`/`plan.md`).
 
-### Atualizar Linear [Não Iniciada ⏳]
-Mover FOR-118 pra "In Review" ao abrir o PR (padrão do workflow Cortex).
+### Atualizar Linear [Completada ✅]
+FOR-118 movida pra "In Review" — os 2 PRs foram anexados automaticamente pela integração do Linear com GitHub.
 
-### PRs [Não Iniciada ⏳]
-Dois PRs (um por repo) — `cortex-v1` primeiro (SQL já aplicado em produção, PR é só o registro/histórico), depois `frontend` (branch base `jjuniorfilho/precatorio-sp`, após reconciliação).
+### PRs [Completada ✅]
+- `cortex-v1`: [PR #11](https://github.com/jjuniorfilho/precatorio-sp/pull/11), base `jjuniorfilho/consolida-for68-backend` (não `main` — descoberta: `main` só tem até FOR-68, há um PR #10 aberto desde então nunca mergeado; toda a cadeia FOR-102→FOR-118 era só local, nunca tinha sido pushada. Base escolhida = tip do PR #10, pra não duplicar aquele diff).
+- `frontend`: [PR #44](https://github.com/jjuniorfilho/sp-precat-rios-simples-c2fc47c1/pull/44), base `jjuniorfilho/precatorio-sp` (branch conectada ao Lovable — merge desse PR atualiza o Lovable automaticamente).
 
 ### Comentários:
-- (preencher durante a execução)
+- **Achado de processo, não específico da FOR-118:** os dois repos têm uma dívida de merge acumulada — `cortex-v1/main` está ~40 commits atrasado (desde FOR-68), e a cadeia de features locais nunca tinha sido pushada. Vale considerar, numa sessão futura, mergear o PR #10 + #11 pra `main` de vez, ou formalizar que o fluxo real deste repo é "branch encadeada" e `main` é vestigial.
+- `.claude/sessions/migracao-postgres-vps/` e outros artefatos soltos vistos no início da sessão (auditoria UI/UX, `claude_legacy/`) não foram tocados — ficaram de fora do commit, como esperado (não fazem parte do escopo da FOR-118). O `stash@{0}` criado no início da sessão (WIP de docs/SQL soltos do início da conversa) continua guardado, não foi aplicado nem descartado.
+- Validação visual em browser (ambas as telas) ficou pendente — sinalizado nos dois PRs como item aberto do test plan.
