@@ -582,3 +582,30 @@ grant execute on function public.buscar_processos(
 -- -------------------------------------------------------------
 -- select incidente_id, cnj, last_crawled_at from buscar_processos(p_limit := 10)
 --  order by last_crawled_at desc nulls last;
+
+-- ===============================================================
+-- SEÇÃO 4 — FIX: contar_processos_incidente ficou duplicada (bug pós-deploy, 2026-07-31)
+-- ===============================================================
+--
+-- Causa: na Seção 1.4, usei CREATE OR REPLACE pra adicionar p_crawler_data_de/ate/
+-- p_crawleado em contar_processos_incidente, assumindo que "retorno continua bigint,
+-- sem DROP necessário" bastava. Errado: Postgres só substitui uma function via CREATE OR
+-- REPLACE quando a lista de tipos de parâmetro é IDÊNTICA à existente — adicionar
+-- parâmetros novos (mesmo com default) muda essa lista, então o Postgres CRIA uma
+-- function nova sobreposta em vez de substituir. Resultado: ficaram DUAS
+-- contar_processos_incidente em produção (16 params antiga + 19 params nova) e o
+-- PostgREST não consegue escolher entre elas quando a chamada não deixa claro qual usar
+-- (erro PGRST203 "Could not choose the best candidate function").
+--
+-- Confirmado que a versão nova funciona certo quando chamada com os parâmetros novos
+-- explícitos (é o que o frontend sempre faz) — mas a function antiga órfã continua lá,
+-- um risco pra qualquer outro caller que não passe esses parâmetros. Removendo.
+--
+-- Aplicar no SQL Editor.
+drop function if exists public.contar_processos_incidente(
+  text,text,text,text,text,text,text,bigint,bigint,boolean,text,date,date,text,integer,boolean
+);
+
+-- Validação: depois de rodar o DROP acima, isto tem que funcionar sem erro de ambiguidade
+-- (antes do fix, dava PGRST203):
+-- select contar_processos_incidente();
