@@ -63,6 +63,14 @@ export async function failJob(id: string, erro: string): Promise<void> {
   const { error } = await supabase.rpc("fail_crawler_job", { p_id: id, p_erro: erro.slice(0, 2000) });
   if (error) throw new Error(`fail_crawler_job: ${error.message}`);
 }
+/** FOR-107: reseta jobs "processando" órfãos (claimed_at > p_limiteMinutos atrás) pra
+ * "pendente". RPC porque UPDATE direto em crawler_queue esbarra em RLS quando o worker
+ * roda sem service_role (anon key + login admin — "Opção B" acima). Retorna quantos. */
+export async function resetOrfaosCrawlerQueue(limiteMinutos = 60): Promise<number> {
+  const { data, error } = await supabase.rpc("reset_orfaos_crawler_queue", { p_limite_minutos: limiteMinutos });
+  if (error) throw new Error(`reset_orfaos_crawler_queue: ${error.message}`);
+  return (data as number) ?? 0;
+}
 export async function classifyProcesso(processoId: string): Promise<void> {
   const { error } = await supabase.rpc("classify_processo", { p_processo_id: processoId });
   if (error) throw new Error(`classify_processo: ${error.message}`);
@@ -203,6 +211,10 @@ export async function persistRequisitorio(tree: ProcessoTree, origem: string[]):
     classe: tree.classe ?? null,
     data_base: inc?.data_base ?? tree.data_base ?? null,
     devedora: inc?.parte_passiva?.nome ?? null,
+    // Reqte/requerente: sempre presente na ficha (PARTES DO PROCESSO), diferente do
+    // documento (CPF/CNPJ), que o TJSP nunca expõe aqui — só chega via busca informada
+    // pelo próprio titular (buscar-precatorio grava titular_documento nesse caso).
+    titular_nome: inc?.parte_ativa?.nome ?? null,
     origem_cnjs: origem.length ? origem : null,
     andamentos,
     ficha_crawled_at: new Date().toISOString(),
@@ -213,4 +225,41 @@ export async function persistRequisitorio(tree: ProcessoTree, origem: string[]):
     .from("djen_depre")
     .upsert(row, { onConflict: "cnj_normalizado" });
   if (error) throw new Error(`upsert djen_depre (requisitório): ${error.message}`);
+}
+
+// ---- FOR-102: pagamentos por processo_depre (portal TJSP "Pagamentos Precatórios") -------
+
+/** Upsert idempotente dos pagamentos encontrados. Re-consultar não duplica (índice único
+ * em processo_depre+data_pagamento+valor+tipo — colunas NOT NULL, ver
+ * sql/2026-07-22_fix_precatorios_pagamentos_index.sql). `tipo` vira `''` em vez de NULL
+ * (NULL não conflita com NULL num índice único do Postgres, o que quebraria a idempotência). */
+export async function upsertPagamentos(
+  processoDepre: string,
+  pagamentos: Array<{ data: string | null; valorCentavos: number; tipo: string | null }>,
+): Promise<void> {
+  if (pagamentos.length === 0) return;
+  const rows = pagamentos
+    .filter((p) => p.data) // data_pagamento é NOT NULL na tabela
+    .map((p) => ({
+      processo_depre: processoDepre,
+      data_pagamento: p.data,
+      valor: p.valorCentavos,
+      tipo: p.tipo ?? "",
+    }));
+  const { error } = await supabase
+    .from("precatorios_pagamentos")
+    .upsert(rows, { onConflict: "processo_depre,data_pagamento,valor,tipo", ignoreDuplicates: true });
+  if (error) throw new Error(`upsert precatorios_pagamentos: ${error.message}`);
+}
+
+/** Marca que a consulta de pagamentos foi feita (mesmo sem pagamentos encontrados —
+ * ausência é resultado válido, não erro; ver context.md da sessão FOR-102).
+ *
+ * Via RPC (não update direto na tabela): `precatorios` só permite escrita via
+ * service_role (dado público DEPRE); o worker autentica como `authenticated`, então precisa
+ * da RPC SECURITY DEFINER `marcar_pagamentos_consultado` (sql/2026-07-22_marcar_pagamentos_
+ * consultado_rpc.sql) em vez de abrir UPDATE geral na tabela pra authenticated. */
+export async function marcarPagamentosConsultado(processoDepre: string): Promise<void> {
+  const { error } = await supabase.rpc("marcar_pagamentos_consultado", { p_processo_depre: processoDepre });
+  if (error) throw new Error(`marcarPagamentosConsultado: ${error.message}`);
 }
