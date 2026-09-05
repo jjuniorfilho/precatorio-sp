@@ -1,0 +1,287 @@
+/* =============================================================================
+   {{PROJECT_NAME}} — Design System
+   Gerado por /ux-flow init em {{DATE}}
+   Fonte de verdade visual do projeto. Protótipos em docs/prototypes/*/ referenciam
+   este arquivo via @import.
+   ============================================================================= */
+
+@import url('https://fonts.googleapis.com/css2?family={{FONT_FAMILY}}:wght@400;500;600;700&display=swap');
+
+/* -----------------------------------------------------------------------------
+   CSS Custom Properties — {{THEME_NAME}}
+   ----------------------------------------------------------------------------- */
+:root {
+  /* Surface */
+  --background:          {{BACKGROUND}};
+  --foreground:          {{FOREGROUND}};
+  --card:                {{CARD}};
+  --card-foreground:     {{CARD_FOREGROUND}};
+
+  /* Brand */
+  --primary:             {{PRIMARY}};
+  --primary-foreground:  {{PRIMARY_FOREGROUND}};
+  --primary-light:       {{PRIMARY_LIGHT}};
+  --primary-hover:       {{PRIMARY_HOVER}};
+
+  --secondary:           {{SECONDARY}};
+  --secondary-foreground:{{SECONDARY_FOREGROUND}};
+  --secondary-light:     {{SECONDARY_LIGHT}};
+
+  /* Neutral */
+  --muted:               {{MUTED}};
+  --muted-light:         {{MUTED_LIGHT}};
+  --border:              {{BORDER}};
+  --border-strong:       {{BORDER_STRONG}};
+
+  /* Status */
+  --destructive:         {{DESTRUCTIVE}};
+  --destructive-light:   {{DESTRUCTIVE_LIGHT}};
+  --success:             {{SUCCESS}};
+  --success-light:       {{SUCCESS_LIGHT}};
+  --warning:             {{WARNING}};
+  --warning-light:       {{WARNING_LIGHT}};
+
+  /* Radius */
+  --radius:    {{RADIUS}};
+  --radius-sm: {{RADIUS_SM}};
+  --radius-lg: {{RADIUS_LG}};
+  --radius-xl: {{RADIUS_XL}};
+
+  /* Shadow */
+  --shadow-sm:  {{SHADOW_SM}};
+  --shadow-md:  {{SHADOW_MD}};
+  --shadow-lg:  {{SHADOW_LG}};
+
+  /* Typography */
+  --font-family: '{{FONT_FAMILY}}', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  --font-mono:   'SF Mono', 'Fira Code', 'Fira Mono', 'Roboto Mono', monospace;
+}
+
+/* -----------------------------------------------------------------------------
+   Reset & Base
+   ----------------------------------------------------------------------------- */
+*, *::before, *::after {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+html {
+  font-size: {{BASE_FONT_SIZE}};
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  text-rendering: optimizeLegibility;
+}
+
+body {
+  font-family: var(--font-family);
+  font-size: 1rem;
+  line-height: 1.5;
+  color: var(--foreground);
+  background: var(--background);
+}
+
+a { text-decoration: none; color: inherit; }
+button {
+  font-family: var(--font-family);
+  cursor: pointer;
+  border: none;
+  outline: none;
+  background: none;
+}
+input, textarea { font-family: var(--font-family); outline: none; }
+
+/* -----------------------------------------------------------------------------
+   Buttons
+   ----------------------------------------------------------------------------- */
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 8px 16px;
+  border-radius: var(--radius-sm);
+  font-size: 0.889rem;
+  font-weight: 500;
+  line-height: 1.4;
+  transition: all 0.15s ease;
+  cursor: pointer;
+  border: 1.5px solid transparent;
+  white-space: nowrap;
+}
+.btn:active { transform: translateY(1px); }
+
+.btn-primary {
+  background: var(--primary);
+  color: var(--primary-foreground);
+  border-color: var(--primary);
+}
+.btn-primary:hover { background: var(--primary-hover); border-color: var(--primary-hover); }
+
+.btn-outline {
+  background: transparent;
+  color: var(--primary);
+  border-color: var(--primary);
+}
+.btn-outline:hover { background: var(--primary-light); }
+
+.btn-ghost {
+  background: transparent;
+  color: var(--foreground);
+  border-color: transparent;
+}
+.btn-ghost:hover { background: var(--muted-light); }
+
+.btn-destructive {
+  background: var(--destructive);
+  color: #fff;
+  border-color: var(--destructive);
+}
+
+.btn-sm   { padding: 5px 12px; font-size: 0.778rem; border-radius: 7px; gap: 5px; }
+.btn-icon { padding: 7px; border-radius: var(--radius-sm); }
+
+/* -----------------------------------------------------------------------------
+   Card
+   ----------------------------------------------------------------------------- */
+.card {
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow-sm);
+}
+.card-hover:hover {
+  border-color: var(--primary);
+  box-shadow: var(--shadow-md);
+  transition: all 0.15s ease;
+}
+
+/* -----------------------------------------------------------------------------
+   Badge
+   ----------------------------------------------------------------------------- */
+.badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 8px;
+  border-radius: 99px;
+  font-size: 0.667rem;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+}
+.badge-primary     { background: var(--primary-light);     color: var(--primary); }
+.badge-secondary   { background: var(--secondary-light);   color: var(--secondary); }
+.badge-muted       { background: var(--muted-light);       color: var(--muted); }
+.badge-success     { background: var(--success-light);     color: var(--success); }
+.badge-warning     { background: var(--warning-light);     color: var(--warning); }
+.badge-destructive { background: var(--destructive-light); color: var(--destructive); }
+
+/* -----------------------------------------------------------------------------
+   Input
+   ----------------------------------------------------------------------------- */
+.input {
+  width: 100%;
+  padding: 9px 14px;
+  border: 1.5px solid var(--border);
+  border-radius: var(--radius-sm);
+  font-size: 0.889rem;
+  color: var(--foreground);
+  background: var(--card);
+  transition: border-color 0.15s ease;
+}
+.input:focus {
+  border-color: var(--primary);
+  box-shadow: 0 0 0 3px var(--primary-light);
+}
+.input::placeholder { color: var(--muted); opacity: 0.7; }
+
+/* -----------------------------------------------------------------------------
+   Typography Utilities
+   ----------------------------------------------------------------------------- */
+.text-muted       { color: var(--muted); }
+.text-primary     { color: var(--primary); }
+.text-destructive { color: var(--destructive); }
+.text-success     { color: var(--success); }
+
+.text-xs  { font-size: 0.667rem; line-height: 1.4; }
+.text-sm  { font-size: 0.778rem; line-height: 1.5; }
+.text-base { font-size: 1rem; line-height: 1.5; }
+.text-lg  { font-size: 1.111rem; line-height: 1.4; }
+.text-xl  { font-size: 1.222rem; line-height: 1.3; }
+.text-2xl { font-size: 1.444rem; line-height: 1.25; }
+.text-3xl { font-size: 1.778rem; line-height: 1.2; }
+
+.font-medium   { font-weight: 500; }
+.font-semibold { font-weight: 600; }
+.font-bold     { font-weight: 700; }
+
+.truncate {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* -----------------------------------------------------------------------------
+   Flexbox Utilities
+   ----------------------------------------------------------------------------- */
+.flex           { display: flex; }
+.flex-col       { flex-direction: column; }
+.flex-1         { flex: 1; }
+.items-center   { align-items: center; }
+.items-start    { align-items: flex-start; }
+.justify-center { justify-content: center; }
+.justify-between{ justify-content: space-between; }
+.gap-1 { gap: 4px; } .gap-2 { gap: 8px; } .gap-3 { gap: 12px; }
+.gap-4 { gap: 16px; } .gap-5 { gap: 20px; } .gap-6 { gap: 24px; }
+
+/* -----------------------------------------------------------------------------
+   Spacing Utilities
+   ----------------------------------------------------------------------------- */
+.p-1 { padding: 4px; } .p-2 { padding: 8px; } .p-3 { padding: 12px; }
+.p-4 { padding: 16px; } .p-5 { padding: 20px; } .p-6 { padding: 24px; }
+
+.mt-1 { margin-top: 4px; }  .mt-2 { margin-top: 8px; }
+.mt-3 { margin-top: 12px; } .mt-4 { margin-top: 16px; }
+
+/* -----------------------------------------------------------------------------
+   Animations
+   ----------------------------------------------------------------------------- */
+@keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
+.animate-spin { animation: spin 1s linear infinite; }
+
+@keyframes skeleton-shimmer {
+  0%   { background-position: -400px 0; }
+  100% { background-position: 400px 0; }
+}
+.skeleton {
+  background: linear-gradient(90deg, var(--muted-light) 0%, {{SKELETON_MID}} 50%, var(--muted-light) 100%);
+  background-size: 800px 100%;
+  animation: skeleton-shimmer 1.4s ease-in-out infinite;
+  border-radius: var(--radius-sm);
+}
+
+/* -----------------------------------------------------------------------------
+   Separator
+   ----------------------------------------------------------------------------- */
+.separator   { height: 1px; background: var(--border); }
+.separator-v { width: 1px; background: var(--border); align-self: stretch; }
+
+/*
+  Placeholders a serem substituidos pela skill:
+
+  {{PROJECT_NAME}}, {{DATE}}, {{THEME_NAME}}, {{FONT_FAMILY}}, {{BASE_FONT_SIZE}}
+
+  Tokens (HSL recomendado):
+  {{BACKGROUND}}, {{FOREGROUND}}, {{CARD}}, {{CARD_FOREGROUND}}
+  {{PRIMARY}}, {{PRIMARY_FOREGROUND}}, {{PRIMARY_LIGHT}}, {{PRIMARY_HOVER}}
+  {{SECONDARY}}, {{SECONDARY_FOREGROUND}}, {{SECONDARY_LIGHT}}
+  {{MUTED}}, {{MUTED_LIGHT}}, {{BORDER}}, {{BORDER_STRONG}}
+  {{DESTRUCTIVE}}, {{DESTRUCTIVE_LIGHT}}, {{SUCCESS}}, {{SUCCESS_LIGHT}}
+  {{WARNING}}, {{WARNING_LIGHT}}
+  {{RADIUS}}, {{RADIUS_SM}}, {{RADIUS_LG}}, {{RADIUS_XL}}
+  {{SHADOW_SM}}, {{SHADOW_MD}}, {{SHADOW_LG}}
+  {{SKELETON_MID}}
+
+  A skill `/ux-flow init` preenche esses valores com base na entrevista.
+*/

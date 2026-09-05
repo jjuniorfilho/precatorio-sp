@@ -1,0 +1,42 @@
+<!DOCTYPE html>
+<!--
+  TEMPLATE de harness de diagramas (Mermaid -> PNG) no tema PX claro.
+  Edite os <pre class="mermaid"> (um por diagrama, com id dN) e rode render-diagrams.js.
+  Classes de no disponiveis: navy (processo principal), gold (destaque),
+  store (dado/saida), warn (erro/atencao), ext (externo/cliente).
+-->
+<html lang="pt-BR"><head><meta charset="UTF-8">
+<script src="https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.min.js"></script>
+<style>
+  body { margin:0; background:#ffffff; font-family:Arial, sans-serif; }
+  .diag { background:#ffffff; padding:26px; display:inline-block; }
+  .wrap { display:flex; flex-direction:column; align-items:flex-start; }
+</style></head>
+<body>
+<div class="wrap">
+
+  <div class="diag" id="d1"><pre class="mermaid">
+flowchart LR
+  C["Cliente"]:::ext --> API["apps/api<br/>REST + RLS"]:::navy
+  API --> Q["fila"]:::gold
+  Q --> W["worker"]:::navy
+  W --> PG[("Postgres")]:::store
+  classDef navy fill:#1E3A5F,stroke:#13273c,color:#ffffff;
+  classDef gold fill:#FDE7BF,stroke:#C8860A,color:#5a3d00;
+  classDef store fill:#eef3f8,stroke:#5a799c,color:#16263a;
+  classDef warn fill:#fdecec,stroke:#c0392b,color:#7a1f17;
+  classDef ext fill:#ffffff,stroke:#1E3A5F,color:#16263a;
+  </pre></div>
+
+  <!-- adicione mais diagramas: <div class="diag" id="d2"><pre class="mermaid"> ... </pre></div> -->
+
+</div>
+<script>
+  mermaid.initialize({ startOnLoad:true, theme:'base', securityLevel:'loose',
+    flowchart:{ useMaxWidth:false, htmlLabels:true, curve:'basis', padding:14, nodeSpacing:48, rankSpacing:58 },
+    themeVariables:{ fontFamily:'Arial', fontSize:'16px', background:'#ffffff',
+      primaryColor:'#eef3f8', primaryBorderColor:'#1E3A5F', primaryTextColor:'#16263a',
+      lineColor:'#46637f', clusterBkg:'#f7f9fc', clusterBorder:'#c3d0de',
+      edgeLabelBackground:'#ffffff', tertiaryColor:'#fff6e0' } });
+</script>
+</body></html>

@@ -60,7 +60,7 @@ cp -r .claude /caminho/do/seu/projeto/.cursor
 
 ```
 .claude/
-├── agents/           # 52 agentes especializados
+├── agents/           # 53 agentes especializados
 │   ├── backend-architect.md
 │   ├── frontend-architect.md
 │   ├── test-engineer.md
@@ -216,6 +216,21 @@ node .claude/scripts/html2pptx/convert.js -i slides/ -o output.pptx --theme cort
 | `cortex` | Cortex Framework | Navy escuro + Roxo |
 | `minimal` | Tons neutros | Cinza + Azul |
 | `dark` | Tema escuro | Preto + Amarelo |
+
+### Outras Skills
+
+Skills de processo/workflow (nao geram arquivo diretamente, orientam o agente durante o comando):
+
+| Skill | Uso |
+|-------|-----|
+| `agent-orchestrator` | Desenhar workflows multi-agente (paralelo vs sequencial, feedback loops) para novos comandos |
+| `fleet-orchestration` | Orquestra `/engineer:fleet` e `/engineer:fleet-autonomous` (worktrees paralelas por issue) |
+| `mcp-manager` | Instalar/sincronizar MCPs com agentes (`/meta:mcp-install`, `/meta:mcp-sync`) |
+| `memory-manager` | Organizar, podar e destilar `.claude/memory/` |
+| `prototype-to-plan` | Levar um prototipo HTML aprovado ate um plano de entrega (PRD/ADR/Linear) |
+| `ux-flow` | Workflow UX-first: design system HTML e prototipos navegaveis antes do codigo |
+| `px-deck` | Apresentacoes .pptx de alto detalhe na identidade PX (prints reais via Playwright) |
+| `self-evolution` | Ciclo de auto-evolucao do framework (`/meta:evolve`), baseado em padroes de uso |
 
 ## Integracao com Linear
 

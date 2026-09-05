@@ -1,6 +1,6 @@
 {
   "name": "cortex-cdd",
-  "version": "2.4.0",
+  "version": "2.5.0",
   "description": "Cortex - Framework de desenvolvimento orientado a contexto para IDEs de IA",
   "bin": {
     "cortex-cdd": "./bin/cli.js"
