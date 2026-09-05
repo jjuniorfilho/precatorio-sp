@@ -12,8 +12,10 @@
     "start": "tsx src/index.ts",
     "build": "tsc -p tsconfig.json",
     "typecheck": "tsc --noEmit -p tsconfig.json",
+    "test": "SUPABASE_URL=http://localhost:54321 SUPABASE_SERVICE_ROLE_KEY=test-only-unit-tests tsx --test src/*.test.ts",
     "ingest": "tsx src/ingest-djen.ts",
-    "reclassify-oc": "tsx src/reclassify-oc.ts"
+    "reclassify-oc": "tsx src/reclassify-oc.ts",
+    "import-csv-legado": "tsx src/import-csv-legado.ts"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.45.0",

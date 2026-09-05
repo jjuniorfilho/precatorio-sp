@@ -89,8 +89,11 @@ export async function crawlSeed(seed: string, session?: Session): Promise<Proces
 
   // Blindagem: a busca não resolveu uma ficha real (não saiu do seed e sem
   // capa/incidentes) → falha o job p/ re-tentar via fila, em vez de gravar lixo.
+  // Anexa um trecho do corpo recebido: sem isso, "não retornou página de detalhe" fica
+  // indistinguível entre página de manutenção do TJSP, bloqueio, e CNJ que nunca foi e-SAJ.
   if (root.codigo === seed && !capa.cnj && !capa.classe && incidenteLinks(root.$).length === 0) {
-    throw new Error(`busca não retornou página de detalhe para seed=${seed}`);
+    const corpo = root.$("body").text().replace(/\s+/g, " ").trim().slice(0, 200);
+    throw new Error(`busca não retornou página de detalhe para seed=${seed} :: corpo="${corpo}"`);
   }
 
   // No nível raiz, os a.incidente costumam ser os Cumprimentos de Sentença.
@@ -218,7 +221,8 @@ export async function crawlRequisitorio(seed: string, session?: Session): Promis
   const capa = extractCapa($);
   // Blindagem: não resolveu ficha real → falha p/ re-tentar (não grava lixo).
   if (codigo === seed && !capa.cnj && !capa.classe && incidenteLinks($).length === 0) {
-    throw new Error(`requisitório não retornou página de detalhe para seed=${seed}`);
+    const corpo = $("body").text().replace(/\s+/g, " ").trim().slice(0, 200);
+    throw new Error(`requisitório não retornou página de detalhe para seed=${seed} :: corpo="${corpo}"`);
   }
 
   const { ativa, passiva } = extractPartes($);

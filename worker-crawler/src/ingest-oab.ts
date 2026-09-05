@@ -5,7 +5,7 @@
 //   tsx src/ingest-oab.ts --oab=203901 --uf=SP
 //   tsx src/ingest-oab.ts --oab=203901 --uf=SP --from=2024-01-01 --to=2026-06-30
 import { supabase, ensureAuth } from "./supabase.js";
-import { isDepre } from "./esaj.js";
+import { isDepre, naoDistribuido } from "./esaj.js";
 import { advogadosFromItem, normNome } from "./comunica.js";
 import { config, sleep, assertConfig } from "./config.js";
 
@@ -76,7 +76,7 @@ async function main() {
   const { data: run } = await sb.from("coleta_runs").insert({ rotina: "ingest_oab", status: "running" }).select("id").single();
 
   const seen = new Set<string>();
-  let total = 0, enfileirados = 0, eproc = 0, depre = 0, pagina = fromPage;
+  let total = 0, enfileirados = 0, eproc = 0, depre = 0, naoDistribuidoCount = 0, pagina = fromPage;
   const t0 = Date.now();
   try {
     for (;;) {
@@ -89,7 +89,9 @@ async function main() {
         seen.add(cnj);
         await persistAdvogados(sb, cnj, it);
 
-        if (isDepre(cnj)) {
+        if (naoDistribuido(cnj)) {
+          naoDistribuidoCount++;
+        } else if (isDepre(cnj)) {
           depre++;
           await sb.from("djen_depre").upsert({
             cnj, cnj_normalizado: cnj.replace(/\D/g, ""), numero_processo: it.numero_processo ?? null,
@@ -114,7 +116,7 @@ async function main() {
       pagina++;
       await sleep(config.delayMs);
     }
-    if (run) await sb.from("coleta_runs").update({ status: "sucesso", finished_at: new Date().toISOString(), itens_ok: enfileirados, duracao_ms: Date.now() - t0, detalhe: { oab, uf, total, distintos: seen.size, enfileirados, depre, eproc } }).eq("id", run.id);
+    if (run) await sb.from("coleta_runs").update({ status: "sucesso", finished_at: new Date().toISOString(), itens_ok: enfileirados, duracao_ms: Date.now() - t0, detalhe: { oab, uf, total, distintos: seen.size, enfileirados, depre, eproc, nao_distribuido: naoDistribuidoCount } }).eq("id", run.id);
     console.log(`\n✓ OAB ${oab}/${uf}: ${total} publicações · ${seen.size} processos distintos · ${enfileirados} enfileirados (${depre} .0500) · ${eproc} eproc parqueados`);
   } catch (err) {
     if (run) await sb.from("coleta_runs").update({ status: "erro", finished_at: new Date().toISOString(), detalhe: { oab, uf, erro: String(err) } }).eq("id", run.id);

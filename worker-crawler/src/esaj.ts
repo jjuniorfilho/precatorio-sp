@@ -71,6 +71,10 @@ export const isCnj = (s: string) => /^\d{7}-\d{2}\.\d{4}\.\d\.\d{2}\.\d{4}$/.tes
 /** DEPRE/requisitório (.0500): vive na Consulta de Requisitórios, não no cpopg comum. */
 export const isDepre = (cnj: string): boolean => /\.8\.26\.0500$/.test(cnj);
 
+/** Foro 0000: processo ainda sem distribuição/vara própria — nunca tem ficha no cpopg
+ * (confirmado, não é suspeita). Nem e-SAJ nem eproc; não enfileira em lugar nenhum. */
+export const naoDistribuido = (cnj: string): boolean => /\.8\.26\.0000$/.test(cnj);
+
 const REQ_FORM = (base: string) => `${base}/abrirConsultaDeRequisitorios.do`;
 
 /** Busca por número unificado (NUMPROC). Retorna o HTML da página de detalhe/lista. */

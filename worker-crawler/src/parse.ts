@@ -52,11 +52,17 @@ export function codigoForoFromHref(href: string | undefined): { codigo: string; 
   return codigo ? { codigo: decodeURIComponent(codigo), foro: decodeURIComponent(foro ?? "") } : null;
 }
 
+// FOR-143 — lista de acrônimos/autarquias estendida a partir dos devedores encontrados no
+// dump legado (precatorio_sp_202608161955.csv); universidades, hospitais universitários e
+// autarquias estaduais/municipais que não continham "ESTADO"/"MUNICÍPIO" por extenso.
 export function classifyEsfera(nome: string | null): Esfera {
   const n = (nome ?? "").toUpperCase();
-  if (/\b(ESTADO|FAZENDA\s+(P[ÚU]BLICA\s+)?DO\s+ESTADO|FAZENDA\s+ESTADUAL|GOVERNO\s+DO\s+ESTADO|UFESP|IPESP|DER|SPPREV|CBPM)\b/.test(n))
+  if (/\b(ESTADO|ESTADUAL|FAZENDA\s+(P[ÚU]BLICA\s+)?DO\s+ESTADO|FAZENDA\s+ESTADUAL|GOVERNO\s+DO\s+ESTADO|UFESP|IPESP|DER|SPPREV|CBPM|USP|UNESP|UNICAMP|IAMSPE|DETRAN|ARTESP|CEETEPS|FDE|FURP|SUCEN|ITESP|JUCESP|DAEE|DERSA|PROCON|FUNDA[ÇC][ÃA]O\s+CASA|HOSPITAL\s+DAS\s+CL[ÍI]NICAS|FAMEMA|HCFAMEMA)\b/.test(n))
     return "Estadual";
-  if (/\b(MUNIC[ÍI]PIO|PREFEITURA|FAZENDA\s+(P[ÚU]BLICA\s+)?MUNICIPAL|C[ÂA]MARA\s+MUNICIPAL)\b/.test(n))
+  if (
+    /\b(MUNIC[ÍI]PIO|MUNICIPAL|PREFEITURA|FAZENDA\s+(P[ÚU]BLICA\s+)?MUNICIPAL|C[ÂA]MARA\s+MUNICIPAL|SPTRANS|SP-URBANISMO|S[ÃA]O\s+PAULO\s+URBANISMO)\b/.test(n)
+    || /\bMUN\.\s*DE\b/.test(n) // abreviação "MUN. DE <cidade>" (ex.: institutos de previdência municipal fora da capital)
+  )
     return "Municipal";
   return "Outro";
 }

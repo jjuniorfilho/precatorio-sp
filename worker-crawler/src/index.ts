@@ -1,8 +1,8 @@
 // FOR-71 — Worker crawler e-SAJ. Loop: claim → crawl → persist → classify → complete/fail.
 import { config, assertConfig, sleep } from "./config.js";
-import { getSession, getRequisitorioSession, isDepre } from "./esaj.js";
+import { getSession, getRequisitorioSession, isDepre, type Session } from "./esaj.js";
 import { crawlSeed, crawlRequisitorio } from "./crawl.js";
-import { supabase, ensureAuth, claimJobs, completeJob, failJob, classifyProcesso, persistTree, persistRequisitorio, enqueueJob, resetOrfaosCrawlerQueue } from "./supabase.js";
+import { supabase, ensureAuth, claimJobs, completeJob, failJob, classifyProcesso, persistTree, persistRequisitorio, enqueueJob, resetOrfaosCrawlerQueue, parkAsEproc } from "./supabase.js";
 import { startHttpServer } from "./http-server.js";
 import type { QueueJob } from "./types.js";
 
@@ -57,25 +57,71 @@ function withJobTimeout<T>(promise: Promise<T>, ms: number): Promise<T> {
   });
 }
 
-/** Executa fn sobre items com no máximo `limit` em paralelo. */
-async function runPool<T>(items: T[], limit: number, fn: (item: T) => Promise<void>): Promise<void> {
+/** Executa fn sobre items com no máximo `limit` em paralelo. Cada worker recebe um índice de
+ * "raia" (lane) 0..limit-1 estável — usado pra dar a cada raia sua própria sessão e-SAJ, em
+ * vez de compartilhar uma sessão entre requisições concorrentes (ver sessionPool abaixo). */
+async function runPool<T>(items: T[], limit: number, fn: (item: T, lane: number) => Promise<void>): Promise<void> {
   let i = 0;
-  const workers = Array.from({ length: Math.min(limit, items.length) }, async () => {
+  const workers = Array.from({ length: Math.min(limit, items.length) }, async (_unused, lane) => {
     while (i < items.length) {
       const idx = i++;
-      await fn(items[idx]!);
+      await fn(items[idx]!, lane);
     }
   });
   await Promise.all(workers);
 }
 
+// FOR-143/coleta — pool de sessões por raia (ver sql/2026-09-03_djen_link_diag.sql pro
+// contexto da investigação de erro do TJSP). Duas mudanças em relação ao antes:
+// 1) cada raia concorrente (config.concurrency) tem sua PRÓPRIA sessão (JSESSIONID) — antes,
+//    as N raias do lote compartilhavam uma única sessão, ou seja, N conexões simultâneas
+//    batendo no e-SAJ com o mesmo cookie ao mesmo tempo. Nenhum navegador real faz isso; é
+//    um padrão que pode acionar detecção de abuso do TJSP.
+// 2) a sessão de cada raia persiste ENTRE lotes (não só dentro de um `processBatch`) — antes,
+//    toda vez que um lote era claimado, pedia-se uma sessão nova incondicionalmente. Com fila
+//    cheia (backfill) isso cria uma sessão nova a cada ~1min, 24/7, sem parar — outro padrão
+//    atípico de tráfego humano. Agora a sessão só é renovada quando expira por idade
+//    (SESSION_MAX_AGE_MS, teto preventivo — não sabemos o timeout real do JSESSIONID do
+//    TJSP) ou quando um HTTP 429/5xx explícito sugere que ela parou de funcionar.
+const SESSION_MAX_AGE_MS = 15 * 60_000; // 15min — preventivo, TJSP não documenta o timeout real
+interface LaneSessions { esaj: Session | null; esajAt: number; req: Session | null; reqAt: number; }
+const lanes: LaneSessions[] = Array.from({ length: config.concurrency }, () => ({ esaj: null, esajAt: 0, req: null, reqAt: 0 }));
+
+async function laneEsajSession(lane: number): Promise<Session> {
+  const st = lanes[lane]!;
+  if (!st.esaj || Date.now() - st.esajAt > SESSION_MAX_AGE_MS) {
+    st.esaj = await getSession();
+    st.esajAt = Date.now();
+  }
+  return st.esaj;
+}
+async function laneRequisitorioSession(lane: number): Promise<Session> {
+  const st = lanes[lane]!;
+  if (!st.req || Date.now() - st.reqAt > SESSION_MAX_AGE_MS) {
+    st.req = await getRequisitorioSession();
+    st.reqAt = Date.now();
+  }
+  return st.req;
+}
+/** HTTP 429/5xx explícito (ver esaj.ts fetchHtml) é o único sinal confiável de "sessão morta"
+ * que temos hoje — "não retornou página de detalhe" fica de fora de propósito: pode ser rota
+ * errada (ver djen_link_diag), não necessariamente sessão inválida, então invalidar nesse
+ * caso só geraria mais churn de sessão sem necessidade. */
+const pareceSessaoMorta = (err: unknown) => /HTTP (429|5\d\d)/.test(String(err));
+
+// fail_crawler_job (RPC, FOR-73) dá 3 tentativas antes de desistir em definitivo — espelhado
+// aqui só pra saber, no worker, quando um job está na última chance.
+const MAX_TENTATIVAS_FILA = 3;
+/** Só a blindagem de crawlSeed (busca nunca saiu do seed — ver crawl.ts) conta como sinal de
+ * "provavelmente eproc". A de crawlRequisitorio ("requisitório não retornou...") fica de fora
+ * de propósito: .0500 é outro sistema (Consulta de Requisitórios), não faz sentido parcar em
+ * eproc_pendentes. */
+const buscaNuncaSaiuDoSeed = (err: unknown) => /^Error: busca não retornou página de detalhe para seed=/.test(String(err));
+
 async function processBatch(jobs: QueueJob[]): Promise<{ ok: number; erro: number }> {
-  const session = await getSession();
-  // Sessão da Consulta de Requisitórios só se houver seed .0500 no lote.
-  const reqSession = jobs.some((j) => isDepre(j.processo_codigo)) ? await getRequisitorioSession() : null;
   let ok = 0, erro = 0;
 
-  await runPool(jobs, config.concurrency, async (job) => {
+  await runPool(jobs, config.concurrency, async (job, lane) => {
     try {
       await withJobTimeout((async () => {
         if (isDepre(job.processo_codigo)) {
@@ -83,13 +129,13 @@ async function processBatch(jobs: QueueJob[]): Promise<{ ok: number; erro: numbe
           // principal — persiste na tabela DEPRE (djen_depre) com ficha + andamentos, e
           // enfileira a(s) ORIGEM(ns). O vínculo com o principal acontece depois: quando
           // a origem é crawleada, um dos seus incidentes referencia este .0500 (numero_depre).
-          const { tree, origem } = await crawlRequisitorio(job.processo_codigo, reqSession ?? undefined);
+          const { tree, origem } = await crawlRequisitorio(job.processo_codigo, await laneRequisitorioSession(lane));
           await persistRequisitorio(tree, origem);
           // origem do requisitório → cpopg. p_origem deve respeitar crawler_queue_origem_check
           // (valores aceitos: manual/refresh/backfill/caderno_dje). Usa "manual" como a edge.
           for (const cnj of origem) await enqueueJob(cnj, "manual");
         } else {
-          const tree = await crawlSeed(job.processo_codigo, session);
+          const tree = await crawlSeed(job.processo_codigo, await laneEsajSession(lane));
           if (tree.cnj && isDepre(tree.cnj)) {
             // O seed não era .0500, mas o "climb" por link de Processo Principal (dentro de
             // crawlSeed/normalizeToRoot) subiu até um requisitório .0500 — a checagem de
@@ -108,9 +154,21 @@ async function processBatch(jobs: QueueJob[]): Promise<{ ok: number; erro: numbe
       await completeJob(job.id);
       ok++;
     } catch (err) {
+      if (pareceSessaoMorta(err)) {
+        if (isDepre(job.processo_codigo)) lanes[lane]!.req = null; else lanes[lane]!.esaj = null;
+      }
       await failJob(job.id, String(err)).catch(() => {});
       erro++;
       console.error(`[fail] job=${job.id} seed=${job.processo_codigo}:`, err);
+
+      // Diagnóstico 2026-09: última tentativa + busca nunca resolveu o seed → o e-SAJ
+      // provavelmente nunca teve esse CNJ (bug de roteamento na ingestão, ver
+      // sistemaFromLink em ingest-djen.ts). Reclassifica pra eproc_pendentes em vez de
+      // deixar morto em "erro" — não gera mais retry pra algo que nunca vai resolver.
+      if (!isDepre(job.processo_codigo) && job.tentativas + 1 >= MAX_TENTATIVAS_FILA && buscaNuncaSaiuDoSeed(err)) {
+        await parkAsEproc(job.processo_codigo).catch(() => {});
+        console.log(`[reclassify] seed=${job.processo_codigo} esgotou tentativas sem ficha no e-SAJ → eproc_pendentes`);
+      }
     }
     await sleep(config.delayMs);
   });

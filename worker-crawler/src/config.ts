@@ -38,6 +38,12 @@ export const config = {
   // FOR-102 — endpoint HTTP síncrono (buscar-precatorio + admin chamam /valor-pago).
   httpPort: num("HTTP_PORT", 3200),
   httpSecret: process.env.WORKER_HTTP_SECRET ?? "",
+
+  // FOR-143 — reconciliação LEGADO→real em persistTree() (ver supabase.ts). Custa 1 SELECT
+  // extra por processo crawleado, pra sempre — vale a pena enquanto houver processos "LEGADO-"
+  // pendentes (~12k no ar em 2026-08-19), mas pode ser desligado (LEGADO_RECONCILE=false) depois
+  // que o backfill do FOR-143 for absorvido, já que a partir daí é só overhead morto.
+  legadoReconcile: (process.env.LEGADO_RECONCILE ?? "true") !== "false",
 };
 
 export function assertConfig(): void {

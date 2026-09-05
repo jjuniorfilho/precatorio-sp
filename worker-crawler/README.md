@@ -23,6 +23,22 @@ Seed manual p/ teste (no SQL Editor / psql):
 SELECT enqueue_crawler_job('1003169-89.2019.8.26.0073', 'manual');
 ```
 
+## Testes
+```bash
+npm test    # node:test nativo (Node ≥20), sem dependência nova — tsx --test src/*.test.ts
+```
+Cobre só **lógica pura, sem I/O** (`classifyEsfera` em `parse.ts`; `parseCsvLine`,
+`normIncidente`, `parseValorCentavos`, `agruparPorChave`, `separarJaExistemEAInserir`,
+`resolverProcessoRealPorCnj` em `import-csv-legado.ts`), incluindo regressão dos bugs reais
+encontrados no code-review do FOR-143 (ver
+`.claude/sessions/for-143-importar-precatorios-csv-legado/plan.md`). O código que fala com o
+Supabase (`persistTree`, `reconcileLegadoProcesso`/`reconcileLegadoIncidente`, o próprio
+`inserirLinha`/`main` do import) **não** tem teste automatizado — validado manualmente/em
+produção, como sempre foi feito neste worker (sem mocks de Supabase; se algum dia isso mudar,
+prefira um Supabase local/staging real a mockar o client). `main()` de `import-csv-legado.ts` só
+roda quando o arquivo é executado diretamente (`tsx src/import-csv-legado.ts`), nunca ao ser
+importado pelos testes.
+
 ## Deploy (VPS)
 Processo gerenciado por **systemd** ou **pm2**. Env mínimo: `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`. Educação com o e-SAJ via `CONCURRENCY`/`DELAY_MS` (conservador por padrão). A `SERVICE_ROLE_KEY` fica **só na VPS**.
 
@@ -116,3 +132,40 @@ No SQL Editor:
 ```sql
 SELECT cron.unschedule('caderno-dje-diario');
 ```
+
+## Import de CSV legado (FOR-143)
+Script **one-off** (`src/import-csv-legado.ts`) que importou um dump CSV legado de
+precatórios de terceiro (`precatorio_sp_*.csv`, fora do git — ver `.gitignore`) pra preencher
+lacunas na base própria. Compara em lote contra `processos`/`incidentes` existentes e insere só
+o que falta — nunca sobrescreve dado real. Já rodado contra o dump completo em produção
+(24.755 registros inseridos, 0 erros); documentado aqui só pra quem precisar reexecutar,
+adaptar pra outro dump, ou entender os efeitos colaterais no crawler (abaixo). Não faz parte do
+loop `claim/crawl/persist`.
+
+```bash
+# modo relatório (padrão — nunca grava, mesmo sem passar nada):
+npm run import-csv-legado -- --csv=../precatorio_sp_202608161955.csv
+
+# grava de verdade — --apply é obrigatório, opt-in explícito (não é --dry-run quem decide):
+npm run import-csv-legado -- --apply --csv=../precatorio_sp_202608161955.csv
+
+# smoke test em escala pequena antes de rodar o dump completo:
+npm run import-csv-legado -- --apply --csv=../precatorio_sp_202608161955.csv --limit=5
+```
+
+**Convenção `LEGADO-`:** processos/incidentes que só existem no CSV (sem `processo_codigo`
+real do e-SAJ) são gravados como `processos.processo_codigo = 'LEGADO-{cnj_normalizado}'` e
+`incidentes.processo_codigo = 'LEGADO-{cnj_normalizado}-{numero_incidente}'`. Se você encontrar
+esse prefixo debugando o crawler, é isso — não é lixo nem bug. `next_crawl_at=NULL` nesses
+processos é deliberado: `enqueue_stale_processos()` os exclui explicitamente do cron de refresh
+(`sql/2026-08-19_for143_exclui_legado_do_refresh.sql`), já que o código não existe no e-SAJ e o
+worker falharia sempre.
+
+**Reconciliação permanente em `persistTree()` (`src/supabase.ts`):** quando o crawler descobre
+organicamente um processo/incidente que já tinha uma linha `LEGADO-`, `reconcileLegadoProcesso`/
+`reconcileLegadoIncidente` reapontam `incidentes`/`partes` pro processo real e apagam (ou
+mesclam via RPC `merge_legado_processo`/`merge_legado_incidente`, se o código real já existia)
+a linha `LEGADO-` — em vez de deixar duas linhas pro mesmo CNJ/requisitório. Isso roda em **todo**
+crawl (1 SELECT extra por processo), gateado por `config.legadoReconcile` (env
+`LEGADO_RECONCILE`, default `true` — ver `.env.example`). Pode ser desligado depois que os
+`LEGADO-` remanescentes forem absorvidos pelo backfill, já que a partir daí vira overhead morto.
