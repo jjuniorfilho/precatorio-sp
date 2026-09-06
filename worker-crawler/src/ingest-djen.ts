@@ -65,6 +65,19 @@ const isDepre = (cnj: string): boolean => /\.8\.26\.0500$/.test(cnj);
 const naoDistribuido = (cnj: string): boolean => /\.8\.26\.0000$/.test(cnj);
 const norm = (s: string) => (s ?? "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().trim();
 
+// FOR-146: match era bidirecional (alvo.includes(c) || c.includes(alvo)) \u2014 o ramo
+// `c.includes(alvo)` deixava passar qualquer nomeClasse curto/gen\u00e9rico que fosse
+// substring de uma config mais longa (ex.: "CUMPRIMENTO DE SENTEN\u00c7A" batia contra
+// "Cumprimento de Senten\u00e7a contra a Fazenda P\u00fablica" sem nenhuma rela\u00e7\u00e3o sem\u00e2ntica
+// real). Mantido s\u00f3 `alvo.includes(c)`: o nomeClasse observado precisa CONTER a
+// classe configurada, nunca o contr\u00e1rio. `classesConfig` j\u00e1 chega normalizado
+// (map(norm) na chamada), ent\u00e3o s\u00f3 normalizamos o nomeClasse aqui.
+export function classeOk(nomeClasse: string | null | undefined, classesConfig: string[]): boolean {
+  if (classesConfig.length === 0) return true;
+  const alvo = norm(nomeClasse ?? "");
+  return classesConfig.some((c) => alvo.includes(c));
+}
+
 /** GET de uma página da Comunica com retry/backoff (a API dá 500 esporádico). */
 async function fetchPage(date: string, parte: string, pagina: number, pageSize: number): Promise<any[]> {
   const url = `${API}?siglaTribunal=TJSP&dataDisponibilizacaoInicio=${date}&dataDisponibilizacaoFim=${date}`
@@ -115,9 +128,8 @@ export async function ingestDay(date: string, opts: { backfill?: boolean } = {})
           total++;
           const cnj: string | null = it.numeroprocessocommascara ?? null;
           if (!cnj || seen.has(cnj)) continue;
-          const classeOk = classes.length === 0 || classes.some((c) => norm(it.nomeClasse ?? "").includes(c) || c.includes(norm(it.nomeClasse ?? "")));
           const passivoPublico = (it.destinatarios ?? []).some((d: any) => d.polo === "P" && esfera(d.nome) !== "Outro");
-          if (!(classeOk && passivoPublico)) continue;
+          if (!(classeOk(it.nomeClasse, classes) && passivoPublico)) continue;
           seen.add(cnj);
           flagueados++;
           // DJEN-first: estrutura os advogados (nome+OAB+UF) já na ingestão.
