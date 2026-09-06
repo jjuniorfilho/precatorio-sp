@@ -57,3 +57,12 @@ test("classeOk: com as 2 classes genericas da Fase 2 adicionadas, o nomeClasse g
   // seja só prefixo de uma config ainda não deve passar por acidente de substring.
   assert.equal(classeOk("Execução", classesComGenericas), false);
 });
+
+test("classeOk: NAO normaliza classesConfig sozinha (contrato: caller precisa normalizar antes)", () => {
+  // classeOk só normaliza `nomeClasse` (via norm(nomeClasse ?? "")); `classesConfig` é
+  // usado como veio. Se algum dia o call site em ingestDay parar de fazer
+  // `classes_relevantes.map(norm)` antes de chamar classeOk, esse teste falha e denuncia
+  // a quebra silenciosa (senão toda a config com acento/maiúscula deixaria de casar).
+  assert.equal(classeOk("Precatório", ["Precatório"]), false);
+  assert.equal(classeOk("Precatório", ["precatorio"]), true);
+});

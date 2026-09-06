@@ -28,6 +28,13 @@
 --
 -- Aplicar manualmente no SQL Editor do Supabase. NÃO faz parte do pipeline de deploy
 -- automático do worker (é dado, não schema/migration).
+--
+-- SEGURANÇA (achado do code review pré-PR): jsonb_set aqui SUBSTITUI o array inteiro —
+-- não é um append. Para não sobrescrever silenciosamente um ajuste manual feito depois
+-- do seed original de FOR-70, o WHERE abaixo exige que o array esteja EXATAMENTE igual
+-- ao seed original das 6 entradas (supabase/migrations/20260627205511_for70_ingest_djen.sql).
+-- Se o UPDATE afetar 0 linhas, é sinal de que o array já mudou desde então — pare e
+-- investigue antes de aplicar manualmente (não force o UPDATE sem entender o motivo).
 
 -- 1) Conferir o estado atual ANTES de aplicar (evita sobrescrever ajuste manual feito
 --    depois do seed original de FOR-70):
@@ -49,7 +56,17 @@ set params = jsonb_set(
   ]'::jsonb
 ),
 updated_at = now()
-where rotina = 'caderno_dje';
+where rotina = 'caderno_dje'
+  and params->'classes_relevantes' = '[
+    "Cumprimento de Sentença contra a Fazenda Pública",
+    "Cumprimento Provisório de Sentença contra a Fazenda Pública",
+    "Execução contra a Fazenda Pública",
+    "Precatório",
+    "Requisição de Pequeno Valor",
+    "Procedimento do Juizado Especial da Fazenda Pública"
+  ]'::jsonb;
 
--- 2) Conferir o resultado (esperado: array com as 8 entradas acima):
+-- 2) Conferir o resultado (esperado: array com as 8 entradas acima, E que a linha 1
+--    acima realmente reportou "1 row affected" — 0 rows significa que o WHERE de
+--    segurança bloqueou o UPDATE porque o array já não era o esperado):
 -- select params->'classes_relevantes' from coleta_config where rotina = 'caderno_dje';
