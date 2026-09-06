@@ -164,3 +164,23 @@ O achado mais importante desta fase não é sobre o fix (trivial, uma linha), é
 integradas ao `main`. Isso precisa ser resolvido explicitamente antes da Fase 2/3
 (ver seção "Achado de arquitetura crítico" acima) — é o item a levar para o gate
 humano com prioridade sobre a discussão do trade-off de volume.
+
+## Decisão do Gate 1 (humano, 2026-09-06)
+
+1. **Base da worktree**: opção 1 aplicada — branch rebaseada de `origin/main` para
+   `jjuniorfilho/for-145-captura-precatorios-federais-djen` (ponta real da cadeia
+   FOR-68→...→FOR-145). `worker-crawler/src/ingest-djen.ts` agora existe na worktree
+   (commit deste doc reescrito para `a6faa92` após o rebase). Consequência aceita:
+   esta branch agora carrega todo o histórico de FOR-68→FOR-145; o merge final
+   (Fase 5) precisa reconciliar com essa cadeia, não com `main` isolado.
+2. **Escopo do fix**: opção "Fix + 2 classes genéricas" — aplicar `alvo.includes(c)`
+   unidirecional **e** adicionar `"Cumprimento de Sentença"` /
+   `"Cumprimento Provisório de Sentença"` (sem sufixo "contra a Fazenda Pública") em
+   `coleta_config.params.classes_relevantes`, para que o volume hoje capturado
+   (os 1.524 CNJs com `passivoPublico=true` reais) continue entrando — sem mudança de
+   comportamento observável em produção, só corrigindo a lógica de match para não
+   depender de um acidente de substring. Isto vira escopo explícito da Fase 2
+   (`/engineer:plan`): a mudança de dado em `coleta_config` (produção, via SQL/admin,
+   não migration de schema) precisa constar como uma fase/tarefa própria do plano,
+   com o passo de dado (UPDATE em produção) documentado e revisável separadamente do
+   deploy de código.
