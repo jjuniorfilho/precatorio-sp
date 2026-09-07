@@ -65,6 +65,19 @@ const isDepre = (cnj: string): boolean => /\.8\.26\.0500$/.test(cnj);
 const naoDistribuido = (cnj: string): boolean => /\.8\.26\.0000$/.test(cnj);
 const norm = (s: string) => (s ?? "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().trim();
 
+// FOR-146: match era bidirecional (alvo.includes(c) || c.includes(alvo)) — o ramo
+// `c.includes(alvo)` deixava passar qualquer nomeClasse curto/genérico que fosse
+// substring de uma config mais longa (ex.: "CUMPRIMENTO DE SENTENÇA" batia contra
+// "Cumprimento de Sentença contra a Fazenda Pública" sem nenhuma relação semântica
+// real). Mantido só `alvo.includes(c)`: o nomeClasse observado precisa CONTER a
+// classe configurada, nunca o contrário. `classesConfig` já chega normalizado
+// (map(norm) na chamada), então só normalizamos o nomeClasse aqui.
+export function classeOk(nomeClasse: string | null | undefined, classesConfig: string[]): boolean {
+  if (classesConfig.length === 0) return true;
+  const alvo = norm(nomeClasse ?? "");
+  return classesConfig.some((c) => alvo.includes(c));
+}
+
 /** GET de uma página da Comunica com retry/backoff (a API dá 500 esporádico). */
 async function fetchPage(date: string, parte: string, pagina: number, pageSize: number): Promise<any[]> {
   const url = `${API}?siglaTribunal=TJSP&dataDisponibilizacaoInicio=${date}&dataDisponibilizacaoFim=${date}`
@@ -92,7 +105,9 @@ export async function ingestDay(date: string, opts: { backfill?: boolean } = {})
   const { data: cfg } = await sb.from("coleta_config").select("enabled, params").eq("rotina", "caderno_dje").maybeSingle();
   if (cfg && cfg.enabled === false) return { date, status: "skipped", total: 0, flagueados: 0, enfileirados: 0, eproc: 0, depre: 0 };
   const params = (cfg?.params ?? {}) as { classes_relevantes?: string[]; itens_por_pagina?: number; partes_alvo?: string[] };
-  const classes = (params.classes_relevantes ?? []).map(norm);
+  // .filter(Boolean): uma entrada vazia/em-branco em classes_relevantes normalizaria para
+  // "" e faria `alvo.includes("")` bater sempre (fail-open silencioso, desliga o filtro).
+  const classes = (params.classes_relevantes ?? []).map(norm).filter(Boolean);
   const partes = params.partes_alvo?.length ? params.partes_alvo : PARTES_ALVO_DEFAULT;
   const pageSize = params.itens_por_pagina ?? 100;
 
@@ -115,9 +130,8 @@ export async function ingestDay(date: string, opts: { backfill?: boolean } = {})
           total++;
           const cnj: string | null = it.numeroprocessocommascara ?? null;
           if (!cnj || seen.has(cnj)) continue;
-          const classeOk = classes.length === 0 || classes.some((c) => norm(it.nomeClasse ?? "").includes(c) || c.includes(norm(it.nomeClasse ?? "")));
           const passivoPublico = (it.destinatarios ?? []).some((d: any) => d.polo === "P" && esfera(d.nome) !== "Outro");
-          if (!(classeOk && passivoPublico)) continue;
+          if (!(classeOk(it.nomeClasse, classes) && passivoPublico)) continue;
           seen.add(cnj);
           flagueados++;
           // DJEN-first: estrutura os advogados (nome+OAB+UF) já na ingestão.
