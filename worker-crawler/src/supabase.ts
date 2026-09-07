@@ -1,15 +1,53 @@
 // Cliente Supabase (service_role) + RPCs da fila (FOR-73) + persistência (FOR-69).
 import { createClient } from "@supabase/supabase-js";
 import { createHash } from "node:crypto";
+import WebSocketImpl from "ws";
 import { config } from "./config.js";
+import { normNome } from "./comunica.js";
 import type { ProcessoTree, QueueJob } from "./types.js";
 
-export const supabase = createClient(config.supabaseUrl, config.serviceRoleKey, {
-  auth: { persistSession: false },
+// Node < 22 não tem WebSocket nativo (supabase realtime exige). Fornece o `ws`.
+if (!(globalThis as { WebSocket?: unknown }).WebSocket) {
+  (globalThis as { WebSocket?: unknown }).WebSocket = WebSocketImpl as unknown;
+}
+
+// Usa service_role se houver; senão anon key + login admin (Opção B).
+const usingServiceRole = !!config.serviceRoleKey;
+export const supabase = createClient(config.supabaseUrl, config.serviceRoleKey || config.anonKey, {
+  auth: { persistSession: false, autoRefreshToken: !usingServiceRole },
 });
+
+let _authed = false;
+/** Garante sessão: service_role não precisa; admin faz signInWithPassword uma vez. */
+export async function ensureAuth(): Promise<void> {
+  if (usingServiceRole || _authed) return;
+  const { error } = await supabase.auth.signInWithPassword({
+    email: config.adminEmail,
+    password: config.adminPassword,
+  });
+  if (error) throw new Error(`login admin falhou: ${error.message}`);
+  _authed = true;
+  console.log(`autenticado como admin (${config.adminEmail})`);
+}
 
 const cnjNorm = (cnj: string | null) => (cnj ? cnj.replace(/\D/g, "") : null);
 const md5 = (s: string) => createHash("md5").update(s).digest("hex");
+
+/** DJEN-first: lê os advogados já estruturados na ingestão p/ os CNJs dados.
+ * Retorna nome(normalizado) → OAB. Mapa vazio se a tabela não tiver nada (cai no fallback). */
+export async function djenAdvogadosByCnj(cnjsNorm: string[]): Promise<Map<string, { oab: string; oab_normalizada: string }>> {
+  const out = new Map<string, { oab: string; oab_normalizada: string }>();
+  const list = [...new Set(cnjsNorm.filter(Boolean))];
+  if (!list.length) return out;
+  const { data, error } = await supabase
+    .from("djen_advogados").select("advogado_nome, oab, oab_normalizada").in("cnj_normalizado", list);
+  if (error) return out; // tabela ausente / RLS → fallback ao vivo
+  for (const r of (data ?? []) as Array<{ advogado_nome: string; oab: string | null; oab_normalizada: string | null }>) {
+    if (!r.oab || !r.oab_normalizada) continue;
+    out.set(normNome(r.advogado_nome), { oab: r.oab, oab_normalizada: r.oab_normalizada });
+  }
+  return out;
+}
 
 // ---- RPCs da fila (FOR-73) --------------------------------------------------
 export async function claimJobs(limit: number): Promise<QueueJob[]> {
@@ -28,6 +66,11 @@ export async function failJob(id: string, erro: string): Promise<void> {
 export async function classifyProcesso(processoId: string): Promise<void> {
   const { error } = await supabase.rpc("classify_processo", { p_processo_id: processoId });
   if (error) throw new Error(`classify_processo: ${error.message}`);
+}
+/** Enfileira um CNJ (ex.: processo de origem de um requisitório). Best-effort. */
+export async function enqueueJob(cnj: string, origem: string): Promise<void> {
+  const { error } = await supabase.rpc("enqueue_crawler_job", { p_processo_codigo: cnj, p_origem: origem });
+  if (error) console.error(`enqueue_crawler_job(${cnj}): ${error.message}`);
 }
 
 async function upsertReturningId(table: string, row: Record<string, unknown>, onConflict: string): Promise<string> {
@@ -91,7 +134,7 @@ export async function persistTree(tree: ProcessoTree): Promise<string> {
         if (inc.parte_ativa.advogados.length === 0) {
           partesRows.push({
             incidente_id: incidenteId, processo_id: processoId, papel: "ativa",
-            nome: inc.parte_ativa.nome, documento: inc.parte_ativa.documento, fonte: "esaj",
+            nome: inc.parte_ativa.nome, documento: inc.parte_ativa.documento, sem_oab: false, fonte: "esaj",
           });
         }
         for (const adv of inc.parte_ativa.advogados) {
@@ -106,7 +149,7 @@ export async function persistTree(tree: ProcessoTree): Promise<string> {
       if (inc.parte_passiva) {
         partesRows.push({
           incidente_id: incidenteId, processo_id: processoId, papel: "passiva",
-          nome: inc.parte_passiva.nome, fonte: "esaj",
+          nome: inc.parte_passiva.nome, sem_oab: false, fonte: "esaj",
         });
       }
       if (partesRows.length) {
@@ -132,4 +175,42 @@ export async function persistTree(tree: ProcessoTree): Promise<string> {
   }
 
   return processoId;
+}
+
+/**
+ * Persiste um requisitório .0500 na tabela DEPRE (djen_depre) — ficha + andamentos —
+ * SEM criar processo principal. Regra de negócio: nenhum .0500 é principal; o
+ * vínculo ocorre depois, quando o processo de ORIGEM é crawleado e um dos seus
+ * incidentes referencia este .0500 pelo numero_depre. `origem` são os CNJs de
+ * origem extraídos da ficha do requisitório (já enfileirados pelo caller).
+ */
+export async function persistRequisitorio(tree: ProcessoTree, origem: string[]): Promise<void> {
+  const inc = tree.cumprimentos[0]?.incidentes[0];
+  const cnj = tree.cnj ?? inc?.cnj ?? null;
+  if (!cnj) throw new Error("persistRequisitorio: requisitório sem CNJ");
+
+  const andamentos = (inc?.andamentos ?? []).map((a) => ({
+    data: a.data,
+    descricao: a.descricao,
+    arquivo_url: a.arquivo_url,
+  }));
+
+  const row = {
+    cnj,
+    cnj_normalizado: cnjNorm(cnj),
+    valor_acao: inc?.valor_acao ?? tree.valor_acao ?? null,
+    status: inc?.status ?? tree.status ?? null,
+    classe: tree.classe ?? null,
+    data_base: inc?.data_base ?? tree.data_base ?? null,
+    devedora: inc?.parte_passiva?.nome ?? null,
+    origem_cnjs: origem.length ? origem : null,
+    andamentos,
+    ficha_crawled_at: new Date().toISOString(),
+  };
+
+  // upsert por cnj_normalizado (mescla com o registro criado na ingestão DJEN).
+  const { error } = await supabase
+    .from("djen_depre")
+    .upsert(row, { onConflict: "cnj_normalizado" });
+  if (error) throw new Error(`upsert djen_depre (requisitório): ${error.message}`);
 }

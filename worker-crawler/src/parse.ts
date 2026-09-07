@@ -32,6 +32,18 @@ export function parseDateIso(text: string | undefined | null): string | null {
 const DEPRE_RE = /\d{7}-\d{2}\.\d{4}\.8\.26\.0500/;
 export const extractDepre = (text: string): string | null => text.match(DEPRE_RE)?.[0] ?? null;
 
+const CNJ_RE = /\d{7}-\d{2}\.\d{4}\.\d\.\d{2}\.\d{4}/;
+/** Extrai um CNJ de um texto livre (ex.: texto do link do cumprimento). */
+export const extractCnj = (text: string | null | undefined): string | null => (text ?? "").match(CNJ_RE)?.[0] ?? null;
+
+/** CNJs de origem citados na ficha de um requisitório (.0500): "Outros números" da
+ * capa + "Processo de Origem: ..." nas movimentações. Exclui o próprio .0500 e dedup. */
+export function extractOrigemCnjs($: $): string[] {
+  const text = $("body").text();
+  return [...new Set([...text.matchAll(/\d{7}-\d{2}\.\d{4}\.\d\.\d{2}\.\d{4}/g)].map((m) => m[0]))]
+    .filter((c) => !/\.8\.26\.0500$/.test(c));
+}
+
 /** href do e-SAJ → { codigo, foro }. */
 export function codigoForoFromHref(href: string | undefined): { codigo: string; foro: string } | null {
   if (!href) return null;
@@ -53,6 +65,14 @@ export function classifyEsfera(nome: string | null): Esfera {
 /** Link "Processo principal" (a.processoPrinc) → sobe um nível. null = raiz. */
 export function processoPrincLink($: $): { codigo: string; foro: string } | null {
   const href = $("a.processoPrinc").first().attr("href");
+  return codigoForoFromHref(href);
+}
+
+/** 1º link de processo numa página de listagem (a.incidente cobre incidentes;
+ * aqui pegamos qualquer link de ficha — fallback quando a busca não redireciona
+ * direto ao detalhe e cai numa lista de resultados). */
+export function firstProcessoLink($: $): { codigo: string; foro: string } | null {
+  const href = $("a[href*='show.do'][href*='processo.codigo']").first().attr("href");
   return codigoForoFromHref(href);
 }
 
@@ -90,7 +110,7 @@ export function extractCapa($: $): CapaInfo {
   const body = $("body").text();
   const label = (re: RegExp) => body.match(re)?.[1]?.trim() ?? null;
 
-  const statusTxt = ($("#labelStatusProcesso, .unj-tag, .classeStatus").first().text() || "").toLowerCase();
+  const statusTxt = ($("#labelSituacaoProcesso, #labelStatusProcesso, .unj-tag, .classeStatus").first().text() || "").toLowerCase();
   let status: StatusBruto | null = null;
   if (statusTxt.includes("suspen")) status = "suspenso";
   else if (statusTxt.includes("extint")) status = "extinto";
@@ -120,24 +140,26 @@ export function extractPartes($: $): { ativa: ParteAtiva | null; passiva: ParteP
     const nome = valueCell.clone().children().remove().end().text().trim().split("\n")[0]?.trim() ?? null;
 
     const isAtiva = /reqte|exequente|requerente|autor|credor/.test(tipo);
-    const isPassiva = /reqda|requerid|ent\.?\s*devedora|executad|fazenda|munic|devedor/.test(tipo);
+    const isPassiva = /reqd[oa]|requerid|ent\.?\s*devedora|executad|fazenda|munic|devedor/.test(tipo);
 
     if (isAtiva) {
+      // O nome do advogado é um text node solto após <span>Advogad[oa]:</span>,
+      // não está dentro do span — por isso extraímos do texto completo da célula.
       const advs: Advogado[] = [];
-      valueCell.find("*").each((__, el) => {
-        const t = $(el).text().trim();
-        const am = t.match(/Advogad[oa]:\s*(.+)/i);
-        if (am) {
-          const nomeAdv = am[1]!.replace(/\s+/g, " ").trim();
-          const oab = t.match(/OAB[:\s]*([\dA-Z\/.\- ]+)/i)?.[1]?.trim() ?? null;
-          advs.push({
-            nome: nomeAdv.replace(/\(.*$/, "").trim(),
-            oab,
-            oab_normalizada: oab ? oab.replace(/[^0-9A-Za-z]/g, "").toUpperCase() : null,
-            sem_oab: !oab,
-          });
-        }
-      });
+      const cellText = valueCell.text().replace(/ /g, " ");
+      for (const m of cellText.matchAll(/Advogad[oa]:\s*([\s\S]*?)(?=Advogad[oa]:|$)/gi)) {
+        const seg = m[1]!.replace(/\s+/g, " ").trim();
+        if (!seg) continue;
+        const oab = seg.match(/OAB[:\s]*([\dA-Z\/.\- ]+)/i)?.[1]?.trim() ?? null;
+        const nomeAdv = seg.replace(/\s*OAB.*$/i, "").replace(/\(.*$/, "").trim();
+        if (!nomeAdv) continue;
+        advs.push({
+          nome: nomeAdv,
+          oab,
+          oab_normalizada: oab ? oab.replace(/[^0-9A-Za-z]/g, "").toUpperCase() : null,
+          sem_oab: !oab,
+        });
+      }
       ativa = { nome, documento: null, advogados: advs };
     } else if (isPassiva && !passiva) {
       passiva = { nome, ente_esfera: classifyEsfera(nome) };

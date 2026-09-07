@@ -5,7 +5,7 @@
 | Campo | Valor |
 |-------|-------|
 | **Produto** | Portal Web de Consulta Gratuita de Precatórios e RPVs |
-| **Organização** | PX Ativos Judiciais |
+| **Organização** | Forjuris |
 | **Workspace Linear** | Forjuris |
 | **Team Linear** | FOR |
 | **Project Linear** | Busca precatorio SP |

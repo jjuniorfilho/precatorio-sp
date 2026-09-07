@@ -2,20 +2,27 @@
 // e-SAJ é GET sem captcha; #tabelaTodasMovimentacoes já vem no HTML.
 import {
   getSession, searchByCnj, showByCodigo, isCnj, parseCnj, type Session,
+  getRequisitorioSession, searchRequisitorioByCnj, reqReferer,
 } from "./esaj.js";
 import {
-  load, extractCapa, extractPartes, extractAndamentos, extractDepre,
-  incidenteLinks, processoPrincLink, tipoFromTexto,
+  load, extractCapa, extractPartes, extractAndamentos, extractDepre, extractCnj,
+  incidenteLinks, processoPrincLink, firstProcessoLink, tipoFromTexto, extractOrigemCnjs,
 } from "./parse.js";
+import { fetchAdvogadosByCnj, normNome } from "./comunica.js";
+import { djenAdvogadosByCnj } from "./supabase.js";
 import type { CumprimentoData, IncidenteData, ProcessoTree } from "./types.js";
 import { config, sleep } from "./config.js";
 
 const isCumprimento = (texto: string) => /cumprimento|execu[çc][ãa]o de senten/i.test(texto);
 
-/** lê o código interno da própria página (hidden comum no e-SAJ). */
+/** lê o código interno da própria página. O e-SAJ atual não traz hidden inputs;
+ * o código/foro internos vêm em `saj.env.queryString` (validado em HTML real). */
 function selfCodigo($: ReturnType<typeof load>): { codigo: string; foro: string } | null {
-  const codigo = ($("#processoSelecionado").attr("value") || $("input[name='processo.codigo']").attr("value") || "").trim();
-  const foro = ($("input[name='processo.foro']").attr("value") || "").trim();
+  const qs = $.html().match(/saj\.env\.queryString\s*=\s*'([^']+)'/)?.[1] ?? "";
+  const codigo = (qs.match(/processo\.codigo=([^&]+)/)?.[1]
+    || $("#processoSelecionado").attr("value") || $("input[name='processo.codigo']").attr("value") || "").trim();
+  const foro = (qs.match(/processo\.foro=([^&]+)/)?.[1]
+    || $("input[name='processo.foro']").attr("value") || "").trim();
   return codigo ? { codigo, foro } : null;
 }
 
@@ -26,6 +33,16 @@ async function normalizeToRoot(seed: string, session: Session) {
   html = isCnj(seed) ? await searchByCnj(seed, session) : await showByCodigo(seed, foroHint, session);
 
   let $ = load(html);
+  // Blindagem: se a busca não redirecionou ao detalhe (sem queryString → não é
+  // ficha; pode ser lista de resultados/erro), segue o 1º link de processo.
+  if (!selfCodigo($)) {
+    const lst = firstProcessoLink($);
+    if (lst) {
+      await sleep(config.delayMs);
+      html = await showByCodigo(lst.codigo, lst.foro || foroHint, session);
+      $ = load(html);
+    }
+  }
   let current = selfCodigo($) ?? { codigo: seed, foro: foroHint };
 
   // climb
@@ -70,6 +87,12 @@ export async function crawlSeed(seed: string, session?: Session): Promise<Proces
   const root = await normalizeToRoot(seed, sess);
   const capa = extractCapa(root.$);
 
+  // Blindagem: a busca não resolveu uma ficha real (não saiu do seed e sem
+  // capa/incidentes) → falha o job p/ re-tentar via fila, em vez de gravar lixo.
+  if (root.codigo === seed && !capa.cnj && !capa.classe && incidenteLinks(root.$).length === 0) {
+    throw new Error(`busca não retornou página de detalhe para seed=${seed}`);
+  }
+
   // No nível raiz, os a.incidente costumam ser os Cumprimentos de Sentença.
   const rootLinks = incidenteLinks(root.$);
   const cumprimentos: CumprimentoData[] = [];
@@ -101,7 +124,8 @@ export async function crawlSeed(seed: string, session?: Session): Promise<Proces
         andamentos: extractAndamentos($c),
       });
     }
-    cumprimentos.push({ processo_codigo: c.codigo, cnj: null, incidentes });
+    // CNJ do cumprimento vem no texto do link (a folha não traz #numeroProcesso).
+    cumprimentos.push({ processo_codigo: c.codigo, cnj: extractCnj(c.texto), incidentes });
   }
 
   // incidentes pendurados direto na raiz (sem cumprimento) → cumprimento sintético
@@ -128,6 +152,27 @@ export async function crawlSeed(seed: string, session?: Session): Promise<Proces
     });
   }
 
+  // Enriquecimento de OAB (e-SAJ não traz OAB; vem do DJEN). As publicações estão
+  // sob o CNJ do seed (o número que o DJEN flagou) — que pode diferir do CNJ da raiz
+  // quando há subida ao processo de conhecimento. Considera ambos. Casa por nome normalizado.
+  // DJEN-first: lê os advogados já estruturados na ingestão; só vai à API ao vivo se o
+  // banco não tiver nada (ex.: processo que não veio do DJEN). Best-effort.
+  const cnjsParaOab = [...new Set([isCnj(seed) ? seed : null, capa.cnj].filter(Boolean) as string[])];
+  const oabMap = await djenAdvogadosByCnj(cnjsParaOab.map((c) => c.replace(/\D/g, "")));
+  if (oabMap.size === 0) {
+    for (const c of cnjsParaOab) for (const [k, v] of await fetchAdvogadosByCnj(c)) if (!oabMap.has(k)) oabMap.set(k, v);
+  }
+  if (oabMap.size) {
+    for (const c of cumprimentos) {
+      for (const inc of c.incidentes) {
+        for (const adv of inc.parte_ativa?.advogados ?? []) {
+          const hit = oabMap.get(normNome(adv.nome));
+          if (hit) { adv.oab = hit.oab; adv.oab_normalizada = hit.oab_normalizada; adv.sem_oab = false; }
+        }
+      }
+    }
+  }
+
   return {
     processo_codigo: root.codigo,
     cnj: capa.cnj,
@@ -139,5 +184,87 @@ export async function crawlSeed(seed: string, session?: Session): Promise<Proces
     data_base: capa.data_base,
     status: capa.status,
     cumprimentos,
+  };
+}
+
+export interface RequisitorioResult {
+  tree: ProcessoTree;
+  origem: string[]; // CNJs do(s) processo(s) de origem → enfileirar p/ o cpopg
+  precatorio: { processo_depre: string; valor_acao: number | null; status: string | null; devedora: string | null };
+}
+
+/** Coleta UM requisitório (.0500) na Consulta de Requisitórios. A ficha é a mesma
+ * `show.do` de um processo normal (foro=0500), mas SEM "Processo principal" (o .0500
+ * já é a raiz). Reusa os parsers; monta uma árvore de 1 incidente (Precatorio) e
+ * devolve os CNJs de origem + os campos do precatório p/ reuso em `precatorios`. */
+export async function crawlRequisitorio(seed: string, session?: Session): Promise<RequisitorioResult> {
+  const sess = session ?? (await getRequisitorioSession());
+  let html = await searchRequisitorioByCnj(seed, sess);
+  let $ = load(html);
+  // Sem ficha direta → segue o 1º link de resultado (lista da busca).
+  let self = selfCodigo($);
+  if (!self) {
+    const lst = firstProcessoLink($);
+    if (lst) {
+      await sleep(config.delayMs);
+      html = await showByCodigo(lst.codigo, lst.foro || "500", sess, reqReferer());
+      $ = load(html);
+      self = selfCodigo($);
+    }
+  }
+  const codigo = self?.codigo ?? seed;
+  const foro = self?.foro || "500";
+
+  const capa = extractCapa($);
+  // Blindagem: não resolveu ficha real → falha p/ re-tentar (não grava lixo).
+  if (codigo === seed && !capa.cnj && !capa.classe && incidenteLinks($).length === 0) {
+    throw new Error(`requisitório não retornou página de detalhe para seed=${seed}`);
+  }
+
+  const { ativa, passiva } = extractPartes($);
+  const andamentos = extractAndamentos($);
+  const cnj = capa.cnj ?? (isCnj(seed) ? seed : null);
+  const origem = extractOrigemCnjs($);
+
+  // OAB (DJEN-first): publicações do .0500 estão sob o próprio número.
+  if (ativa?.advogados.length) {
+    const oabMap = await djenAdvogadosByCnj([seed.replace(/\D/g, "")]);
+    if (oabMap.size === 0) for (const [k, v] of await fetchAdvogadosByCnj(seed)) if (!oabMap.has(k)) oabMap.set(k, v);
+    for (const adv of ativa.advogados) {
+      const hit = oabMap.get(normNome(adv.nome));
+      if (hit) { adv.oab = hit.oab; adv.oab_normalizada = hit.oab_normalizada; adv.sem_oab = false; }
+    }
+  }
+
+  const incidente: IncidenteData = {
+    processo_codigo: codigo,
+    numero_incidente: null,
+    tipo_previsto: "Precatorio",
+    numero_depre: cnj ?? seed,
+    cnj,
+    status: capa.status,
+    tramitacao_prioritaria: capa.tramitacao_prioritaria,
+    valor_acao: capa.valor_acao,
+    data_base: capa.data_base,
+    parte_ativa: ativa,
+    parte_passiva: passiva,
+    andamentos,
+  };
+  const tree: ProcessoTree = {
+    processo_codigo: codigo,
+    cnj,
+    foro,
+    classe: capa.classe ?? "Precatório",
+    assunto: capa.assunto,
+    distribuicao: capa.distribuicao,
+    valor_acao: capa.valor_acao,
+    data_base: capa.data_base,
+    status: capa.status,
+    cumprimentos: [{ processo_codigo: `${codigo}#requisitorio`, cnj: null, incidentes: [incidente] }],
+  };
+  return {
+    tree,
+    origem,
+    precatorio: { processo_depre: cnj ?? seed, valor_acao: capa.valor_acao, status: capa.status, devedora: passiva?.nome ?? null },
   };
 }
