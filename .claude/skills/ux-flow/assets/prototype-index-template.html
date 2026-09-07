@@ -1,0 +1,198 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>{{PROJECT_NAME}} — {{FEATURE_NAME}}</title>
+  <link rel="stylesheet" href="shared.css" />
+  <style>
+    body {
+      overflow: auto;
+      min-height: 100vh;
+      background: var(--background);
+      padding: 56px 32px;
+    }
+    .hub { max-width: 1040px; margin: 0 auto; }
+    .hub-hero {
+      display: flex;
+      align-items: flex-start;
+      gap: 20px;
+      margin-bottom: 40px;
+    }
+    .hub-logo {
+      width: 52px;
+      height: 52px;
+      border-radius: 14px;
+      background: linear-gradient(135deg, var(--primary), var(--secondary));
+      color: #fff;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      flex-shrink: 0;
+    }
+    .hub-eyebrow {
+      font-size: 0.667rem;
+      font-weight: 600;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      color: var(--primary);
+      margin-bottom: 4px;
+    }
+    .hub-title { font-size: 1.778rem; font-weight: 700; color: var(--foreground); line-height: 1.2; }
+    .hub-subtitle {
+      font-size: 0.944rem;
+      color: var(--muted);
+      margin-top: 8px;
+      max-width: 680px;
+      line-height: 1.55;
+    }
+    .nav-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 20px;
+      margin-top: 32px;
+    }
+    .nav-card {
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 24px;
+      cursor: pointer;
+      transition: all 0.15s ease;
+      display: block;
+      text-decoration: none;
+      color: inherit;
+    }
+    .nav-card:hover {
+      border-color: var(--primary);
+      box-shadow: var(--shadow-md);
+      transform: translateY(-2px);
+    }
+    .nav-card-header {
+      display: flex;
+      align-items: flex-start;
+      gap: 14px;
+      margin-bottom: 14px;
+    }
+    .nav-card-icon {
+      width: 42px;
+      height: 42px;
+      border-radius: var(--radius-sm);
+      background: var(--primary-light);
+      color: var(--primary);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+    .nav-card-tag {
+      font-size: 0.611rem;
+      font-weight: 600;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      color: var(--muted);
+    }
+    .nav-card-title { font-size: 1.111rem; font-weight: 700; color: var(--foreground); line-height: 1.3; }
+    .nav-card-desc { font-size: 0.833rem; color: var(--muted); line-height: 1.55; }
+    .nav-card-variants {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px;
+      margin-top: 14px;
+    }
+    .variant-pill {
+      font-size: 0.667rem;
+      font-weight: 500;
+      padding: 3px 10px;
+      border-radius: 99px;
+      background: var(--muted-light);
+      color: var(--muted);
+    }
+    .meta-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-top: 18px;
+      padding-top: 14px;
+      border-top: 1px solid var(--border);
+      font-size: 0.722rem;
+      color: var(--muted);
+    }
+    .status-row {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 10px 14px;
+      background: var(--primary-light);
+      border-left: 3px solid var(--primary);
+      border-radius: var(--radius-sm);
+      margin-bottom: 24px;
+      font-size: 0.833rem;
+      color: var(--primary);
+    }
+    .hub-footer {
+      margin-top: 56px;
+      padding-top: 24px;
+      border-top: 1px solid var(--border);
+      font-size: 0.778rem;
+      color: var(--muted);
+      line-height: 1.65;
+    }
+  </style>
+</head>
+<body>
+  <div class="hub">
+
+    <div class="hub-hero">
+      <div class="hub-logo">
+        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <!-- ICONE DO PRODUTO: substituir pelo icone mais adequado da lucide -->
+          <path d="M12 2v20M2 12h20"/>
+        </svg>
+      </div>
+      <div>
+        <div class="hub-eyebrow">{{CONTEXT_TAG}}</div>
+        <div class="hub-title">{{FEATURE_NAME}}</div>
+        <div class="hub-subtitle">{{FEATURE_DESCRIPTION}}</div>
+      </div>
+    </div>
+
+    <div class="status-row">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2v4"/><path d="M12 18v4"/><path d="m4.93 4.93 2.83 2.83"/><path d="m16.24 16.24 2.83 2.83"/><path d="M2 12h4"/><path d="M18 12h4"/></svg>
+      <span>{{STATUS_MESSAGE}}</span>
+    </div>
+
+    <div class="nav-grid">
+
+      <!-- INICIO DOS CARDS - repetir por tela -->
+      <a href="{{SCREEN_FILE}}" class="nav-card">
+        <div class="nav-card-header">
+          <div class="nav-card-icon">
+            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><!-- LUCIDE ICON --></svg>
+          </div>
+          <div style="flex:1;">
+            <div class="nav-card-tag">{{SCREEN_TAG}}</div>
+            <div class="nav-card-title">{{SCREEN_TITLE}}</div>
+          </div>
+        </div>
+        <div class="nav-card-desc">{{SCREEN_DESC}}</div>
+        <div class="nav-card-variants">
+          <span class="variant-pill">{{VARIANT_1}}</span>
+          <span class="variant-pill">{{VARIANT_2}}</span>
+          <!-- ... -->
+        </div>
+        <div class="meta-row">
+          <span>{{SCREEN_FILE}}</span>
+          <span>{{VARIANT_COUNT}} variantes</span>
+        </div>
+      </a>
+      <!-- FIM DO CARD -->
+
+    </div>
+
+    <div class="hub-footer">
+      {{FOOTER_TEXT}}
+    </div>
+
+  </div>
+</body>
+</html>

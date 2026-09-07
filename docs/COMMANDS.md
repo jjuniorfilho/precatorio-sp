@@ -1,7 +1,7 @@
 # 📘 Referência Completa de Comandos Cortex
 
-> **Versão 2.4** - Atualizado com Bug Collect Forense
-> Última atualização: 2026-02-22
+> **Versão 2.5** - Atualizado com Fleet Orchestration, Handoff, Self-Evolution e comandos Meta
+> Última atualização: 2026-09-05
 
 Este guia documenta todos os comandos disponíveis no Cortex Framework, organizados por categoria e casos de uso.
 
@@ -14,6 +14,7 @@ Este guia documenta todos os comandos disponíveis no Cortex Framework, organiza
 - [Comandos de Relatórios](#comandos-de-relatórios)
 - [Comandos de Documentação](#comandos-de-documentação)
 - [Comandos de Discovery](#comandos-de-discovery)
+- [Comandos Meta](#comandos-meta)
 - [Comparação de Comandos](#comparação-de-comandos)
 
 ---
@@ -296,6 +297,70 @@ docs/technical-context/
 ```bash
 /pr
 ```
+
+---
+
+### `/engineer:fleet` 🆕
+
+**Categoria**: Orquestração multi-worktree
+**Quando usar**: Tocar várias issues do Linear em paralelo, uma worktree por issue
+
+**O que faz**:
+- Orquestra worktrees paralelas sobre o workflow padrão (`warm-up` → `start` → `plan` → `work` → `pre-pr` → `pr`)
+- 3 paradas humanas (gates): aprovação de arquitetura em lote, aprovação de plano, merge manual
+- Garantias programáticas não-puláveis por fase: `test-engineer`, `code-reviewer`, `fleet-gate.sh` (lint/test/custom), `adr-compliance-checker` STRICT
+- Config layer stack-agnóstica via `.claude/fleet.config.sh` (não sobe uma stack inteira por worktree)
+
+**Sintaxe**:
+```bash
+/engineer:fleet PX-2621 PX-2622 PX-2627 [--auto-plan] [--max N] [--dry-run]
+```
+
+**Skill usada**: `.claude/skills/fleet-orchestration/` (scripts de provisionamento/gate/teardown, ADR-013)
+
+**Pré-requisito**: configurar `.claude/fleet.config.sh` a partir de `.claude/skills/fleet-orchestration/fleet.config.example.sh` para o perfil de stack do repo antes do primeiro uso.
+
+---
+
+### `/engineer:fleet-autonomous` 🆕
+
+**Categoria**: Orquestração multi-worktree (modo autônomo)
+**Quando usar**: Tocar várias issues do início ao PR sem parar para gates de arquitetura/plano
+
+**O que faz**:
+- Mesma orquestração de `/engineer:fleet`, mas substitui os gates humanos de arquitetura e plano por verificação adversarial do lead
+- Só escala ao humano em três classes de freio: decisão de produto, arquitetura nova, ação irreversível/produção
+- Por padrão para no PR aberto — precisa de `--merge` (ou GO explícito na conversa) para liberar merge automático
+- Respeita um teto de agentes vivos por RAM (`--max-agents N`, default conservador `4`)
+
+**Sintaxe**:
+```bash
+/engineer:fleet-autonomous PX-2621 PX-2622 [--merge] [--max N] [--max-agents N] [--dry-run]
+```
+
+**Skill usada**: mesma `fleet-orchestration`, em modo autônomo (`reference/autonomous-mode.md`)
+
+---
+
+### `/engineer:handoff` 🆕
+
+**Categoria**: Continuidade entre sessões
+**Quando usar**: Ao final de uma sessão, para que a próxima (ou outra pessoa) retome sem perder estado
+
+**O que faz**:
+- Mede o estado real do repo antes de escrever (gap entre `main` e produção, worktrees com trabalho represado, PRs esquecidos) em vez de resumir de memória
+- Gera o arquivo `docs/handoffs/AAAA-MM-DD-<slug>.md`
+- Registra o ponteiro no bloco `HANDOFF` do `MEMORY.md` (para o `/engineer:warm-up` encontrar)
+- Fecha o ciclo git: commit em branch própria + PR (nunca push direto na `main`)
+
+**Sintaxe**:
+```bash
+bash .claude/scripts/handoff-measure.sh   # Passo 1 — medir
+/engineer:handoff [tema-opcional]         # Passo 2 — escrever
+bash .claude/scripts/handoff-commit.sh    # Passo 3 — commit + PR (falha com exit 2 se algo faltar)
+```
+
+**Configuração opcional**: `.claude/handoff.config.sh` (a partir de `.claude/scripts/handoff.config.example.sh`) para medir gap de produção e paths de fronteira específicos do projeto.
 
 ---
 
@@ -743,6 +808,26 @@ docs/
 
 ---
 
+### `/docs-commands:reconcile` 🆕
+
+**Categoria**: Manutenção de Documentação
+**Quando usar**: Periodicamente, quando um par índice/fonte-da-verdade (ex.: `CLAUDE.md` ↔ `specs/technical/CLAUDE.meta.md`) suspeita de drift
+
+**O que faz**:
+- Detecta detalhe acumulado no ÍNDICE que nunca foi propagado para a FONTE, e ponteiros que apontam para seções que não existem mais
+- Porta o conteúdo órfão do índice para a fonte
+- Enxuga o índice de volta para ponteiros de 1-2 linhas
+- Valida todos os links entre os dois documentos
+- Propõe as mudanças; nunca aplica automaticamente
+
+**Sintaxe**:
+```bash
+/docs-commands:reconcile [<índice> <fonte>]
+# Sem argumentos: auto-detecta CLAUDE.md (raiz) + primeiro CLAUDE.meta.md encontrado
+```
+
+---
+
 ## 🆕 Comandos de Discovery (Novo)
 
 ### Comparação: `/discover` vs Fluxo Manual
@@ -769,6 +854,101 @@ docs/
 ✅ Frontend Lovable com mocks
 ✅ Projetos legados com documentação extensa
 ✅ Projetos enterprise com múltiplas convenções
+
+---
+
+## 🧬 Comandos Meta
+
+Comandos que atuam sobre o próprio Cortex Framework (`.claude/`), não sobre o código da aplicação.
+
+### `/meta:evolve` 🆕
+
+**Categoria**: Auto-evolução do framework (ADR-008)
+**Quando usar**: Periodicamente, para revisar padrões de uso acumulados e propor melhorias ao framework
+
+**O que faz**:
+- Lê os dados de telemetria acumulados (`.claude/memory/evolution/command-usage.jsonl` + `agent-performance.md`)
+- Identifica padrões por categoria: architecture, debugging, preferences, performance
+- Calcula score de confiança (Baixa/Média/Alta) por padrão, com base no número de sessões
+- Apresenta até 5 propostas para aprovação humana individual (aprovar/rejeitar/pular)
+- Nunca aplica mudanças sem confirmação explícita; nunca commita automaticamente
+
+**Sintaxe**:
+```bash
+/meta:evolve
+```
+
+**Agente acionado**: `@self-evolution-engine`
+
+---
+
+### `/meta:audit-structure` 🆕
+
+**Categoria**: Auditoria de estrutura de pastas
+**Quando usar**: Quando um artefato (PRD, ADR, backlog) parece "invisível" para os comandos do Cortex — geralmente sinal de nomenclatura ou local fora do padrão
+
+**O que faz**:
+- Detecta o perfil do repositório (`docs/`-based ou `master-docs/`-based) — nunca converte um no outro
+- Audita a consistência interna do perfil detectado contra o layout canônico esperado
+- Modo padrão: só relatório, nada é movido
+- Modo `--fix`: relatório + plano de correção + aplicação após aprovação (git como rede de segurança)
+
+**Sintaxe**:
+```bash
+/meta:audit-structure [--fix] [escopo]
+```
+
+---
+
+### `/meta:create-skill` 🆕
+
+**Categoria**: Criação de skills do framework
+**Quando usar**: Ao identificar conhecimento de domínio reutilizável que merece virar skill (spec Anthropic Agent Skills)
+
+**O que faz**:
+- Valida nome/estrutura da skill contra a especificação (`agentskills.io/specification`)
+- Verifica que não há sobreposição com skill existente em `.claude/skills/`
+- Gera `SKILL.md` com frontmatter correto e vincula aos agentes relevantes
+
+**Sintaxe**:
+```bash
+/meta:create-skill "<descrição dos requisitos>"
+```
+
+---
+
+### `/meta:mcp-install` 🆕
+
+**Categoria**: Gestão de MCPs
+**Quando usar**: Para instalar um novo servidor MCP (Model Context Protocol) no ambiente
+
+**O que faz**:
+- Consulta o catálogo interno (`.claude/skills/mcp-manager/references/mcp-catalog.md`) ou pesquisa externamente se necessário
+- Configura credenciais e instala via CLI nativa
+- Sincroniza os agentes que devem declarar acesso ao novo MCP
+- Nunca instala sem confirmação explícita do humano
+
+**Sintaxe**:
+```bash
+/meta:mcp-install [nome-do-mcp]
+```
+
+---
+
+### `/meta:mcp-sync` 🆕
+
+**Categoria**: Gestão de MCPs
+**Quando usar**: Após instalar/remover um MCP, para manter o frontmatter dos agentes coerente
+
+**O que faz**:
+- Detecta MCPs instalados (via `claude mcp list` ou leitura direta dos settings)
+- Sincroniza o campo `mcp_access` no frontmatter de cada agente
+- Nunca modifica frontmatters sem confirmação explícita
+
+**Sintaxe**:
+```bash
+/meta:mcp-sync [nome-do-agente]
+```
 
 ---
 

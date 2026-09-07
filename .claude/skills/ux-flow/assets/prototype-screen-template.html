@@ -1,0 +1,62 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>{{PROJECT_NAME}} — {{SCREEN_TITLE}}</title>
+  <link rel="stylesheet" href="shared.css" />
+</head>
+<body class="proto-body">
+  <div class="proto-container">
+
+    <!-- Hero com botao Voltar -->
+    <div class="proto-hero">
+      <div>
+        <div class="proto-hero-eyebrow">{{CONTEXT_TAG}}</div>
+        <div class="proto-hero-title">{{SCREEN_TITLE}}</div>
+        <div class="proto-hero-subtitle">{{SCREEN_DESCRIPTION}}</div>
+      </div>
+      <a href="index.html" class="proto-back">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="m15 18-6-6 6-6"/></svg>
+        Voltar ao hub
+      </a>
+    </div>
+
+    <!-- ========================================================== -->
+    <!-- VARIANTE 1 — {{VARIANT_1_NAME}}                              -->
+    <!-- ========================================================== -->
+    <div class="proto-variant-header">
+      <div class="proto-variant-label">Variante 1</div>
+      <div class="proto-variant-title">{{VARIANT_1_TITLE}}</div>
+      <div class="proto-variant-desc">{{VARIANT_1_DESC}}</div>
+    </div>
+
+    <!-- HTML DA VARIANTE 1 aqui -->
+
+    <!-- ========================================================== -->
+    <!-- VARIANTE 2 — {{VARIANT_2_NAME}}                              -->
+    <!-- ========================================================== -->
+    <div class="proto-variant-header">
+      <div class="proto-variant-label">Variante 2</div>
+      <div class="proto-variant-title">{{VARIANT_2_TITLE}}</div>
+      <div class="proto-variant-desc">{{VARIANT_2_DESC}}</div>
+    </div>
+
+    <!-- HTML DA VARIANTE 2 aqui -->
+
+    <!--
+      Padrao para variantes adicionais: repetir o bloco acima.
+
+      Regras:
+      - Cada variante separada por .proto-variant-header
+      - Sem tabs/JavaScript — empilhadas verticalmente
+      - Incluir pelo menos: populado, vazio, carregando
+      - Mocks realistas no dominio do produto
+      - Icones em inline SVG estilo lucide
+      - Zero assets binarios
+    -->
+
+    <div style="height: 48px;"></div>
+  </div>
+</body>
+</html>

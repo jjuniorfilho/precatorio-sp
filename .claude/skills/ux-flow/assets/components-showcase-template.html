@@ -1,0 +1,251 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>{{PROJECT_NAME}} — Design System Showcase</title>
+  <link rel="stylesheet" href="shared.css" />
+  <style>
+    body {
+      background: var(--background);
+      padding: 48px 32px;
+      overflow: auto;
+      min-height: 100vh;
+    }
+    .showcase { max-width: 1040px; margin: 0 auto; }
+    .showcase-hero {
+      padding-bottom: 24px;
+      border-bottom: 1px solid var(--border);
+      margin-bottom: 40px;
+    }
+    .showcase-title { font-size: 1.778rem; font-weight: 700; color: var(--foreground); }
+    .showcase-subtitle { font-size: 0.889rem; color: var(--muted); margin-top: 6px; }
+    .section { margin-top: 48px; }
+    .section-title {
+      font-size: 0.778rem;
+      font-weight: 600;
+      color: var(--muted);
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      margin-bottom: 16px;
+      padding-bottom: 8px;
+      border-bottom: 1px solid var(--border);
+    }
+    .swatch-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+      gap: 14px;
+    }
+    .swatch {
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-sm);
+      overflow: hidden;
+    }
+    .swatch-color { height: 64px; }
+    .swatch-info { padding: 10px 12px; }
+    .swatch-name { font-size: 0.778rem; font-weight: 600; color: var(--foreground); }
+    .swatch-value { font-size: 0.667rem; color: var(--muted); font-family: var(--font-mono); margin-top: 2px; }
+
+    .demo-row {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 12px;
+      align-items: center;
+      padding: 16px;
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+    }
+  </style>
+</head>
+<body>
+  <div class="showcase">
+    <div class="showcase-hero">
+      <div class="showcase-title">{{PROJECT_NAME}} — Design System</div>
+      <div class="showcase-subtitle">Showcase de todos os componentes e tokens disponiveis. Gerado por /ux-flow init em {{DATE}}.</div>
+    </div>
+
+    <!-- Cores -->
+    <div class="section">
+      <div class="section-title">Cores · Brand</div>
+      <div class="swatch-grid">
+        <div class="swatch">
+          <div class="swatch-color" style="background: var(--primary);"></div>
+          <div class="swatch-info">
+            <div class="swatch-name">Primary</div>
+            <div class="swatch-value">--primary</div>
+          </div>
+        </div>
+        <div class="swatch">
+          <div class="swatch-color" style="background: var(--secondary);"></div>
+          <div class="swatch-info">
+            <div class="swatch-name">Secondary</div>
+            <div class="swatch-value">--secondary</div>
+          </div>
+        </div>
+        <div class="swatch">
+          <div class="swatch-color" style="background: var(--primary-light);"></div>
+          <div class="swatch-info">
+            <div class="swatch-name">Primary light</div>
+            <div class="swatch-value">--primary-light</div>
+          </div>
+        </div>
+        <div class="swatch">
+          <div class="swatch-color" style="background: var(--primary-hover);"></div>
+          <div class="swatch-info">
+            <div class="swatch-name">Primary hover</div>
+            <div class="swatch-value">--primary-hover</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="section">
+      <div class="section-title">Cores · Neutros</div>
+      <div class="swatch-grid">
+        <div class="swatch">
+          <div class="swatch-color" style="background: var(--background); border-bottom: 1px solid var(--border);"></div>
+          <div class="swatch-info"><div class="swatch-name">Background</div><div class="swatch-value">--background</div></div>
+        </div>
+        <div class="swatch">
+          <div class="swatch-color" style="background: var(--foreground);"></div>
+          <div class="swatch-info"><div class="swatch-name">Foreground</div><div class="swatch-value">--foreground</div></div>
+        </div>
+        <div class="swatch">
+          <div class="swatch-color" style="background: var(--card); border-bottom: 1px solid var(--border);"></div>
+          <div class="swatch-info"><div class="swatch-name">Card</div><div class="swatch-value">--card</div></div>
+        </div>
+        <div class="swatch">
+          <div class="swatch-color" style="background: var(--muted);"></div>
+          <div class="swatch-info"><div class="swatch-name">Muted</div><div class="swatch-value">--muted</div></div>
+        </div>
+        <div class="swatch">
+          <div class="swatch-color" style="background: var(--muted-light);"></div>
+          <div class="swatch-info"><div class="swatch-name">Muted light</div><div class="swatch-value">--muted-light</div></div>
+        </div>
+        <div class="swatch">
+          <div class="swatch-color" style="background: var(--border); border-bottom: 1px solid var(--border-strong);"></div>
+          <div class="swatch-info"><div class="swatch-name">Border</div><div class="swatch-value">--border</div></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="section">
+      <div class="section-title">Cores · Status</div>
+      <div class="swatch-grid">
+        <div class="swatch">
+          <div class="swatch-color" style="background: var(--success);"></div>
+          <div class="swatch-info"><div class="swatch-name">Success</div><div class="swatch-value">--success</div></div>
+        </div>
+        <div class="swatch">
+          <div class="swatch-color" style="background: var(--warning);"></div>
+          <div class="swatch-info"><div class="swatch-name">Warning</div><div class="swatch-value">--warning</div></div>
+        </div>
+        <div class="swatch">
+          <div class="swatch-color" style="background: var(--destructive);"></div>
+          <div class="swatch-info"><div class="swatch-name">Destructive</div><div class="swatch-value">--destructive</div></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Tipografia -->
+    <div class="section">
+      <div class="section-title">Tipografia</div>
+      <div class="demo-row" style="flex-direction: column; align-items: stretch;">
+        <div class="text-3xl font-bold">Title 3xl (1.778rem)</div>
+        <div class="text-2xl font-bold">Title 2xl (1.444rem)</div>
+        <div class="text-xl font-semibold">Title xl (1.222rem)</div>
+        <div class="text-lg">Body lg (1.111rem)</div>
+        <div class="text-base">Body base (1rem)</div>
+        <div class="text-sm text-muted">Small text (0.778rem)</div>
+        <div class="text-xs text-muted">Extra small (0.667rem)</div>
+      </div>
+    </div>
+
+    <!-- Botoes -->
+    <div class="section">
+      <div class="section-title">Botoes</div>
+      <div class="demo-row">
+        <button class="btn btn-primary">Primary</button>
+        <button class="btn btn-outline">Outline</button>
+        <button class="btn btn-ghost">Ghost</button>
+        <button class="btn btn-destructive">Destructive</button>
+        <button class="btn btn-primary btn-sm">Primary sm</button>
+        <button class="btn btn-outline btn-sm">Outline sm</button>
+      </div>
+    </div>
+
+    <!-- Badges -->
+    <div class="section">
+      <div class="section-title">Badges</div>
+      <div class="demo-row">
+        <span class="badge badge-primary">Primary</span>
+        <span class="badge badge-secondary">Secondary</span>
+        <span class="badge badge-muted">Muted</span>
+        <span class="badge badge-success">Success</span>
+        <span class="badge badge-warning">Warning</span>
+        <span class="badge badge-destructive">Destructive</span>
+      </div>
+    </div>
+
+    <!-- Inputs -->
+    <div class="section">
+      <div class="section-title">Inputs</div>
+      <div class="demo-row" style="flex-direction: column; align-items: stretch; max-width: 420px;">
+        <input class="input" placeholder="Placeholder text..." />
+        <input class="input" value="Com valor preenchido" />
+      </div>
+    </div>
+
+    <!-- Cards -->
+    <div class="section">
+      <div class="section-title">Cards</div>
+      <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px;">
+        <div class="card" style="padding: 20px;">
+          <div class="text-lg font-semibold">Card basico</div>
+          <div class="text-sm text-muted mt-2">Exemplo de card padrao com padding 20px e shadow-sm herdado.</div>
+          <div class="mt-4">
+            <button class="btn btn-primary btn-sm">Acao</button>
+          </div>
+        </div>
+        <div class="card card-hover" style="padding: 20px;">
+          <div class="text-lg font-semibold">Card com hover</div>
+          <div class="text-sm text-muted mt-2">Passa o mouse para ver a transicao da borda.</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Skeleton -->
+    <div class="section">
+      <div class="section-title">Skeleton</div>
+      <div class="demo-row" style="flex-direction: column; align-items: stretch;">
+        <div class="skeleton" style="height: 16px; width: 60%;"></div>
+        <div class="skeleton" style="height: 16px; width: 80%;"></div>
+        <div class="skeleton" style="height: 16px; width: 40%;"></div>
+      </div>
+    </div>
+
+    <!-- Raio e sombras -->
+    <div class="section">
+      <div class="section-title">Radius e Sombras</div>
+      <div class="demo-row">
+        <div class="card" style="padding: 20px; border-radius: var(--radius-sm); box-shadow: var(--shadow-sm);">
+          <div class="text-sm font-semibold">radius-sm</div>
+          <div class="text-xs text-muted">shadow-sm</div>
+        </div>
+        <div class="card" style="padding: 20px; border-radius: var(--radius); box-shadow: var(--shadow-md);">
+          <div class="text-sm font-semibold">radius</div>
+          <div class="text-xs text-muted">shadow-md</div>
+        </div>
+        <div class="card" style="padding: 20px; border-radius: var(--radius-lg); box-shadow: var(--shadow-lg);">
+          <div class="text-sm font-semibold">radius-lg</div>
+          <div class="text-xs text-muted">shadow-lg</div>
+        </div>
+      </div>
+    </div>
+
+    <div style="height: 64px;"></div>
+  </div>
+</body>
+</html>
