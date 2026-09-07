@@ -18,6 +18,21 @@
 //   tsx src/ingest-djen-federal.ts --tribunal=TRF3 --from=2026-09-01 --to=2026-09-05 --backfill
 import { createHash } from "node:crypto";
 import { supabase, ensureAuth, upsertReturningId, classifyProcesso } from "./supabase.js";
+
+/** FOR-145 — teto de tempo por dia (ver rationale em config.ts `dayTimeoutMs`). Mesmo padrão
+ * de `withJobTimeout` em index.ts (FOR-116): a promise perdedora continua rodando em segundo
+ * plano até resolver sozinha (Node não tem "cancelar await" de verdade), mas o processo segue
+ * pro próximo dia em vez de travar pra sempre. */
+class DayTimeoutError extends Error {}
+function withDayTimeout<T>(promise: Promise<T>, ms: number): Promise<T> {
+  return new Promise((resolve, reject) => {
+    const timer = setTimeout(() => reject(new DayTimeoutError(`dia excedeu o teto de ${ms}ms`)), ms);
+    promise.then(
+      (v) => { clearTimeout(timer); resolve(v); },
+      (e) => { clearTimeout(timer); reject(e); },
+    );
+  });
+}
 import { config, sleep, assertConfig } from "./config.js";
 
 const md5 = (s: string) => createHash("md5").update(s).digest("hex");
@@ -354,10 +369,19 @@ async function main() {
   console.log(`ingest-djen-federal: tribunal=${tribunal} ${dias.length} dia(s) ${backfill ? "(backfill)" : ""}`);
   for (const d of dias) {
     try {
-      const r = await ingestDayFederal(tribunal, d, { backfill });
+      const r = await withDayTimeout(ingestDayFederal(tribunal, d, { backfill }), config.dayTimeoutMs);
       console.log(`[${tribunal} ${d}] ${r.status} total=${r.total} pje=${r.pje} eproc=${r.eproc} outro=${r.outro} capturados=${r.capturados} erros=${r.erros} balde=${JSON.stringify(r.porBalde)}`);
     } catch (e) {
       console.error(`[${tribunal} ${d}] ERRO:`, e);
+      if (e instanceof DayTimeoutError) {
+        // ingestDayFederal ainda pode estar rodando em segundo plano (a promise perdedora não
+        // é cancelada) — marca "erro" agora pra não deixar o dia preso em "parcial" pra sempre;
+        // se a promise perdedora terminar depois e sobrescrever com "ok", tanto melhor.
+        const { error } = await (supabase as any)
+          .from("djen_dias")
+          .upsert({ data: d, tribunal, status: "erro", erro: String(e) }, { onConflict: "data,tribunal" });
+        if (error) console.error(`[djen_dias upsert timeout] tribunal=${tribunal} data=${d}:`, error);
+      }
     }
     await sleep(config.delayMs);
   }

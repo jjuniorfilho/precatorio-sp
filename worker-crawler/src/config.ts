@@ -44,6 +44,16 @@ export const config = {
   // pendentes (~12k no ar em 2026-08-19), mas pode ser desligado (LEGADO_RECONCILE=false) depois
   // que o backfill do FOR-143 for absorvido, já que a partir daí é só overhead morto.
   legadoReconcile: (process.env.LEGADO_RECONCILE ?? "true") !== "false",
+
+  // FOR-145 — teto de tempo por dia de ingestão federal (ingest-djen-federal.ts), mesmo
+  // problema do FOR-116 (jobTimeoutMs) só que na escala de "dia inteiro" em vez de "1 job":
+  // fetchPage já tem requestTimeoutMs/retry bounded, mas as escritas no Supabase dentro do
+  // loop de página (persistFederal/classifyProcesso) não têm timeout nenhum — uma trava de
+  // rede/lock numa dessas chamadas trava o dia inteiro sem limite. Confirmado em produção
+  // 2026-09-07: backfill de TRF1 09-02 travou 11h+ na página 642/642 sem nunca dar erro nem
+  // avançar. Teto generoso (bem acima do pior caso observado, ~461 páginas em poucos minutos
+  // pro TRF1 09-01) pra nunca cortar um dia legítimo, só travas de verdade.
+  dayTimeoutMs: num("DAY_TIMEOUT_MS", 20 * 60_000),
 };
 
 export function assertConfig(): void {
