@@ -32,8 +32,11 @@ async function main() {
   console.log(`Status        : ${tree.status ?? "—"}`);
   console.log(`Valor da ação : ${precatorio.valor_acao != null ? `R$ ${(precatorio.valor_acao / 100).toLocaleString("pt-BR", { minimumFractionDigits: 2 })}` : "—"}`);
   console.log("\n── PARTES ─────────────────────────────────────────────");
-  console.log(`Credor (ativa): ${inc?.parte_ativa?.nome ?? "—"}`);
-  console.log(`  Advogado(s) : ${resumo(inc?.parte_ativa?.advogados ?? [])}`);
+  for (const pa of inc?.partes_ativas ?? []) {
+    console.log(`Credor (ativa): ${pa.nome ?? "—"}`);
+    console.log(`  Advogado(s) : ${resumo(pa.advogados)}`);
+  }
+  if (!inc?.partes_ativas.length) console.log("Credor (ativa): —");
   console.log(`Ente devedora : ${precatorio.devedora ?? "—"}`);
   console.log("\n── ORIGEM (será enfileirada p/ o cpopg) ───────────────");
   console.log(origem.length ? origem.map((c) => `  • ${c}`).join("\n") : "  (nenhum CNJ de origem encontrado)");

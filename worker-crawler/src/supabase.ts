@@ -227,17 +227,17 @@ export async function persistTree(tree: ProcessoTree): Promise<string> {
       // partes: e-SAJ prevalece → substitui as do incidente
       await supabase.from("partes").delete().eq("incidente_id", incidenteId);
       const partesRows: Record<string, unknown>[] = [];
-      if (inc.parte_ativa) {
-        if (inc.parte_ativa.advogados.length === 0) {
+      for (const pa of inc.partes_ativas) {
+        if (pa.advogados.length === 0) {
           partesRows.push({
             incidente_id: incidenteId, processo_id: processoId, papel: "ativa",
-            nome: inc.parte_ativa.nome, documento: inc.parte_ativa.documento, sem_oab: false, fonte: "esaj",
+            nome: pa.nome, documento: pa.documento, sem_oab: false, fonte: "esaj",
           });
         }
-        for (const adv of inc.parte_ativa.advogados) {
+        for (const adv of pa.advogados) {
           partesRows.push({
             incidente_id: incidenteId, processo_id: processoId, papel: "ativa",
-            nome: inc.parte_ativa.nome, documento: inc.parte_ativa.documento,
+            nome: pa.nome, documento: pa.documento,
             advogado_nome: adv.nome, oab: adv.oab, oab_normalizada: adv.oab_normalizada,
             sem_oab: adv.sem_oab, fonte: "esaj",
           });
@@ -311,7 +311,8 @@ export async function persistRequisitorio(tree: ProcessoTree, origemInfo: Origem
     // Reqte/requerente: sempre presente na ficha (PARTES DO PROCESSO), diferente do
     // documento (CPF/CNPJ), que o TJSP nunca expõe aqui — só chega via busca informada
     // pelo próprio titular (buscar-precatorio grava titular_documento nesse caso).
-    titular_nome: inc?.parte_ativa?.nome ?? null,
+    // Requisitório normalmente tem 1 só credor; se vier mais de um (raro), fica o 1º.
+    titular_nome: inc?.partes_ativas[0]?.nome ?? null,
     origem_cnjs: origemInfo.length ? origemInfo.map((o) => o.cnj) : null,
     origem_incidentes: origemComIncidente.length ? origemComIncidente : null,
     andamentos,

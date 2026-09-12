@@ -156,8 +156,8 @@ export function extractCapa($: $): CapaInfo {
   };
 }
 
-export function extractPartes($: $): { ativa: ParteAtiva | null; passiva: PartePassiva | null } {
-  let ativa: ParteAtiva | null = null;
+export function extractPartes($: $): { ativas: ParteAtiva[]; passiva: PartePassiva | null } {
+  const ativas: ParteAtiva[] = [];
   let passiva: PartePassiva | null = null;
 
   $("#tablePartesPrincipais tr").each((_, tr) => {
@@ -186,13 +186,16 @@ export function extractPartes($: $): { ativa: ParteAtiva | null; passiva: ParteP
           sem_oab: !oab,
         });
       }
-      ativa = { nome, documento: null, advogados: advs };
+      // Credores conjuntos (comum em ação coletiva) viram várias linhas "Reqte/Exequente"
+      // na mesma tabela — acumula, não sobrescreve (bug real: reatribuir aqui perdia todo
+      // credor/advogado exceto o da última linha a cada re-crawl).
+      ativas.push({ nome, documento: null, advogados: advs });
     } else if (isPassiva && !passiva) {
       passiva = { nome, ente_esfera: classifyEsfera(nome) };
     }
   });
 
-  return { ativa, passiva };
+  return { ativas, passiva };
 }
 
 export function extractAndamentos($: $): Andamento[] {

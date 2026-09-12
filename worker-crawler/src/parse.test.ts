@@ -2,7 +2,7 @@
 // dependência nova — ver README.md).
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { classifyEsfera, extractOrigemInfo, extractOrigemCnjs, load } from "./parse.js";
+import { classifyEsfera, extractOrigemInfo, extractOrigemCnjs, extractPartes, load } from "./parse.js";
 
 test("classifyEsfera: tokens estaduais originais", () => {
   assert.equal(classifyEsfera("FAZENDA PUBLICA DO ESTADO DE SAO PAULO"), "Estadual");
@@ -102,4 +102,38 @@ test("extractOrigemInfo: exclui o próprio .0500 do texto", () => {
 test("extractOrigemCnjs: continua devolvendo só os CNJs, sem o sufixo (compat)", () => {
   const $ = load(`<body>Processo de Origem: 0410665-90.1996.8.26.0053/0001</body>`);
   assert.deepEqual(extractOrigemCnjs($), ["0410665-90.1996.8.26.0053"]);
+});
+
+// Regressão: credores conjuntos (comum em ação coletiva) geram várias linhas
+// "Exeqte/Reqte" na mesma #tablePartesPrincipais. A implementação original fazia
+// `ativa = {...}` (reatribuição) dentro do loop — cada linha nova sobrescrevia a
+// anterior, então só o último credor (e seu advogado) sobrevivia, mesmo com
+// múltiplos credores/advogados distintos na página. extractPartes agora acumula.
+test("extractPartes: credores conjuntos — acumula todas as linhas 'ativa', não só a última", () => {
+  const $ = load(`<body><table id="tablePartesPrincipais">
+    <tr><td class="label">Exequente:</td><td>Maria da Silva
+    <span>Advogado:</span> Fulano de Tal OAB: 111111/SP</td></tr>
+    <tr><td class="label">Exequente:</td><td>João Souza
+    <span>Advogado:</span> Ciclano Pereira OAB: 222222/SP</td></tr>
+    <tr><td class="label">Reqdo:</td><td>MUNICÍPIO DE SÃO PAULO</td></tr>
+  </table></body>`);
+  const { ativas, passiva } = extractPartes($);
+  assert.equal(ativas.length, 2, "esperava 2 credores, um por linha 'Exequente'");
+  assert.equal(ativas[0]!.nome, "Maria da Silva");
+  assert.equal(ativas[0]!.advogados[0]!.nome, "Fulano de Tal");
+  assert.equal(ativas[0]!.advogados[0]!.oab_normalizada, "111111SP");
+  assert.equal(ativas[1]!.nome, "João Souza");
+  assert.equal(ativas[1]!.advogados[0]!.nome, "Ciclano Pereira");
+  assert.equal(ativas[1]!.advogados[0]!.oab_normalizada, "222222SP");
+  assert.equal(passiva?.nome, "MUNICÍPIO DE SÃO PAULO");
+});
+
+test("extractPartes: um único credor continua funcionando (caso comum)", () => {
+  const $ = load(`<body><table id="tablePartesPrincipais">
+    <tr><td class="label">Reqte:</td><td>Maria da Silva<br/><span>Advogado:</span> Fulano de Tal OAB: 111111/SP</td></tr>
+    <tr><td class="label">Reqdo:</td><td>FAZENDA PUBLICA DO ESTADO DE SAO PAULO</td></tr>
+  </table></body>`);
+  const { ativas } = extractPartes($);
+  assert.equal(ativas.length, 1);
+  assert.equal(ativas[0]!.advogados.length, 1);
 });
