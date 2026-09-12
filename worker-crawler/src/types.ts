@@ -47,7 +47,7 @@ export interface IncidenteData {
   tramitacao_prioritaria: boolean;    // capa (FOR-71)
   valor_acao: number | null;          // centavos
   data_base: string | null;
-  parte_ativa: ParteAtiva | null;
+  partes_ativas: ParteAtiva[]; // 1 por credor; ação coletiva pode ter vários no mesmo incidente
   parte_passiva: PartePassiva | null;
   andamentos: Andamento[];
 }

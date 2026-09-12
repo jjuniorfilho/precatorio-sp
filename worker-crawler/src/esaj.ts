@@ -11,11 +11,11 @@ export interface Session {
   cookie: string;
 }
 
-function baseHeaders(session?: Session, referer?: string): Record<string, string> {
+function baseHeaders(session?: Session, referer?: string | null): Record<string, string> {
   return {
     "User-Agent": UA,
     "Accept-Language": "pt-BR,pt;q=0.9",
-    Referer: referer ?? `${config.esajBase}/open.do?servico=190101`,
+    ...(referer !== null ? { Referer: referer ?? `${config.esajBase}/open.do?servico=190101` } : {}),
     ...(session?.cookie ? { Cookie: session.cookie } : {}),
   };
 }
@@ -141,3 +141,105 @@ export async function searchRequisitorioByCnj(cnj: string, session: Session): Pr
   });
   return fetchHtml(`${config.esajBase}/search.do?${params}`, session, REQ_FORM(config.esajBase));
 }
+
+// ---- Busca por OAB (cpopg/search.do?cbPesquisa=NUMOAB) ------------------------
+// Descobre TODOS os processos onde o advogado consta na capa (cadastro de partes do
+// próprio TJSP) — ao contrário do ingest via Comunica/DJEN (ingest-oab.ts), não depende
+// de ter havido publicação eletrônica citando o OAB, então é estritamente mais completo
+// (confirmado: 268 processos via cpopg×OAB contra 230 "normais" via Comunica pro mesmo
+// advogado). Sessão própria porque a paginação (trocarPagina.do) exige reenviar os
+// cookies atualizados a cada página — em especial o cookie de afinidade do load balancer
+// (K-JSESSIONID-*, além do JSESSIONID) — sem isso o e-SAJ roteia pra outro nó do cluster
+// e a "página 2" simplesmente devolve a página 1 de novo (comportamento intermitente
+// observado nos testes; resolvido persistindo+reenviando todos os Set-Cookie).
+const PAGE_SIZE_OAB = 25;
+
+function mergeSetCookie(prevCookie: string, setCookieHeader: string | string[] | undefined): string {
+  const jar = new Map<string, string>();
+  for (const part of prevCookie.split(";").map((s) => s.trim()).filter(Boolean)) {
+    const eq = part.indexOf("=");
+    if (eq > 0) jar.set(part.slice(0, eq), part.slice(eq + 1));
+  }
+  for (const raw of ([] as string[]).concat(setCookieHeader ?? [])) {
+    const kv = raw.split(";")[0]?.trim() ?? "";
+    const eq = kv.indexOf("=");
+    if (eq > 0) jar.set(kv.slice(0, eq), kv.slice(eq + 1));
+  }
+  return [...jar.entries()].map(([k, v]) => `${k}=${v}`).join("; ");
+}
+
+export interface OabPage { html: string; totalProcessos: number; }
+
+function parseTotalProcessos(html: string): number {
+  return Number(html.match(/(\d+)\s*Processos?\s+encontrados?/i)?.[1] ?? "0");
+}
+
+/** Sessão p/ busca por OAB — igual getSession(), mas guarda todos os cookies (não só JSESSIONID). */
+export async function getOabSession(): Promise<Session> {
+  const res = await request(`${config.esajBase}/open.do?servico=190101`, {
+    method: "GET",
+    headers: baseHeaders(),
+    signal: AbortSignal.timeout(config.requestTimeoutMs),
+  });
+  const html = await res.body.text();
+  const csrf = html.match(/name="_csrf"[^>]+value="([^"]+)"/)?.[1] ?? null;
+  const cookie = mergeSetCookie("", res.headers["set-cookie"] as string[] | undefined);
+  return { csrf, cookie };
+}
+
+/** true se a página é o portal/gateway genérico do e-SAJ em vez da lista de resultados —
+ * comportamento intermitente confirmado (afinidade de sessão imperfeita no cluster/LB deles:
+ * a mesma URL+cookies às vezes cai num nó de backend sem o estado da busca em memória).
+ * Acontece tanto via curl quanto via undici, com delay ou sem — não é algo pra evitar
+ * mandando os headers "certos", é pra detectar e re-tentar. */
+const isPortalGenerico = (html: string): boolean => !/Processos?\s+encontrados?/i.test(html);
+
+async function requestOabPage(url: string, session: Session): Promise<OabPage> {
+  let lastErr: unknown;
+  for (let attempt = 0; attempt <= config.maxHttpRetry; attempt++) {
+    try {
+      const res = await request(url, {
+        method: "GET",
+        headers: { ...baseHeaders(session, null), Accept: "*/*" },
+        signal: AbortSignal.timeout(config.requestTimeoutMs),
+        maxRedirections: 0,
+      });
+      if (res.statusCode === 429 || res.statusCode >= 500) throw new Error(`HTTP ${res.statusCode}`);
+      const html = await res.body.text();
+      session.cookie = mergeSetCookie(session.cookie, res.headers["set-cookie"] as string[] | undefined);
+      if (isPortalGenerico(html)) throw new Error("e-SAJ devolveu o portal genérico em vez dos resultados (afinidade de sessão) — retry");
+      return { html, totalProcessos: parseTotalProcessos(html) };
+    } catch (err) {
+      lastErr = err;
+      if (attempt < config.maxHttpRetry) await sleep(config.delayMs * Math.pow(2, attempt) + 250);
+    }
+  }
+  throw new Error(`requestOabPage falhou após retries: ${url} :: ${String(lastErr)}`);
+}
+
+/** Página 1 da busca por OAB (todos os foros). oabNormalizada no formato "NUMEROSUF" (ex.: "185164SP"). */
+export async function searchByOab(oabNormalizada: string, session: Session): Promise<OabPage> {
+  const params = new URLSearchParams({
+    conversationId: "",
+    cbPesquisa: "NUMOAB",
+    "dadosConsulta.valorConsulta": oabNormalizada,
+    "dadosConsulta.tipoNuProcesso": "UNIFICADO",
+    ...(session.csrf ? { _csrf: session.csrf } : {}),
+  });
+  return requestOabPage(`${config.esajBase}/search.do?${params}`, session);
+}
+
+/** Páginas seguintes da busca por OAB (pagina >= 2). */
+export async function nextPageOab(oabNormalizada: string, pagina: number, session: Session): Promise<OabPage> {
+  const params = new URLSearchParams({
+    paginaConsulta: String(pagina),
+    conversationId: "",
+    cbPesquisa: "NUMOAB",
+    "dadosConsulta.valorConsulta": oabNormalizada,
+    "dadosConsulta.tipoNuProcesso": "UNIFICADO",
+    ...(session.csrf ? { _csrf: session.csrf } : {}),
+  });
+  return requestOabPage(`${config.esajBase}/trocarPagina.do?${params}`, session);
+}
+
+export const totalPaginasOab = (totalProcessos: number): number => Math.ceil(totalProcessos / PAGE_SIZE_OAB);
