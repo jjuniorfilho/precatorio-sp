@@ -235,6 +235,21 @@ export function sistemaFromLink(link: string | null): "pje" | "eproc" | "outro" 
   return "outro";
 }
 
+/** Executa fn sobre items com no máximo `limit` em paralelo. Mesmo padrão de
+ * index.ts (crawler e-SAJ) — sem isso, persistência sequencial (~5 idas ao
+ * banco por item) não escala pros volumes reais (12k-20k+ capturados/dia no
+ * TRF1, dias passando de 3h). Confirmado em produção 2026-09-07. */
+async function runPool<T>(items: T[], limit: number, fn: (item: T) => Promise<void>): Promise<void> {
+  let i = 0;
+  const workers = Array.from({ length: Math.min(limit, items.length) }, async () => {
+    while (i < items.length) {
+      const idx = i++;
+      await fn(items[idx]!);
+    }
+  });
+  await Promise.all(workers);
+}
+
 /** GET de uma página da Comunica com retry/backoff (a API dá 429/500/504 esporádico —
  * confirmado ao vivo nesta sessão após bateria de testes exploratórios). */
 async function fetchPage(tribunal: Tribunal, date: string, pagina: number, pageSize: number): Promise<any[]> {
@@ -298,6 +313,9 @@ export async function ingestDayFederal(
     for (;;) {
       const items = await fetchPage(tribunal, date, pagina, pageSize);
       if (items.length === 0) break;
+
+      // Fase síncrona/barata: classifica e monta o plano de todo mundo.
+      const paraPersistir: Array<{ cnj: unknown; balde: BaldeClassificacao; plano: PlanoPersistencia }> = [];
       for (const it of items) {
         total++;
         const sistema = sistemaFromLink(it.link ?? null);
@@ -311,16 +329,22 @@ export async function ingestDayFederal(
         if (!balde) continue;
         const plano = planoPersistencia(it, balde, tribunal, sistema, date);
         if (!plano) continue; // sem CNJ no item — não deveria acontecer, mas não é motivo pra derrubar o dia inteiro
+        paraPersistir.push({ cnj: it.numeroprocessocommascara, balde, plano });
+      }
+
+      // Fase de I/O: persiste em paralelo (config.persistConcurrency lanes).
+      // Falha em 1 publicação não derruba o dia inteiro — loga e segue.
+      await runPool(paraPersistir, config.persistConcurrency, async ({ cnj, balde, plano }) => {
         try {
           await persistFederal(plano);
           capturados++;
           porBalde[balde] = (porBalde[balde] ?? 0) + 1;
         } catch (errItem) {
-          // Falha em 1 publicação não derruba o dia inteiro — loga e segue.
           erros++;
-          console.error(`[persist] tribunal=${tribunal} cnj=${it.numeroprocessocommascara}:`, errItem);
+          console.error(`[persist] tribunal=${tribunal} cnj=${cnj}:`, errItem);
         }
-      }
+      });
+
       await upsertDjenDias({ data: date, tribunal, status: "parcial", total, ultima_pagina: pagina });
       if (items.length < pageSize) break;
       pagina++;

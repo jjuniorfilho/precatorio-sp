@@ -89,24 +89,33 @@ Valida a mecânica de captura contra a API real antes de acoplar lógica de neg�
 - Ambiente sem credenciais de banco neste sandbox (mesma limitação das Fases 1-3) — código e testes puros validados aqui; a escrita real e o deploy na VPS foram feitos e confirmados pelo usuário.
 - **Lembrete de deploy pra quem mexer nisso depois**: a VPS de produção (`/opt/precatorio-worker`) não é um clone git — deploy é `scp` dos arquivos de `worker-crawler/src/` + `npm run build` + (se for religar o loop) `pm2 restart`. `ingest-djen-federal.ts` já foi copiado manualmente pra lá durante esta sessão de validação, ANTES do merge/PR — não esquecer de reconciliar isso quando a branch for mergeada (evitar sobrescrever com uma versão desatualizada, ou vice-versa).
 
-## FASE 5 — Rollout Fase A (PJe: TRF1, TRF3, TRF5) [Não Iniciada ⏳]
+## FASE 5 — Rollout Fase A (PJe: TRF1, TRF3, TRF5) [Em andamento ⏳]
 
-### Backfill de validação (3-5 dias por TRF) [Não Iniciada ⏳]
+### Backfill de validação (3-5 dias por TRF) [Completada ✅ 2026-09-08]
 
-- Rodar backfill curto nos 3 tribunais (sequencial, não paralelo de verdade — mitiga risco de rate-limit combinado).
-- Habilitar as 3 linhas de `coleta_config` (`caderno_djen_trf1/3/5`, `enabled=true`).
+- Rodado nos 3 tribunais para 2026-09-01 a 09-04 (09-05 sempre veio vazio nos 3 — provável defasagem de publicação, não é erro). `coleta_config` já estava com `enabled=true` pros 3 (`caderno_djen_trf1/3/5`) antes desta sessão.
+- **Achado crítico:** `DAY_TIMEOUT_MS` (default 20 min, `config.ts`) é curto demais pro volume real federal (25-65k publicações/dia por tribunal — bem acima do estimado no PRD). Quase todos os dias bateram no timeout na primeira rodada. Subido pra `DAY_TIMEOUT_MS=10800000` (3h) no `.env` da VPS — resolveu a maioria, mas não todos (ver abaixo).
+- **Achado 2 — contenção entre processos:** quando um dia estoura o timeout, a promise órfã continua rodando em segundo plano (comportamento documentado em `ingest-djen-federal.ts`), mas se outro processo (outro dia/tribunal) começa a rodar em paralelo, os dois competem pelo mesmo rate-limit do Comunica e travam quase por completo (~1 página/hora em vez de ~1 página/5s). Um processo órfão não identificado (`PPID=1`, origem desconhecida) ficou 4h43min preso em só 5 páginas por causa disso — matado manualmente. **Regra daqui pra frente: nunca rodar mais de 1 backfill de dia por vez contra o Comunica**, mesmo entre tribunais diferentes.
+- Resultado final — todos os 15 dia-tribunal (TRF1/3/5 × 01-05) com `status='ok'`:
+  - TRF1: 01=12.550, 02=20.170, 03=15.758, 04=7.916 capturados (total 56.394)
+  - TRF3: 01=5.470, 02=6.214, 03=5.167, 04=4.388 capturados (total 21.239)
+  - TRF5: 01=2.454, 02=2.819, 03=3.102, 04=1.945 capturados (total 10.320)
+- **Observação a investigar na revisão manual:** 100% dos ~88 mil itens capturados caíram no balde `cumprimento_sentenca` — zero em `precatorio`, `rpv` ou `conhecimento` nos 3 tribunais/4 dias. Pode ser o perfil real do caderno no período, ou sinal de que a classificação não está pegando as outras classes — confirmar/descartar na próxima etapa.
 
 ### Revisão manual de amostra [Não Iniciada ⏳]
 
 - Amostra de ~20-30 publicações por tribunal revisada manualmente — meta >90% de acerto precatório/RPV vs revisão humana (métrica definida no PRD).
+- Verificar em especial o achado acima (ausência total de `precatorio`/`rpv`/`conhecimento` na amostra capturada).
 
 ### Cron/processo separado na VPS [Não Iniciada ⏳]
 
 - Configurar cron/pm2 dedicado pro federal (separado do job diário do TJSP) — mesma infra (`pm2 precatorio-crawler`), processo/schedule próprio.
 - Ligar captura diária contínua só depois da amostra aprovada.
+- **Atenção ao achado de contenção acima:** o cron diário roda 1 dia por tribunal (não 5), volume bem menor — mas nunca sobrepor a janela dos 3 tribunais entre si nem com backfills manuais futuros.
 
 ### Comentários
 - Esta fase é o gate real de "produção" — só avança pra Fase 6 se N dias consecutivos rodarem sem erro (métrica do PRD).
+- `DAY_TIMEOUT_MS=10800000` já está setado permanentemente no `.env` da VPS (`/opt/precatorio-worker/.env`) — não é preciso reconfigurar em runs futuros.
 
 ## FASE 6 — Rollout Fase B (eproc: TRF2, TRF4, TRF6) [Não Iniciada ⏳]
 

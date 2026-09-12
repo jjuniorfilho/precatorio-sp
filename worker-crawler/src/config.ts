@@ -54,6 +54,14 @@ export const config = {
   // avançar. Teto generoso (bem acima do pior caso observado, ~461 páginas em poucos minutos
   // pro TRF1 09-01) pra nunca cortar um dia legítimo, só travas de verdade.
   dayTimeoutMs: num("DAY_TIMEOUT_MS", 20 * 60_000),
+
+  // FOR-145 — concorrência na persistência de publicações capturadas
+  // (ingest-djen-federal.ts). Persistência sequencial (1 item de cada vez,
+  // ~5 idas ao banco por item: processo→cumprimento→incidente→andamento→
+  // classify_processo) não escala pros volumes reais observados (12k-20k+
+  // capturados/dia no TRF1) — dias assim passavam de 3h e estouravam o
+  // dayTimeoutMs. Mesmo padrão runPool já usado no crawler e-SAJ (index.ts).
+  persistConcurrency: num("PERSIST_CONCURRENCY", 10),
 };
 
 export function assertConfig(): void {
