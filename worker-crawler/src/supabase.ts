@@ -5,6 +5,7 @@ import WebSocketImpl from "ws";
 import { config } from "./config.js";
 import { normNome } from "./comunica.js";
 import type { ProcessoTree, QueueJob } from "./types.js";
+import type { OrigemInfo } from "./parse.js";
 
 // Node < 22 não tem WebSocket nativo (supabase realtime exige). Fornece o `ws`.
 if (!(globalThis as { WebSocket?: unknown }).WebSocket) {
@@ -81,10 +82,92 @@ export async function enqueueJob(cnj: string, origem: string): Promise<void> {
   if (error) console.error(`enqueue_crawler_job(${cnj}): ${error.message}`);
 }
 
-async function upsertReturningId(table: string, row: Record<string, unknown>, onConflict: string): Promise<string> {
+/** Diagnóstico 2026-09 (sessão de investigação do circuit breaker): sistemaFromLink()
+ * (ingest-djen.ts) não consegue detectar eproc de verdade — o `link` do DJEN aponta pro
+ * Diário, não pro sistema — então CNJ eproc-only entra na crawler_queue e nunca resolve
+ * ficha no e-SAJ. Em vez de tentar prever isso na ingestão (sem sinal confiável pra usar),
+ * deixa o próprio e-SAJ decidir: quando um job esgota as 3 tentativas com a busca nunca
+ * saindo do seed (ver crawl.ts blindagem), reclassifica pra eproc_pendentes — mesma tabela
+ * que o ingest usa pro caminho "eproc" detectado via link, só que descoberta pelo resultado
+ * real da busca em vez de adivinhada de antemão. Best-effort (não tem os metadados de DJEN
+ * aqui — nome_orgao/nome_classe/link ficam null; só cnj é obrigatório na tabela).
+ */
+export async function parkAsEproc(cnj: string): Promise<void> {
+  const { error } = await supabase.from("eproc_pendentes").upsert({ cnj }, { onConflict: "cnj", ignoreDuplicates: true });
+  if (error) console.error(`parkAsEproc(${cnj}): ${error.message}`);
+}
+
+export async function upsertReturningId(table: string, row: Record<string, unknown>, onConflict: string): Promise<string> {
   const { data, error } = await supabase.from(table).upsert(row, { onConflict }).select("id").single();
   if (error) throw new Error(`upsert ${table}: ${error.message}`);
   return (data as { id: string }).id;
+}
+
+/** FOR-143 — reconcilia com uma linha "LEGADO-" pré-existente (import do CSV legado, sem
+ * processo_codigo real do e-SAJ) antes do upsert normal. Sem isso, o upsert por processo_codigo
+ * criaria uma segunda linha pro mesmo CNJ/requisitório em vez de completar a já existente.
+ * Renomeia o processo_codigo da linha legado pro real quando esse código ainda não existe; se
+ * já existir (import criou duplicata, ou o crawler descobriu o CNJ organicamente numa corrida
+ * com o import), faz merge via RPC em vez de tentar renomear — renomear estouraria unique
+ * violation em `processo_codigo`. No-op quando não há linha "LEGADO-" pra reconciliar. */
+async function reconcileLegadoRows(
+  table: "processos" | "incidentes",
+  legadoIds: string[],
+  processoCodigoReal: string,
+  mergeRpc: "merge_legado_processo" | "merge_legado_incidente",
+): Promise<void> {
+  if (!legadoIds.length) return;
+  const { data: real, error: eReal } = await supabase.from(table).select("id").eq("processo_codigo", processoCodigoReal).maybeSingle();
+  if (eReal) throw new Error(`reconcileLegado ${table} (lookup real): ${eReal.message}`);
+  for (const legadoId of legadoIds) {
+    if (real) {
+      const { error } = await supabase.rpc(mergeRpc, { p_legado_id: legadoId, p_real_id: (real as { id: string }).id });
+      if (error) throw new Error(`${mergeRpc}: ${error.message}`);
+    } else {
+      const { error } = await supabase.from(table).update({ processo_codigo: processoCodigoReal }).eq("id", legadoId);
+      if (error) throw new Error(`reconcileLegado ${table} (rename): ${error.message}`);
+    }
+  }
+}
+
+/** processos: escopado só por cnj_normalizado (chave natural do processo raiz). Gateado por
+ * config.legadoReconcile (FOR-143) — desligável depois que o backfill for absorvido, já que a
+ * partir daí vira 1 SELECT morto por processo crawleado, pra sempre. */
+async function reconcileLegadoProcesso(cnjNormalizado: string | null, processoCodigoReal: string): Promise<void> {
+  if (!config.legadoReconcile || !cnjNormalizado) return;
+  const { data, error } = await supabase.from("processos").select("id").eq("cnj_normalizado", cnjNormalizado).like("processo_codigo", "LEGADO-%");
+  if (error) throw new Error(`reconcileLegadoProcesso (busca): ${error.message}`);
+  await reconcileLegadoRows("processos", (data ?? []).map((r: { id: string }) => r.id), processoCodigoReal, "merge_legado_processo");
+}
+
+/** Busca TODOS os incidentes "LEGADO-" de um processo numa única query (em vez de 1 SELECT por
+ * incidente — achado do code-review: processos com centenas/milhares de incidentes pagavam um
+ * round-trip extra por incidente, à toa na maioria das vezes já que a maior parte dos processos
+ * não tem nenhuma linha LEGADO- pra reconciliar). Map por numero_depre pra lookup O(1) no loop
+ * de incidentes do persistTree. */
+async function buscarIncidentesLegadoDoProcesso(processoId: string): Promise<Map<string, string[]>> {
+  const out = new Map<string, string[]>();
+  if (!config.legadoReconcile) return out;
+  const { data, error } = await supabase.from("incidentes").select("id, numero_depre").eq("processo_id", processoId).like("processo_codigo", "LEGADO-%");
+  if (error) throw new Error(`buscarIncidentesLegadoDoProcesso: ${error.message}`);
+  for (const row of (data ?? []) as Array<{ id: string; numero_depre: string | null }>) {
+    if (!row.numero_depre) continue;
+    const arr = out.get(row.numero_depre) ?? [];
+    arr.push(row.id);
+    out.set(row.numero_depre, arr);
+  }
+  return out;
+}
+
+/** incidentes: escopado por processo_id (já resolvido/reconciliado acima) **e** numero_depre —
+ * numero_depre sozinho não é único (confirmado em produção: o mesmo numero_depre pode aparecer
+ * em incidentes de processos diferentes), então sem o escopo por processo_id um crawl de um
+ * processo A não-relacionado poderia sequestrar/corromper um incidente LEGADO- do processo B só
+ * porque coincide o numero_depre. Recebe os ids já resolvidos por buscarIncidentesLegadoDoProcesso
+ * (sem query própria — é só o passo de decidir renomear vs. merge). */
+async function reconcileLegadoIncidente(legadoIds: string[], processoCodigoReal: string): Promise<void> {
+  if (!config.legadoReconcile || !legadoIds.length) return;
+  await reconcileLegadoRows("incidentes", legadoIds, processoCodigoReal, "merge_legado_incidente");
 }
 
 // ---- Persistência da árvore -------------------------------------------------
@@ -94,6 +177,7 @@ export async function persistTree(tree: ProcessoTree): Promise<string> {
   const passivas = tree.cumprimentos.flatMap((c) => c.incidentes.map((i) => i.parte_passiva)).filter(Boolean);
   const enteSP = passivas.find((p) => p && p.ente_esfera !== "Outro") ?? passivas[0] ?? null;
 
+  await reconcileLegadoProcesso(cnjNorm(tree.cnj), tree.processo_codigo);
   const processoId = await upsertReturningId("processos", {
     processo_codigo: tree.processo_codigo,
     cnj: tree.cnj,
@@ -111,6 +195,8 @@ export async function persistTree(tree: ProcessoTree): Promise<string> {
     last_crawled_at: new Date().toISOString(),
   }, "processo_codigo");
 
+  const incidentesLegadoDoProcesso = await buscarIncidentesLegadoDoProcesso(processoId);
+
   for (const c of tree.cumprimentos) {
     const cumprimentoId = await upsertReturningId("cumprimentos", {
       processo_id: processoId,
@@ -120,6 +206,9 @@ export async function persistTree(tree: ProcessoTree): Promise<string> {
     }, "processo_codigo");
 
     for (const inc of c.incidentes) {
+      if (inc.numero_depre) {
+        await reconcileLegadoIncidente(incidentesLegadoDoProcesso.get(inc.numero_depre) ?? [], inc.processo_codigo);
+      }
       const incidenteId = await upsertReturningId("incidentes", {
         cumprimento_id: cumprimentoId,
         processo_id: processoId,
@@ -138,17 +227,17 @@ export async function persistTree(tree: ProcessoTree): Promise<string> {
       // partes: e-SAJ prevalece → substitui as do incidente
       await supabase.from("partes").delete().eq("incidente_id", incidenteId);
       const partesRows: Record<string, unknown>[] = [];
-      if (inc.parte_ativa) {
-        if (inc.parte_ativa.advogados.length === 0) {
+      for (const pa of inc.partes_ativas) {
+        if (pa.advogados.length === 0) {
           partesRows.push({
             incidente_id: incidenteId, processo_id: processoId, papel: "ativa",
-            nome: inc.parte_ativa.nome, documento: inc.parte_ativa.documento, sem_oab: false, fonte: "esaj",
+            nome: pa.nome, documento: pa.documento, sem_oab: false, fonte: "esaj",
           });
         }
-        for (const adv of inc.parte_ativa.advogados) {
+        for (const adv of pa.advogados) {
           partesRows.push({
             incidente_id: incidenteId, processo_id: processoId, papel: "ativa",
-            nome: inc.parte_ativa.nome, documento: inc.parte_ativa.documento,
+            nome: pa.nome, documento: pa.documento,
             advogado_nome: adv.nome, oab: adv.oab, oab_normalizada: adv.oab_normalizada,
             sem_oab: adv.sem_oab, fonte: "esaj",
           });
@@ -192,7 +281,7 @@ export async function persistTree(tree: ProcessoTree): Promise<string> {
  * incidentes referencia este .0500 pelo numero_depre. `origem` são os CNJs de
  * origem extraídos da ficha do requisitório (já enfileirados pelo caller).
  */
-export async function persistRequisitorio(tree: ProcessoTree, origem: string[]): Promise<void> {
+export async function persistRequisitorio(tree: ProcessoTree, origemInfo: OrigemInfo[]): Promise<void> {
   const inc = tree.cumprimentos[0]?.incidentes[0];
   const cnj = tree.cnj ?? inc?.cnj ?? null;
   if (!cnj) throw new Error("persistRequisitorio: requisitório sem CNJ");
@@ -202,6 +291,14 @@ export async function persistRequisitorio(tree: ProcessoTree, origem: string[]):
     descricao: a.descricao,
     arquivo_url: a.arquivo_url,
   }));
+
+  // origem_incidentes só guarda as entradas com sufixo "/NNNN" (numeroIncidente) — são
+  // essas que permitem vincular_numero_depre_reverso() achar o incidente certo depois que
+  // o CNJ de origem for crawleado (ver index.ts). Entradas sem sufixo (ex.: "Outros
+  // números" da capa) não servem pra esse fim e ficam de fora.
+  const origemComIncidente = origemInfo
+    .filter((o): o is OrigemInfo & { numeroIncidente: string } => !!o.numeroIncidente)
+    .map((o) => ({ cnj: o.cnj, numero_incidente: o.numeroIncidente }));
 
   const row = {
     cnj,
@@ -214,8 +311,10 @@ export async function persistRequisitorio(tree: ProcessoTree, origem: string[]):
     // Reqte/requerente: sempre presente na ficha (PARTES DO PROCESSO), diferente do
     // documento (CPF/CNPJ), que o TJSP nunca expõe aqui — só chega via busca informada
     // pelo próprio titular (buscar-precatorio grava titular_documento nesse caso).
-    titular_nome: inc?.parte_ativa?.nome ?? null,
-    origem_cnjs: origem.length ? origem : null,
+    // Requisitório normalmente tem 1 só credor; se vier mais de um (raro), fica o 1º.
+    titular_nome: inc?.partes_ativas[0]?.nome ?? null,
+    origem_cnjs: origemInfo.length ? origemInfo.map((o) => o.cnj) : null,
+    origem_incidentes: origemComIncidente.length ? origemComIncidente : null,
     andamentos,
     ficha_crawled_at: new Date().toISOString(),
   };
@@ -225,6 +324,22 @@ export async function persistRequisitorio(tree: ProcessoTree, origem: string[]):
     .from("djen_depre")
     .upsert(row, { onConflict: "cnj_normalizado" });
   if (error) throw new Error(`upsert djen_depre (requisitório): ${error.message}`);
+}
+
+/** FOR-156 — depois que um CNJ de origem (achado via djen_depre.origem_incidentes) é
+ * crawleado, tenta vincular numero_depre no incidente certo usando o sufixo "/NNNN" já
+ * conhecido — em vez de depender de extractDepre() reachar o .0500 na própria página do
+ * incidente de origem (não funciona quando o requisitório nunca é citado lá, achado real
+ * em processos de execução coletiva antiga com múltiplos "Precatório - 0000X" na mesma
+ * ação). No-op (0 linhas) quando esse CNJ nunca foi origem de um .0500 com sufixo
+ * conhecido, ou quando o incidente já tem numero_depre. */
+export async function vincularNumeroDepreReverso(origemCnj: string, processoId: string): Promise<number> {
+  const { data, error } = await supabase.rpc("vincular_numero_depre_reverso", {
+    p_origem_cnj: origemCnj,
+    p_processo_id: processoId,
+  });
+  if (error) throw new Error(`vincular_numero_depre_reverso: ${error.message}`);
+  return (data as number) ?? 0;
 }
 
 // ---- FOR-102: pagamentos por processo_depre (portal TJSP "Pagamentos Precatórios") -------

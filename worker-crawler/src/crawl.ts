@@ -6,7 +6,8 @@ import {
 } from "./esaj.js";
 import {
   load, extractCapa, extractPartes, extractAndamentos, extractDepre, extractCnj,
-  incidenteLinks, processoPrincLink, firstProcessoLink, tipoFromTexto, extractOrigemCnjs,
+  incidenteLinks, processoPrincLink, firstProcessoLink, tipoFromTexto, extractOrigemInfo,
+  type OrigemInfo,
 } from "./parse.js";
 import { fetchAdvogadosByCnj, normNome } from "./comunica.js";
 import { djenAdvogadosByCnj } from "./supabase.js";
@@ -63,7 +64,7 @@ async function buildIncidente(
   await sleep(config.delayMs);
   const $ = load(await showByCodigo(codigo, foro, session));
   const capa = extractCapa($);
-  const { ativa, passiva } = extractPartes($);
+  const { ativas, passiva } = extractPartes($);
   const andamentos = extractAndamentos($);
   return {
     processo_codigo: codigo,
@@ -75,7 +76,7 @@ async function buildIncidente(
     tramitacao_prioritaria: capa.tramitacao_prioritaria,
     valor_acao: capa.valor_acao,
     data_base: capa.data_base,
-    parte_ativa: ativa,
+    partes_ativas: ativas,
     parte_passiva: passiva,
     andamentos,
   };
@@ -89,8 +90,11 @@ export async function crawlSeed(seed: string, session?: Session): Promise<Proces
 
   // Blindagem: a busca não resolveu uma ficha real (não saiu do seed e sem
   // capa/incidentes) → falha o job p/ re-tentar via fila, em vez de gravar lixo.
+  // Anexa um trecho do corpo recebido: sem isso, "não retornou página de detalhe" fica
+  // indistinguível entre página de manutenção do TJSP, bloqueio, e CNJ que nunca foi e-SAJ.
   if (root.codigo === seed && !capa.cnj && !capa.classe && incidenteLinks(root.$).length === 0) {
-    throw new Error(`busca não retornou página de detalhe para seed=${seed}`);
+    const corpo = root.$("body").text().replace(/\s+/g, " ").trim().slice(0, 200);
+    throw new Error(`busca não retornou página de detalhe para seed=${seed} :: corpo="${corpo}"`);
   }
 
   // No nível raiz, os a.incidente costumam ser os Cumprimentos de Sentença.
@@ -109,18 +113,20 @@ export async function crawlSeed(seed: string, session?: Session): Promise<Proces
     for (const l of leafLinks) incidentes.push(await buildIncidente(l.codigo, l.foro || root.foro, l.texto, sess));
     // Opção A: cumprimento sem incidente → placeholder Indefinido com os andamentos do cumprimento
     if (incidentes.length === 0) {
+      const capaC = extractCapa($c);
+      const partesC = extractPartes($c);
       incidentes.push({
         processo_codigo: `${c.codigo}#placeholder`,
         numero_incidente: null,
         tipo_previsto: "Indefinido",
         numero_depre: extractDepre($c("body").text()),
-        cnj: extractCapa($c).cnj,
-        status: extractCapa($c).status,
-        tramitacao_prioritaria: extractCapa($c).tramitacao_prioritaria,
-        valor_acao: extractCapa($c).valor_acao,
-        data_base: extractCapa($c).data_base,
-        parte_ativa: extractPartes($c).ativa,
-        parte_passiva: extractPartes($c).passiva,
+        cnj: capaC.cnj,
+        status: capaC.status,
+        tramitacao_prioritaria: capaC.tramitacao_prioritaria,
+        valor_acao: capaC.valor_acao,
+        data_base: capaC.data_base,
+        partes_ativas: partesC.ativas,
+        parte_passiva: partesC.passiva,
         andamentos: extractAndamentos($c),
       });
     }
@@ -137,6 +143,7 @@ export async function crawlSeed(seed: string, session?: Session): Promise<Proces
 
   // raiz sem nada → placeholder no nível raiz (só cálculo homologado, p.ex.)
   if (cumprimentos.length === 0) {
+    const partesRoot = extractPartes(root.$);
     cumprimentos.push({
       processo_codigo: `${root.codigo}#cumprimento`,
       cnj: null,
@@ -146,7 +153,7 @@ export async function crawlSeed(seed: string, session?: Session): Promise<Proces
         numero_depre: extractDepre(root.$("body").text()),
         cnj: capa.cnj, status: capa.status, tramitacao_prioritaria: capa.tramitacao_prioritaria,
         valor_acao: capa.valor_acao, data_base: capa.data_base,
-        parte_ativa: extractPartes(root.$).ativa, parte_passiva: extractPartes(root.$).passiva,
+        partes_ativas: partesRoot.ativas, parte_passiva: partesRoot.passiva,
         andamentos: extractAndamentos(root.$),
       }],
     });
@@ -165,9 +172,11 @@ export async function crawlSeed(seed: string, session?: Session): Promise<Proces
   if (oabMap.size) {
     for (const c of cumprimentos) {
       for (const inc of c.incidentes) {
-        for (const adv of inc.parte_ativa?.advogados ?? []) {
-          const hit = oabMap.get(normNome(adv.nome));
-          if (hit) { adv.oab = hit.oab; adv.oab_normalizada = hit.oab_normalizada; adv.sem_oab = false; }
+        for (const pa of inc.partes_ativas) {
+          for (const adv of pa.advogados) {
+            const hit = oabMap.get(normNome(adv.nome));
+            if (hit) { adv.oab = hit.oab; adv.oab_normalizada = hit.oab_normalizada; adv.sem_oab = false; }
+          }
         }
       }
     }
@@ -190,6 +199,7 @@ export async function crawlSeed(seed: string, session?: Session): Promise<Proces
 export interface RequisitorioResult {
   tree: ProcessoTree;
   origem: string[]; // CNJs do(s) processo(s) de origem → enfileirar p/ o cpopg
+  origemInfo: OrigemInfo[]; // idem, com o número do incidente de origem quando presente
   precatorio: { processo_depre: string; valor_acao: number | null; status: string | null; devedora: string | null };
 }
 
@@ -218,21 +228,25 @@ export async function crawlRequisitorio(seed: string, session?: Session): Promis
   const capa = extractCapa($);
   // Blindagem: não resolveu ficha real → falha p/ re-tentar (não grava lixo).
   if (codigo === seed && !capa.cnj && !capa.classe && incidenteLinks($).length === 0) {
-    throw new Error(`requisitório não retornou página de detalhe para seed=${seed}`);
+    const corpo = $("body").text().replace(/\s+/g, " ").trim().slice(0, 200);
+    throw new Error(`requisitório não retornou página de detalhe para seed=${seed} :: corpo="${corpo}"`);
   }
 
-  const { ativa, passiva } = extractPartes($);
+  const { ativas, passiva } = extractPartes($);
   const andamentos = extractAndamentos($);
   const cnj = capa.cnj ?? (isCnj(seed) ? seed : null);
-  const origem = extractOrigemCnjs($);
+  const origemInfo = extractOrigemInfo($);
+  const origem = origemInfo.map((o) => o.cnj);
 
   // OAB (DJEN-first): publicações do .0500 estão sob o próprio número.
-  if (ativa?.advogados.length) {
+  if (ativas.some((pa) => pa.advogados.length)) {
     const oabMap = await djenAdvogadosByCnj([seed.replace(/\D/g, "")]);
     if (oabMap.size === 0) for (const [k, v] of await fetchAdvogadosByCnj(seed)) if (!oabMap.has(k)) oabMap.set(k, v);
-    for (const adv of ativa.advogados) {
-      const hit = oabMap.get(normNome(adv.nome));
-      if (hit) { adv.oab = hit.oab; adv.oab_normalizada = hit.oab_normalizada; adv.sem_oab = false; }
+    for (const pa of ativas) {
+      for (const adv of pa.advogados) {
+        const hit = oabMap.get(normNome(adv.nome));
+        if (hit) { adv.oab = hit.oab; adv.oab_normalizada = hit.oab_normalizada; adv.sem_oab = false; }
+      }
     }
   }
 
@@ -246,7 +260,7 @@ export async function crawlRequisitorio(seed: string, session?: Session): Promis
     tramitacao_prioritaria: capa.tramitacao_prioritaria,
     valor_acao: capa.valor_acao,
     data_base: capa.data_base,
-    parte_ativa: ativa,
+    partes_ativas: ativas,
     parte_passiva: passiva,
     andamentos,
   };
@@ -265,6 +279,7 @@ export async function crawlRequisitorio(seed: string, session?: Session): Promis
   return {
     tree,
     origem,
+    origemInfo,
     precatorio: { processo_depre: cnj ?? seed, valor_acao: capa.valor_acao, status: capa.status, devedora: passiva?.nome ?? null },
   };
 }

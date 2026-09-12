@@ -24,3 +24,9 @@ Thumbs.db
 
 # Data files (large)
 precatorios_depre_completo.xlsx
+precatorio_sp_*.csv
+depre_*.PDF
+query-results-export-*.csv
+
+# Scripts/artefatos legados fora do controle deste repo
+claude_legacy/

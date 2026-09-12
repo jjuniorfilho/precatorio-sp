@@ -38,6 +38,30 @@ export const config = {
   // FOR-102 — endpoint HTTP síncrono (buscar-precatorio + admin chamam /valor-pago).
   httpPort: num("HTTP_PORT", 3200),
   httpSecret: process.env.WORKER_HTTP_SECRET ?? "",
+
+  // FOR-143 — reconciliação LEGADO→real em persistTree() (ver supabase.ts). Custa 1 SELECT
+  // extra por processo crawleado, pra sempre — vale a pena enquanto houver processos "LEGADO-"
+  // pendentes (~12k no ar em 2026-08-19), mas pode ser desligado (LEGADO_RECONCILE=false) depois
+  // que o backfill do FOR-143 for absorvido, já que a partir daí é só overhead morto.
+  legadoReconcile: (process.env.LEGADO_RECONCILE ?? "true") !== "false",
+
+  // FOR-145 — teto de tempo por dia de ingestão federal (ingest-djen-federal.ts), mesmo
+  // problema do FOR-116 (jobTimeoutMs) só que na escala de "dia inteiro" em vez de "1 job":
+  // fetchPage já tem requestTimeoutMs/retry bounded, mas as escritas no Supabase dentro do
+  // loop de página (persistFederal/classifyProcesso) não têm timeout nenhum — uma trava de
+  // rede/lock numa dessas chamadas trava o dia inteiro sem limite. Confirmado em produção
+  // 2026-09-07: backfill de TRF1 09-02 travou 11h+ na página 642/642 sem nunca dar erro nem
+  // avançar. Teto generoso (bem acima do pior caso observado, ~461 páginas em poucos minutos
+  // pro TRF1 09-01) pra nunca cortar um dia legítimo, só travas de verdade.
+  dayTimeoutMs: num("DAY_TIMEOUT_MS", 20 * 60_000),
+
+  // FOR-145 — concorrência na persistência de publicações capturadas
+  // (ingest-djen-federal.ts). Persistência sequencial (1 item de cada vez,
+  // ~5 idas ao banco por item: processo→cumprimento→incidente→andamento→
+  // classify_processo) não escala pros volumes reais observados (12k-20k+
+  // capturados/dia no TRF1) — dias assim passavam de 3h e estouravam o
+  // dayTimeoutMs. Mesmo padrão runPool já usado no crawler e-SAJ (index.ts).
+  persistConcurrency: num("PERSIST_CONCURRENCY", 10),
 };
 
 export function assertConfig(): void {
