@@ -5,6 +5,7 @@ import WebSocketImpl from "ws";
 import { config } from "./config.js";
 import { normNome } from "./comunica.js";
 import type { ProcessoTree, QueueJob } from "./types.js";
+import type { OrigemInfo } from "./parse.js";
 
 // Node < 22 não tem WebSocket nativo (supabase realtime exige). Fornece o `ws`.
 if (!(globalThis as { WebSocket?: unknown }).WebSocket) {
@@ -280,7 +281,7 @@ export async function persistTree(tree: ProcessoTree): Promise<string> {
  * incidentes referencia este .0500 pelo numero_depre. `origem` são os CNJs de
  * origem extraídos da ficha do requisitório (já enfileirados pelo caller).
  */
-export async function persistRequisitorio(tree: ProcessoTree, origem: string[]): Promise<void> {
+export async function persistRequisitorio(tree: ProcessoTree, origemInfo: OrigemInfo[]): Promise<void> {
   const inc = tree.cumprimentos[0]?.incidentes[0];
   const cnj = tree.cnj ?? inc?.cnj ?? null;
   if (!cnj) throw new Error("persistRequisitorio: requisitório sem CNJ");
@@ -290,6 +291,14 @@ export async function persistRequisitorio(tree: ProcessoTree, origem: string[]):
     descricao: a.descricao,
     arquivo_url: a.arquivo_url,
   }));
+
+  // origem_incidentes só guarda as entradas com sufixo "/NNNN" (numeroIncidente) — são
+  // essas que permitem vincular_numero_depre_reverso() achar o incidente certo depois que
+  // o CNJ de origem for crawleado (ver index.ts). Entradas sem sufixo (ex.: "Outros
+  // números" da capa) não servem pra esse fim e ficam de fora.
+  const origemComIncidente = origemInfo
+    .filter((o): o is OrigemInfo & { numeroIncidente: string } => !!o.numeroIncidente)
+    .map((o) => ({ cnj: o.cnj, numero_incidente: o.numeroIncidente }));
 
   const row = {
     cnj,
@@ -303,7 +312,8 @@ export async function persistRequisitorio(tree: ProcessoTree, origem: string[]):
     // documento (CPF/CNPJ), que o TJSP nunca expõe aqui — só chega via busca informada
     // pelo próprio titular (buscar-precatorio grava titular_documento nesse caso).
     titular_nome: inc?.parte_ativa?.nome ?? null,
-    origem_cnjs: origem.length ? origem : null,
+    origem_cnjs: origemInfo.length ? origemInfo.map((o) => o.cnj) : null,
+    origem_incidentes: origemComIncidente.length ? origemComIncidente : null,
     andamentos,
     ficha_crawled_at: new Date().toISOString(),
   };
@@ -313,6 +323,22 @@ export async function persistRequisitorio(tree: ProcessoTree, origem: string[]):
     .from("djen_depre")
     .upsert(row, { onConflict: "cnj_normalizado" });
   if (error) throw new Error(`upsert djen_depre (requisitório): ${error.message}`);
+}
+
+/** FOR-156 — depois que um CNJ de origem (achado via djen_depre.origem_incidentes) é
+ * crawleado, tenta vincular numero_depre no incidente certo usando o sufixo "/NNNN" já
+ * conhecido — em vez de depender de extractDepre() reachar o .0500 na própria página do
+ * incidente de origem (não funciona quando o requisitório nunca é citado lá, achado real
+ * em processos de execução coletiva antiga com múltiplos "Precatório - 0000X" na mesma
+ * ação). No-op (0 linhas) quando esse CNJ nunca foi origem de um .0500 com sufixo
+ * conhecido, ou quando o incidente já tem numero_depre. */
+export async function vincularNumeroDepreReverso(origemCnj: string, processoId: string): Promise<number> {
+  const { data, error } = await supabase.rpc("vincular_numero_depre_reverso", {
+    p_origem_cnj: origemCnj,
+    p_processo_id: processoId,
+  });
+  if (error) throw new Error(`vincular_numero_depre_reverso: ${error.message}`);
+  return (data as number) ?? 0;
 }
 
 // ---- FOR-102: pagamentos por processo_depre (portal TJSP "Pagamentos Precatórios") -------

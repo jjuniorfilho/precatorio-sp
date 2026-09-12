@@ -36,12 +36,32 @@ const CNJ_RE = /\d{7}-\d{2}\.\d{4}\.\d\.\d{2}\.\d{4}/;
 /** Extrai um CNJ de um texto livre (ex.: texto do link do cumprimento). */
 export const extractCnj = (text: string | null | undefined): string | null => (text ?? "").match(CNJ_RE)?.[0] ?? null;
 
-/** CNJs de origem citados na ficha de um requisitório (.0500): "Outros números" da
- * capa + "Processo de Origem: ..." nas movimentações. Exclui o próprio .0500 e dedup. */
-export function extractOrigemCnjs($: $): string[] {
+export interface OrigemInfo { cnj: string; numeroIncidente: string | null }
+
+/** CNJs de origem citados na ficha de um requisitório (.0500), com o número do incidente
+ * de origem quando presente: "Processo de Origem: 0410665-90.1996.8.26.0053/0001" (o
+ * sufixo "/NNNN" identifica QUAL incidente da ação de origem gerou esse .0500 — achado
+ * real: processos de execução coletiva antiga têm vários "Precatório - 0000X" na mesma
+ * ação, e sem esse sufixo não dá pra saber qual dos vários corresponde a este .0500;
+ * extractDepre() nunca encontra o .0500 de volta na página do incidente de origem porque
+ * o requisitório simplesmente não é citado lá). "Outros números" da capa não trazem esse
+ * sufixo. Exclui o próprio .0500 e dedup por CNJ, preferindo a ocorrência com sufixo. */
+export function extractOrigemInfo($: $): OrigemInfo[] {
   const text = $("body").text();
-  return [...new Set([...text.matchAll(/\d{7}-\d{2}\.\d{4}\.\d\.\d{2}\.\d{4}/g)].map((m) => m[0]))]
-    .filter((c) => !/\.8\.26\.0500$/.test(c));
+  const porCnj = new Map<string, string | null>();
+  for (const m of text.matchAll(/(\d{7}-\d{2}\.\d{4}\.\d\.\d{2}\.\d{4})(?:\/(\d+))?/g)) {
+    const cnj = m[1]!;
+    if (/\.8\.26\.0500$/.test(cnj)) continue;
+    const numeroIncidente = m[2] ?? null;
+    if (numeroIncidente || !porCnj.has(cnj)) porCnj.set(cnj, numeroIncidente ?? porCnj.get(cnj) ?? null);
+  }
+  return [...porCnj.entries()].map(([cnj, numeroIncidente]) => ({ cnj, numeroIncidente }));
+}
+
+/** Só os CNJs de origem, sem o sufixo do incidente — usado pra enfileirar (não importa
+ * qual incidente específico pra esse fim). */
+export function extractOrigemCnjs($: $): string[] {
+  return extractOrigemInfo($).map((o) => o.cnj);
 }
 
 /** href do e-SAJ → { codigo, foro }. */

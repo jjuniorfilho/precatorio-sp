@@ -2,7 +2,7 @@
 import { config, assertConfig, sleep } from "./config.js";
 import { getSession, getRequisitorioSession, isDepre, type Session } from "./esaj.js";
 import { crawlSeed, crawlRequisitorio } from "./crawl.js";
-import { supabase, ensureAuth, claimJobs, completeJob, failJob, classifyProcesso, persistTree, persistRequisitorio, enqueueJob, resetOrfaosCrawlerQueue, parkAsEproc } from "./supabase.js";
+import { supabase, ensureAuth, claimJobs, completeJob, failJob, classifyProcesso, persistTree, persistRequisitorio, enqueueJob, resetOrfaosCrawlerQueue, parkAsEproc, vincularNumeroDepreReverso } from "./supabase.js";
 import { startHttpServer } from "./http-server.js";
 import type { QueueJob } from "./types.js";
 
@@ -129,8 +129,8 @@ async function processBatch(jobs: QueueJob[]): Promise<{ ok: number; erro: numbe
           // principal — persiste na tabela DEPRE (djen_depre) com ficha + andamentos, e
           // enfileira a(s) ORIGEM(ns). O vínculo com o principal acontece depois: quando
           // a origem é crawleada, um dos seus incidentes referencia este .0500 (numero_depre).
-          const { tree, origem } = await crawlRequisitorio(job.processo_codigo, await laneRequisitorioSession(lane));
-          await persistRequisitorio(tree, origem);
+          const { origem, origemInfo, tree } = await crawlRequisitorio(job.processo_codigo, await laneRequisitorioSession(lane));
+          await persistRequisitorio(tree, origemInfo);
           // origem do requisitório → cpopg. p_origem deve respeitar crawler_queue_origem_check
           // (valores aceitos: manual/refresh/backfill/caderno_dje). Usa "manual" como a edge.
           for (const cnj of origem) await enqueueJob(cnj, "manual");
@@ -148,6 +148,11 @@ async function processBatch(jobs: QueueJob[]): Promise<{ ok: number; erro: numbe
           } else {
             const processoId = await persistTree(tree);
             await classifyProcesso(processoId);
+            // FOR-156 — se esse CNJ foi descoberto como origem de algum .0500 com o
+            // sufixo "/NNNN" já conhecido (djen_depre.origem_incidentes), vincula
+            // numero_depre direto no incidente certo. No-op na maioria dos crawls
+            // (só faz algo quando esse CNJ passou por essa origem específica).
+            await vincularNumeroDepreReverso(job.processo_codigo, processoId);
           }
         }
       })(), config.jobTimeoutMs);

@@ -2,7 +2,7 @@
 // dependência nova — ver README.md).
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { classifyEsfera } from "./parse.js";
+import { classifyEsfera, extractOrigemInfo, extractOrigemCnjs, load } from "./parse.js";
 
 test("classifyEsfera: tokens estaduais originais", () => {
   assert.equal(classifyEsfera("FAZENDA PUBLICA DO ESTADO DE SAO PAULO"), "Estadual");
@@ -58,4 +58,48 @@ test("classifyEsfera: 'MUN. DE <cidade>' (abreviação) -> Municipal (regressão
 test("classifyEsfera: case-insensitive (lowercase/misto também classifica)", () => {
   assert.equal(classifyEsfera("prefeitura municipal de são paulo"), "Municipal");
   assert.equal(classifyEsfera("Fazenda Pública do Estado de São Paulo"), "Estadual");
+});
+
+// FOR-156 — regressão do achado real em 0003201-62.2017.8.26.0500: "Processo de Origem:
+// CNJ/NNNN" traz o número do incidente de origem (qual "Precatório - 0000X" gerou esse
+// .0500) — sem capturar esse sufixo não dá pra saber qual dos vários incidentes da mesma
+// ação corresponde a este requisitório específico.
+test("extractOrigemInfo: captura o sufixo /NNNN de 'Processo de Origem: CNJ/NNNN'", () => {
+  const $ = load(`<body>
+    Remetido ao DJE
+    Relação: 0011/2025 Teor do ato: Processo de Origem: 0410665-90.1996.8.26.0053/0001
+    Unidade de Processamento das Execuções contra a Fazenda Pública
+  </body>`);
+  assert.deepEqual(extractOrigemInfo($), [
+    { cnj: "0410665-90.1996.8.26.0053", numeroIncidente: "0001" },
+  ]);
+});
+
+test("extractOrigemInfo: sem sufixo (ex.: 'Outros números' da capa) -> numeroIncidente null", () => {
+  const $ = load(`<body>Outros números: 0001234-56.2020.8.26.0100</body>`);
+  assert.deepEqual(extractOrigemInfo($), [
+    { cnj: "0001234-56.2020.8.26.0100", numeroIncidente: null },
+  ]);
+});
+
+test("extractOrigemInfo: dedup por CNJ preferindo a ocorrência com sufixo", () => {
+  const $ = load(`<body>
+    Outros números: 0410665-90.1996.8.26.0053
+    Processo de Origem: 0410665-90.1996.8.26.0053/0003
+  </body>`);
+  assert.deepEqual(extractOrigemInfo($), [
+    { cnj: "0410665-90.1996.8.26.0053", numeroIncidente: "0003" },
+  ]);
+});
+
+test("extractOrigemInfo: exclui o próprio .0500 do texto", () => {
+  const $ = load(`<body>0003201-62.2017.8.26.0500 Processo de Origem: 0410665-90.1996.8.26.0053/0001</body>`);
+  assert.deepEqual(extractOrigemInfo($), [
+    { cnj: "0410665-90.1996.8.26.0053", numeroIncidente: "0001" },
+  ]);
+});
+
+test("extractOrigemCnjs: continua devolvendo só os CNJs, sem o sufixo (compat)", () => {
+  const $ = load(`<body>Processo de Origem: 0410665-90.1996.8.26.0053/0001</body>`);
+  assert.deepEqual(extractOrigemCnjs($), ["0410665-90.1996.8.26.0053"]);
 });

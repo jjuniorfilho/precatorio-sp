@@ -6,7 +6,8 @@ import {
 } from "./esaj.js";
 import {
   load, extractCapa, extractPartes, extractAndamentos, extractDepre, extractCnj,
-  incidenteLinks, processoPrincLink, firstProcessoLink, tipoFromTexto, extractOrigemCnjs,
+  incidenteLinks, processoPrincLink, firstProcessoLink, tipoFromTexto, extractOrigemInfo,
+  type OrigemInfo,
 } from "./parse.js";
 import { fetchAdvogadosByCnj, normNome } from "./comunica.js";
 import { djenAdvogadosByCnj } from "./supabase.js";
@@ -193,6 +194,7 @@ export async function crawlSeed(seed: string, session?: Session): Promise<Proces
 export interface RequisitorioResult {
   tree: ProcessoTree;
   origem: string[]; // CNJs do(s) processo(s) de origem → enfileirar p/ o cpopg
+  origemInfo: OrigemInfo[]; // idem, com o número do incidente de origem quando presente
   precatorio: { processo_depre: string; valor_acao: number | null; status: string | null; devedora: string | null };
 }
 
@@ -228,7 +230,8 @@ export async function crawlRequisitorio(seed: string, session?: Session): Promis
   const { ativa, passiva } = extractPartes($);
   const andamentos = extractAndamentos($);
   const cnj = capa.cnj ?? (isCnj(seed) ? seed : null);
-  const origem = extractOrigemCnjs($);
+  const origemInfo = extractOrigemInfo($);
+  const origem = origemInfo.map((o) => o.cnj);
 
   // OAB (DJEN-first): publicações do .0500 estão sob o próprio número.
   if (ativa?.advogados.length) {
@@ -269,6 +272,7 @@ export async function crawlRequisitorio(seed: string, session?: Session): Promis
   return {
     tree,
     origem,
+    origemInfo,
     precatorio: { processo_depre: cnj ?? seed, valor_acao: capa.valor_acao, status: capa.status, devedora: passiva?.nome ?? null },
   };
 }
