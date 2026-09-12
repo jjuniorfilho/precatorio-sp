@@ -104,25 +104,25 @@ Valida a mecânica de captura contra a API real antes de acoplar lógica de neg�
   - TRF5: 01=2.454, 02=2.819, 03=3.102, 04=1.945 capturados (total 10.320)
 - **Observação a investigar na revisão manual:** 100% dos ~88 mil itens capturados caíram no balde `cumprimento_sentenca` — zero em `precatorio`, `rpv` ou `conhecimento` nos 3 tribunais/4 dias. Pode ser o perfil real do caderno no período, ou sinal de que a classificação não está pegando as outras classes — confirmar/descartar na próxima etapa.
 
-### Revisão manual de amostra [Em Progresso ⏳ 2026-09-12]
+### Revisão manual de amostra [Aceita ✅ 2026-09-12 — decisão do usuário]
 
+- **Decisão (2026-09-12):** validação leve + os achados/correções abaixo aceitos como suficientes pra fechar esta etapa. A amostra completa de 20-30/tribunal do PRD **não vai ser feita** — escopo encerrado aqui por decisão explícita do usuário ("pode fechar a Fase 5 e paramos aqui").
 - Revisão leve feita (não os 20-30/tribunal completos do PRD): 3 registros do TRF3 conferidos manualmente pelo usuário — classe/executado/teor batem, sem falso-positivo.
 - **Achados da investigação de `oficio_expedido`/`macrofase`:**
   - RLS faltante em `classificacao_regras` (mesma causa raiz do `coleta_config`, ver `sql/2026-09-06_fix_coleta_config_rls.sql`) — corrigida (`sql/2026-09-12_fix_classificacao_regras_rls.sql`).
   - Terminologia federal real de expedição de ofício diverge do padrão estadual copiado (`%ofício requisitório%expedido%`). Frase real encontrada em amostra (TRF1): **"...registros necessários junto ao Tribunal Regional Federal..."**. Regra nova adicionada em `classificacao_regras`.
   - Reclassificação em massa (35.101 processos federais distintos) via `select classify_processo(...)` direto no SQL Editor **deu timeout/erro de servidor** duas vezes — resolvido rodando via script Node (paginado + `runPool` concorrência 15) direto do worker, ~10min, 0 erros.
   - **Resultado:** `oficio_expedido=true` subiu de 684 → **9.133** (13x) com a nova regra. `macrofase` continua 100% `direito_creditorio` (0 em `precatorio_efetivo`/`rpv_efetivo`) — **gap estrutural conhecido, não relacionado a terminologia**: `macrofase` só avança quando `tipo_previsto` também é `'Precatorio'`/`'RPV'`, e isso só é setado quando a própria classe CNJ da publicação é literalmente "Precatório"/"RPV" (nunca visto nos 4 dias capturados, só "Cumprimento de Sentença"). Decisão de produto em aberto: promover `tipo_previsto` a partir do teor (mesmo sem a classe CNJ mudar formalmente) ou aceitar que só migra quando uma publicação futura do mesmo CNJ vier com a classe certa (upsert no mesmo incidente "vaso" já suporta isso automaticamente).
-- Amostra completa de 20-30/tribunal do PRD **ainda não foi feita formalmente** — decisão de escopo pendente: aceitar a validação leve + achados acima como suficiente pra fechar a Fase 5, ou insistir na amostra completa antes do cron.
-
-### Cron/processo separado na VPS [Não Iniciada ⏳]
+### Cron/processo separado na VPS [Não Iniciada ⏳ — pendente, sessão pausada aqui em 2026-09-12]
 
 - Configurar cron/pm2 dedicado pro federal (separado do job diário do TJSP) — mesma infra (`pm2 precatorio-crawler`), processo/schedule próprio.
-- Ligar captura diária contínua só depois da amostra aprovada.
+- **Único item que falta pra captura contínua em produção estar de fato ligada.** A validação (backfill + revisão) já foi fechada — isso aqui é só configuração/deploy, sem decisão de produto pendente.
 - **Atenção ao achado de contenção acima:** o cron diário roda 1 dia por tribunal (não 5), volume bem menor — mas nunca sobrepor a janela dos 3 tribunais entre si nem com backfills manuais futuros.
 
 ### Comentários
 - Esta fase é o gate real de "produção" — só avança pra Fase 6 se N dias consecutivos rodarem sem erro (métrica do PRD).
 - `DAY_TIMEOUT_MS=10800000` já está setado permanentemente no `.env` da VPS (`/opt/precatorio-worker/.env`) — não é preciso reconfigurar em runs futuros.
+- **2026-09-12 — sessão pausada por decisão do usuário:** backfill + revisão de amostra fechados (ver acima). Cron fica pendente pra próxima sessão — é o único bloqueador restante antes de FOR-145 poder ser considerada "Done".
 
 ## FASE 6 — Rollout Fase B (eproc: TRF2, TRF4, TRF6) [Movida para FOR-156]
 
