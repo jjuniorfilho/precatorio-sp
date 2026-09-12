@@ -1,8 +1,10 @@
-# Captura de precatórios federais via DJEN (TRF1-6) — FOR-145
+# Captura de precatórios federais via DJEN — PJe (TRF1, TRF3, TRF5) — FOR-145
 
 Se você está trabalhando nesta feature, certifique-se de atualizar este arquivo plan.md conforme progride.
 
 Sem integração frontend (esta entrega é 100% infraestrutura de dados — não expõe nada no produto público).
+
+**Split de escopo (2026-09-12):** esta issue cobria originalmente TRF1-6. A Fase B (eproc: TRF2, TRF4, TRF6) virou issue própria — [FOR-156](https://linear.app/forjuris/issue/FOR-156/captura-de-precatorios-federais-via-djen-eproc-trf2-trf4-trf6). FOR-145 fecha só com a Fase A (PJe) estável em produção contínua.
 
 ## FASE 1 — Schema (migration SQL) [Completada ✅]
 
@@ -102,10 +104,15 @@ Valida a mecânica de captura contra a API real antes de acoplar lógica de neg�
   - TRF5: 01=2.454, 02=2.819, 03=3.102, 04=1.945 capturados (total 10.320)
 - **Observação a investigar na revisão manual:** 100% dos ~88 mil itens capturados caíram no balde `cumprimento_sentenca` — zero em `precatorio`, `rpv` ou `conhecimento` nos 3 tribunais/4 dias. Pode ser o perfil real do caderno no período, ou sinal de que a classificação não está pegando as outras classes — confirmar/descartar na próxima etapa.
 
-### Revisão manual de amostra [Não Iniciada ⏳]
+### Revisão manual de amostra [Em Progresso ⏳ 2026-09-12]
 
-- Amostra de ~20-30 publicações por tribunal revisada manualmente — meta >90% de acerto precatório/RPV vs revisão humana (métrica definida no PRD).
-- Verificar em especial o achado acima (ausência total de `precatorio`/`rpv`/`conhecimento` na amostra capturada).
+- Revisão leve feita (não os 20-30/tribunal completos do PRD): 3 registros do TRF3 conferidos manualmente pelo usuário — classe/executado/teor batem, sem falso-positivo.
+- **Achados da investigação de `oficio_expedido`/`macrofase`:**
+  - RLS faltante em `classificacao_regras` (mesma causa raiz do `coleta_config`, ver `sql/2026-09-06_fix_coleta_config_rls.sql`) — corrigida (`sql/2026-09-12_fix_classificacao_regras_rls.sql`).
+  - Terminologia federal real de expedição de ofício diverge do padrão estadual copiado (`%ofício requisitório%expedido%`). Frase real encontrada em amostra (TRF1): **"...registros necessários junto ao Tribunal Regional Federal..."**. Regra nova adicionada em `classificacao_regras`.
+  - Reclassificação em massa (35.101 processos federais distintos) via `select classify_processo(...)` direto no SQL Editor **deu timeout/erro de servidor** duas vezes — resolvido rodando via script Node (paginado + `runPool` concorrência 15) direto do worker, ~10min, 0 erros.
+  - **Resultado:** `oficio_expedido=true` subiu de 684 → **9.133** (13x) com a nova regra. `macrofase` continua 100% `direito_creditorio` (0 em `precatorio_efetivo`/`rpv_efetivo`) — **gap estrutural conhecido, não relacionado a terminologia**: `macrofase` só avança quando `tipo_previsto` também é `'Precatorio'`/`'RPV'`, e isso só é setado quando a própria classe CNJ da publicação é literalmente "Precatório"/"RPV" (nunca visto nos 4 dias capturados, só "Cumprimento de Sentença"). Decisão de produto em aberto: promover `tipo_previsto` a partir do teor (mesmo sem a classe CNJ mudar formalmente) ou aceitar que só migra quando uma publicação futura do mesmo CNJ vier com a classe certa (upsert no mesmo incidente "vaso" já suporta isso automaticamente).
+- Amostra completa de 20-30/tribunal do PRD **ainda não foi feita formalmente** — decisão de escopo pendente: aceitar a validação leve + achados acima como suficiente pra fechar a Fase 5, ou insistir na amostra completa antes do cron.
 
 ### Cron/processo separado na VPS [Não Iniciada ⏳]
 
@@ -117,23 +124,15 @@ Valida a mecânica de captura contra a API real antes de acoplar lógica de neg�
 - Esta fase é o gate real de "produção" — só avança pra Fase 6 se N dias consecutivos rodarem sem erro (métrica do PRD).
 - `DAY_TIMEOUT_MS=10800000` já está setado permanentemente no `.env` da VPS (`/opt/precatorio-worker/.env`) — não é preciso reconfigurar em runs futuros.
 
-## FASE 6 — Rollout Fase B (eproc: TRF2, TRF4, TRF6) [Não Iniciada ⏳]
+## FASE 6 — Rollout Fase B (eproc: TRF2, TRF4, TRF6) [Movida para FOR-156]
 
-Depende inteiramente da Fase 5 estar estável (rollout sequencial, não paralelo — decisão do PRD).
-
-### Backfill de validação (3-5 dias por TRF) [Não Iniciada ⏳]
-
-- Mesmo processo da Fase 5, atenção redobrada: confirmar que o parsing do payload eproc (link/formato) não tem surpresa em relação ao pje já validado.
-
-### Revisão manual + habilitação [Não Iniciada ⏳]
-
-- Mesma métrica de aceite da Fase 5.
-- Habilitar as 3 linhas restantes de `coleta_config`.
+Split de escopo 2026-09-12 — ver [FOR-156](https://linear.app/forjuris/issue/FOR-156/captura-de-precatorios-federais-via-djen-eproc-trf2-trf4-trf6). Continua dependendo da Fase 5 deste documento estar estável (rollout sequencial, decisão original do PRD: eproc só depois de PJe estável).
 
 ---
 
 ## Sequenciamento
 
 - Fases 1→2→3→4 são **estritamente sequenciais** (cada uma depende do artefato da anterior).
-- Fase 5 e Fase 6 são sequenciais entre si (decisão de rollout do PRD: eproc só depois de PJe estável) — mas as validações **dentro** de cada fase (backfill de TRF1/TRF3/TRF5, por exemplo) podem rodar em paralelo entre si já que são tribunais independentes, desde que a concorrência/delay global continue conservador (risco de rate-limit é por IP/origem, não por tribunal isolado).
+- Fase 5 é o gate de fechamento deste documento (FOR-145/PJe) — as validações **dentro** dela (backfill de TRF1/TRF3/TRF5) podem rodar em paralelo entre si já que são tribunais independentes, desde que a concorrência/delay global continue conservador (risco de rate-limit é por IP/origem, não por tribunal isolado, mas ver achado de contenção acima: nunca mais de 1 dia por vez contra o Comunica).
 - Migration da Fase 1 é bloqueante pra tudo — nada de código roda sem ela.
+- Fase 6 (eproc) segue em [FOR-156](https://linear.app/forjuris/issue/FOR-156/captura-de-precatorios-federais-via-djen-eproc-trf2-trf4-trf6), só depois desta Fase 5 estar estável.
