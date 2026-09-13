@@ -5,7 +5,7 @@ import {
   getRequisitorioSession, searchRequisitorioByCnj, reqReferer,
 } from "./esaj.js";
 import {
-  load, extractCapa, extractPartes, extractAndamentos, extractDepre, extractCnj,
+  load, extractCapa, extractPartes, extractAndamentos, extractPeticoesDiversas, extractDepre, extractCnj,
   incidenteLinks, processoPrincLink, firstProcessoLink, tipoFromTexto, extractOrigemInfo,
   type OrigemInfo,
 } from "./parse.js";
@@ -233,7 +233,10 @@ export async function crawlRequisitorio(seed: string, session?: Session): Promis
   }
 
   const { ativas, passiva } = extractPartes($);
-  const andamentos = extractAndamentos($);
+  // "Petições diversas" (ex.: "Comunicado de Acordo de Requisitório") fica numa
+  // tabela separada de #tabelaTodasMovimentacoes — sem isso, esse tipo de petição
+  // nunca aparece em djen_depre.andamentos.
+  const andamentos = [...extractAndamentos($), ...extractPeticoesDiversas($)];
   const cnj = capa.cnj ?? (isCnj(seed) ? seed : null);
   const origemInfo = extractOrigemInfo($);
   const origem = origemInfo.map((o) => o.cnj);

@@ -210,3 +210,25 @@ export function extractAndamentos($: $): Andamento[] {
   });
   return out;
 }
+
+/** "Petições diversas" é uma tabela separada de #tabelaTodasMovimentacoes (fora da
+ * aba "Movimentação"), sem id próprio — só identificável pelo <h2> que a antecede.
+ * É onde vive, por ex., "Comunicado de Acordo de Requisitório" no .0500. Sem essa
+ * extração, esse tipo de petição nunca é persistido em `andamentos`. */
+export function extractPeticoesDiversas($: $): Andamento[] {
+  const out: Andamento[] = [];
+  const heading = $("h2.tituloDoBloco")
+    .filter((_, h) => $(h).text().trim() === "Petições diversas")
+    .first();
+  if (!heading.length) return out;
+  const table = heading.closest("div").nextAll("table").first();
+  table.find("tbody tr").each((_, tr) => {
+    const tds = $(tr).find("td");
+    if (tds.length < 2) return;
+    const data = parseDateIso($(tds[0]).text());
+    const descricao = $(tds[1]).text().replace(/\s+/g, " ").trim();
+    if (!descricao) return;
+    out.push({ data, descricao, arquivo_url: null });
+  });
+  return out;
+}
