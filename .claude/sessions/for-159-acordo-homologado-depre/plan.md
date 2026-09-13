@@ -36,6 +36,16 @@ segunda query de progresso (`acordo_homologado is null` vs total).
 - `add column if not exists` + `where ... and acordo_homologado is null` no UPDATE
   tornam o script idempotente (pode rodar de novo sem efeito colateral se algo
   falhar no meio).
+- **CORREÇÃO PÓS-VALIDAÇÃO (code-reviewer, após a Fase 3):** a v1 deste script
+  usava `ficha_crawled_at >= '2026-09-13'::date` (meia-noite UTC) como corte —
+  mas o deploy do parser novo só terminou às 17:09:48 UTC (confirmado via `pm2
+  jlist`). Fichas recrawleadas hoje pelo backlog normal ANTES desse instante
+  foram marcadas `false` com base em dado do parser ANTIGO — falso-negativo
+  permanente, silencioso, e fora do alcance da Fase 3 (que só reprocessa `null`).
+  v2 usa o timestamp exato do deploy e reprocessa TODA ficha crawleada hoje (não
+  só as `null`), recolocando em `null` quem foi crawleado antes do deploy. Se v1
+  já rodou em produção antes desta correção, **precisa rodar v2 de novo** —
+  detalhes completos no relatório do code-reviewer (achado #1, crítico).
 
 ## FASE 2 — Cálculo automático em todo crawl futuro [Completada ✅]
 
