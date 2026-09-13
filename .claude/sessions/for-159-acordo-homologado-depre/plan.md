@@ -67,29 +67,38 @@ já venha com `acordo_homologado` certo, sem depender de rodar SQL manual de nov
   `FLEET_INSTALL_CMD` customizado em `.claude/fleet.config.sh` pra cobrir os dois
   `package.json` (raiz + `worker-crawler/`) em fleets futuras deste repo.
 
-## FASE 3 — Backfill do restante da base (~55k) [Não Iniciada ⏳]
+## FASE 3 — Backfill do restante da base (~55k) [Completada ✅]
 
 Enfileira, sem atropelar prioridade, o resto dos `.0500` que ainda não passaram
 pelo parser novo (ficam `acordo_homologado = null` até serem processados).
 
-### `sql/2026-09-13_for159_enfileira_backfill_restante.sql` [Não Iniciada ⏳]
+### `sql/2026-09-13_for159_enfileira_backfill_restante.sql` [Completada ✅]
 
-- Seleciona `cnj` de `djen_depre` onde `acordo_homologado is null` (ou
-  `ficha_crawled_at < '2026-09-13'`, pra pegar quem nunca foi recrawleado desde o
-  fix).
-- Enfileira via `enqueue_crawler_job_forcado(cnj, 'backfill')` — **`origem=
-  'backfill'`, não `'manual'`** (lição do incidente de hoje mais cedo nesta mesma
-  sessão: `origem='manual'` não é despriorizada por `claim_crawler_jobs`).
-- **Não** chama `priorizar_jobs_manual` — backfill não deve furar fila.
-- Comentário explicando throughput esperado (~235 jobs/h histórico) e que é
-  aceitável levar dias.
+- Seleciona `cnj` de `djen_depre` onde `acordo_homologado is null`.
+- Enfileira via `enqueue_crawler_job_forcado(cnj, 'backfill')` — `origem=
+  'backfill'`, não `'manual'` (lição do incidente de hoje mais cedo nesta mesma
+  sessão).
+- Não chama `priorizar_jobs_manual` — backfill não deve furar fila.
+- Idempotente: `ON CONFLICT DO NOTHING` do `enqueue_crawler_job_forcado` cobre
+  reexecução e overlap com o lote já rebaixado em
+  `sql/2026-09-13_corrige_prioridade_recrawl_0500.sql` mais cedo hoje.
 
-### Script de status (read-only): `sql/2026-09-13_for159_status_backfill.sql` [Não Iniciada ⏳]
+### Script de status (read-only): `sql/2026-09-13_for159_status_backfill.sql` [Completada ✅]
 
-- `select acordo_homologado is null as pendente, count(*) from djen_depre group by
-  1;` — pra acompanhar o progresso do backfill ao longo dos dias seguintes.
+- Query 1: `acordo_homologado is null` (pendente/não) vs. total, com contagem de
+  `com_acordo` já confirmados.
+- Query 2 (opcional, mais fina): status na `crawler_queue` (pendente/processando/
+  ok/erro) só pros `.0500` ainda sem `acordo_homologado`.
 
 ### Comentários:
--
+- Ainda NÃO apliquei/enfileirei — script pronto, pendente do usuário rodar no SQL
+  Editor (mesmo motivo de sempre: sem acesso direto ao Postgres de produção nesta
+  sessão).
+- `fleet-gate.sh` genérico não achou lint/test configurado na raiz do repo (os
+  scripts reais estão em `worker-crawler/package.json`) — validação de Fase 2 feita
+  manualmente (`npm test` + `tsc --noEmit` dentro de `worker-crawler/`). Mesma nota
+  de `FLEET_INSTALL_CMD` da Fase 2 vale aqui: um `.claude/fleet.config.sh` com
+  `FLEET_GATE_CMDS` apontando pra `worker-crawler/` deixaria isso automático em
+  fleets futuras.
 
 </plan>
