@@ -237,7 +237,14 @@ export function extractPeticoesDiversas($: $): Andamento[] {
  * "Comunicado de Acordo de Requisitório". Sempre chamar com a lista COMPLETA da
  * ficha: o resultado vira `djen_depre.acordo_homologado`, que é boolean (não
  * null) precisamente porque representa uma verificação real, feita nesta chamada —
- * `false` aqui significa "verificado, não achou", não "não verificado ainda". */
+ * `false` aqui significa "verificado, não achou", não "não verificado ainda".
+ *
+ * Busca por SUBSTRING (sem `^`), não por prefixo: uma linha de "Movimentação"
+ * pode concatenar tipo+detalhe (ex.: "Petição Juntada ... Comunicado de Acordo de
+ * Requisitório"), e um prefixo fixo perderia esse caso. Continua imune à frase
+ * genérica "de acordo com" (não contém "comunicado de acordo de requisit").
+ * Mantenha esta regra em sincronia com o `ilike` equivalente nos scripts SQL de
+ * backfill (sql/2026-09-13_for159_acordo_homologado_coluna.sql). */
 export function temAcordoHomologado(andamentos: Andamento[]): boolean {
-  return andamentos.some((a) => /^comunicado de acordo de requisit/i.test(a.descricao.trim()));
+  return andamentos.some((a) => /comunicado de acordo de requisit/i.test(a.descricao));
 }

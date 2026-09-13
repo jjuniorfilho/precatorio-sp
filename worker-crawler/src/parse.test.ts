@@ -169,3 +169,10 @@ test("temAcordoHomologado: não confunde com frase genérica 'de acordo com' (fa
   ];
   assert.equal(temAcordoHomologado(andamentos), false);
 });
+
+test("temAcordoHomologado: acha mesmo com prefixo (linha de Movimentação concatenando tipo+detalhe)", () => {
+  const andamentos = [
+    { data: "2026-07-30", descricao: "Petição Juntada - Comunicado de Acordo de Requisitório", arquivo_url: null },
+  ];
+  assert.equal(temAcordoHomologado(andamentos), true);
+});

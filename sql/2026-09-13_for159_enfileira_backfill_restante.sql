@@ -29,9 +29,15 @@ with alvo as (
     from djen_depre
    where acordo_homologado is null
 ),
-enfileirados as (
-  select cnj, public.enqueue_crawler_job_forcado(cnj, 'backfill') as job_id
-    from alvo
+-- materialized explícito: `enqueue_crawler_job_forcado` é volátil (returns void),
+-- então o efeito colateral (INSERT em crawler_queue) só acontece por a CTE não
+-- inlinar — deixar explícito evita depender de um comportamento implícito do
+-- planner num script que grava ~55k linhas.
+processados as materialized (
+  select public.enqueue_crawler_job_forcado(cnj, 'backfill') from alvo
 )
-select count(*) as total_enfileirado
-  from enfileirados;
+-- total_processado, não "total_enfileirado": a função é ON CONFLICT DO NOTHING,
+-- então isso conta quantos CNJs foram considerados (== count(alvo)), não quantos
+-- jobs novos de fato entraram na fila (esses já existentes são no-op silencioso).
+select count(*) as total_processado
+  from processados;
