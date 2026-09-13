@@ -37,29 +37,35 @@ segunda query de progresso (`acordo_homologado is null` vs total).
   tornam o script idempotente (pode rodar de novo sem efeito colateral se algo
   falhar no meio).
 
-## FASE 2 — Cálculo automático em todo crawl futuro [Não Iniciada ⏳]
+## FASE 2 — Cálculo automático em todo crawl futuro [Completada ✅]
 
 Garante que todo `.0500` (re)crawleado a partir de agora — não só o backfill —
 já venha com `acordo_homologado` certo, sem depender de rodar SQL manual de novo.
 
-### `worker-crawler/src/supabase.ts:persistRequisitorio()` [Não Iniciada ⏳]
+### `worker-crawler/src/supabase.ts:persistRequisitorio()` [Completada ✅]
 
-- Computar `acordo_homologado` a partir do array `andamentos` já montado (mesmo
-  filtro do backfill, em TS: `andamentos.some(a => /^comunicado de acordo de
-  requisit/i.test(a.descricao.trim()))`).
-- Incluir `acordo_homologado` no objeto `row` do upsert (linha ~318, ao lado de
-  `andamentos`).
+- `acordo_homologado` computado via `temAcordoHomologado(andamentos)` (nova função
+  pura, ver abaixo) e incluído no `row` do upsert, ao lado de `andamentos`.
 
-### Teste [Não Iniciada ⏳]
+### Teste [Completada ✅]
 
-- Novo caso em `worker-crawler/src/parse.test.ts` (ou arquivo dedicado) cobrindo:
-  (a) `andamentos` com o item "Comunicado de Acordo de Requisitório" → `true`;
-  (b) `andamentos` sem esse item (mas com outros) → `false`; (c) `andamentos`
-  vazio → `false` (foi verificado, só não tinha nada).
-- Rodar `npm test` no worker-crawler antes de seguir.
+- Refatorado: a lógica ficou como função pura `temAcordoHomologado()` em
+  `parse.ts` (não inline em `supabase.ts`), mesmo padrão de `extractPeticoesDiversas`
+  — testável sem mock de rede, e reaproveita o mesmo arquivo de teste
+  (`parse.test.ts`) das outras funções puras do parser.
+- 4 casos novos em `parse.test.ts`: (a) acha o andamento → `true`; (b) outros
+  andamentos presentes mas não esse → `false`; (c) lista vazia → `false`
+  (verificado, não achou); (d) frase genérica "de acordo com" não gera falso
+  positivo (regressão do que o usuário já tinha pego manualmente nesta mesma
+  investigação, antes do fix de hoje).
+- `npm test`: 55/55 passando. `npx tsc --noEmit`: sem erros.
 
 ### Comentários:
--
+- Dependências do `worker-crawler` não vieram do `npm ci` do fleet-provision (esse
+  rodou só na raiz do repo) — precisou de `npm ci` manual dentro de
+  `worker-crawler/` nesta worktree antes de rodar os testes. Vale considerar
+  `FLEET_INSTALL_CMD` customizado em `.claude/fleet.config.sh` pra cobrir os dois
+  `package.json` (raiz + `worker-crawler/`) em fleets futuras deste repo.
 
 ## FASE 3 — Backfill do restante da base (~55k) [Não Iniciada ⏳]
 

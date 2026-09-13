@@ -4,6 +4,7 @@ import { createHash } from "node:crypto";
 import WebSocketImpl from "ws";
 import { config } from "./config.js";
 import { normNome } from "./comunica.js";
+import { temAcordoHomologado } from "./parse.js";
 import type { ProcessoTree, QueueJob } from "./types.js";
 import type { OrigemInfo } from "./parse.js";
 
@@ -292,6 +293,11 @@ export async function persistRequisitorio(tree: ProcessoTree, origemInfo: Origem
     arquivo_url: a.arquivo_url,
   }));
 
+  // FOR-159 — boolean (não null): representa uma verificação real feita nesta
+  // chamada, já que `andamentos` aqui é a ficha inteira (Movimentação + Petições
+  // diversas). Ver temAcordoHomologado() em parse.ts.
+  const acordoHomologado = temAcordoHomologado(andamentos);
+
   // origem_incidentes só guarda as entradas com sufixo "/NNNN" (numeroIncidente) — são
   // essas que permitem vincular_numero_depre_reverso() achar o incidente certo depois que
   // o CNJ de origem for crawleado (ver index.ts). Entradas sem sufixo (ex.: "Outros
@@ -316,6 +322,7 @@ export async function persistRequisitorio(tree: ProcessoTree, origemInfo: Origem
     origem_cnjs: origemInfo.length ? origemInfo.map((o) => o.cnj) : null,
     origem_incidentes: origemComIncidente.length ? origemComIncidente : null,
     andamentos,
+    acordo_homologado: acordoHomologado,
     ficha_crawled_at: new Date().toISOString(),
   };
 

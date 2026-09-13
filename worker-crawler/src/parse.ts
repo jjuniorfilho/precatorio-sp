@@ -232,3 +232,12 @@ export function extractPeticoesDiversas($: $): Andamento[] {
   });
   return out;
 }
+
+/** FOR-159 — true se `andamentos` (já mesclado com extractPeticoesDiversas) contém
+ * "Comunicado de Acordo de Requisitório". Sempre chamar com a lista COMPLETA da
+ * ficha: o resultado vira `djen_depre.acordo_homologado`, que é boolean (não
+ * null) precisamente porque representa uma verificação real, feita nesta chamada —
+ * `false` aqui significa "verificado, não achou", não "não verificado ainda". */
+export function temAcordoHomologado(andamentos: Andamento[]): boolean {
+  return andamentos.some((a) => /^comunicado de acordo de requisit/i.test(a.descricao.trim()));
+}
