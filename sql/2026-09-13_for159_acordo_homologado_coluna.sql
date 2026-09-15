@@ -35,17 +35,21 @@ comment on column djen_depre.acordo_homologado is
 -- acordo_homologado is null" do rascunho anterior) — reprocessa todo mundo
 -- crawleado hoje, o que é barato (poucas linhas) e sempre idempotente.
 --
--- jsonb_typeof(...) = 'array' evita abortar o UPDATE inteiro se algum registro
--- legado tiver `andamentos` num formato não-array.
+-- CASE sequencial (não AND dentro do mesmo WHEN): jsonb_array_elements() roda no
+-- FROM da subquery, então precisa ser alcançado só depois de confirmado que
+-- `andamentos` é array de fato — senão quebra o UPDATE inteiro num registro legado
+-- com formato inesperado, mesmo com o guard escrito (Postgres não filtra o FROM
+-- pelo WHERE antes de avaliar a função). CASE WHEN é curto-circuitado de verdade:
+-- só a branch que casar é avaliada.
 update djen_depre
    set acordo_homologado = case
-         when ficha_crawled_at >= timestamptz '2026-09-13T17:09:48.860Z' then exists (
+         when ficha_crawled_at < timestamptz '2026-09-13T17:09:48.860Z' then null
+         when jsonb_typeof(andamentos) is distinct from 'array' then false
+         else exists (
            select 1
              from jsonb_array_elements(andamentos) elem
-            where jsonb_typeof(andamentos) = 'array'
-              and elem->>'descricao' ilike '%Comunicado de Acordo de Requisit%'
+            where elem->>'descricao' ilike '%Comunicado de Acordo de Requisit%'
          )
-         else null
        end
  where ficha_crawled_at >= '2026-09-13'::date;
 
