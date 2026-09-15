@@ -2,7 +2,7 @@
 // dependência nova — ver README.md).
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { classifyEsfera, extractOrigemInfo, extractOrigemCnjs, extractPartes, load } from "./parse.js";
+import { classifyEsfera, extractOrigemInfo, extractOrigemCnjs, extractPartes, load, temAcordoHomologado } from "./parse.js";
 
 test("classifyEsfera: tokens estaduais originais", () => {
   assert.equal(classifyEsfera("FAZENDA PUBLICA DO ESTADO DE SAO PAULO"), "Estadual");
@@ -136,4 +136,54 @@ test("extractPartes: um único credor continua funcionando (caso comum)", () => 
   const { ativas } = extractPartes($);
   assert.equal(ativas.length, 1);
   assert.equal(ativas[0]!.advogados.length, 1);
+});
+
+// FOR-159 — djen_depre.acordo_homologado é calculado a partir da ficha inteira do
+// .0500 (Movimentação + Petições diversas mescladas). false aqui tem que significar
+// "verificado, não achou" (não "não verificado ainda" — essa distinção é feita por
+// fora, comparando ficha_crawled_at, não pelo retorno desta função).
+test("temAcordoHomologado: acha o andamento na lista mesclada", () => {
+  const andamentos = [
+    { data: "2023-01-26", descricao: "Atualização das informações bancárias - DEPRE", arquivo_url: null },
+    { data: "2026-07-30", descricao: "Comunicado de Acordo de Requisitório", arquivo_url: null },
+    { data: "2026-08-26", descricao: "Atualização das informações bancárias - DEPRE", arquivo_url: null },
+  ];
+  assert.equal(temAcordoHomologado(andamentos), true);
+});
+
+test("temAcordoHomologado: outros andamentos presentes, mas não esse -> false", () => {
+  const andamentos = [
+    { data: "2023-01-26", descricao: "Atualização das informações bancárias - DEPRE", arquivo_url: null },
+    { data: "2024-05-10", descricao: "Certidão de Objeto e Pé expedida", arquivo_url: null },
+  ];
+  assert.equal(temAcordoHomologado(andamentos), false);
+});
+
+test("temAcordoHomologado: lista vazia -> false (verificado, não achou)", () => {
+  assert.equal(temAcordoHomologado([]), false);
+});
+
+test("temAcordoHomologado: não confunde com frase genérica 'de acordo com' (falso positivo já visto nesta investigação)", () => {
+  const andamentos = [
+    { data: "2024-01-01", descricao: "Manifestação da parte, de acordo com o despacho anterior", arquivo_url: null },
+  ];
+  assert.equal(temAcordoHomologado(andamentos), false);
+});
+
+test("temAcordoHomologado: acha mesmo com prefixo (linha de Movimentação concatenando tipo+detalhe)", () => {
+  const andamentos = [
+    { data: "2026-07-30", descricao: "Petição Juntada - Comunicado de Acordo de Requisitório", arquivo_url: null },
+  ];
+  assert.equal(temAcordoHomologado(andamentos), true);
+});
+
+// A regra tem que ficar em sincronia com o `ilike '%Comunicado de Acordo de
+// Requisit%'` do backfill SQL (sql/2026-09-13_for159_acordo_homologado_coluna.sql),
+// que é case-insensitive por natureza. Colunas "tipo" do e-SAJ às vezes vêm em
+// caixa alta — trava esse caso pra não perder sincronia com o comportamento do SQL.
+test("temAcordoHomologado: case-insensitive (descrição toda em caixa alta, como o 'tipo' do e-SAJ)", () => {
+  const andamentos = [
+    { data: "2026-07-30", descricao: "COMUNICADO DE ACORDO DE REQUISITÓRIO", arquivo_url: null },
+  ];
+  assert.equal(temAcordoHomologado(andamentos), true);
 });
