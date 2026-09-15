@@ -176,3 +176,14 @@ test("temAcordoHomologado: acha mesmo com prefixo (linha de Movimentação conca
   ];
   assert.equal(temAcordoHomologado(andamentos), true);
 });
+
+// A regra tem que ficar em sincronia com o `ilike '%Comunicado de Acordo de
+// Requisit%'` do backfill SQL (sql/2026-09-13_for159_acordo_homologado_coluna.sql),
+// que é case-insensitive por natureza. Colunas "tipo" do e-SAJ às vezes vêm em
+// caixa alta — trava esse caso pra não perder sincronia com o comportamento do SQL.
+test("temAcordoHomologado: case-insensitive (descrição toda em caixa alta, como o 'tipo' do e-SAJ)", () => {
+  const andamentos = [
+    { data: "2026-07-30", descricao: "COMUNICADO DE ACORDO DE REQUISITÓRIO", arquivo_url: null },
+  ];
+  assert.equal(temAcordoHomologado(andamentos), true);
+});

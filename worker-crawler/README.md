@@ -103,6 +103,12 @@ ficha de um `.0500` e grava em `djen_depre.titular_nome` — não depende do mó
 pagamentos. Documento (CPF/CNPJ) nunca vem da ficha (TJSP não expõe); só é gravado
 (`djen_depre.titular_documento`) quando o próprio titular busca por ele publicamente.
 
+**Acordo homologado (FOR-159):** toda visita à ficha de um `.0500` também roda
+`temAcordoHomologado()` (`src/parse.ts`) sobre os andamentos (Movimentação + Petições
+diversas) e grava o resultado em `djen_depre.acordo_homologado` — `true`/`false` é uma
+verificação real feita naquela visita; `null` significa apenas que o requisitório ainda
+não foi crawleado com esse parser, não que o acordo foi descartado.
+
 **Pendente (Fase 8):** validar taxa de sucesso do OCR contra volume real de produção antes
 de decidir entre manter OCR ou plugar 2captcha como fallback (interface já isolada em
 `captcha.ts` desde a Fase 2 pra trocar sem mexer no resto).
