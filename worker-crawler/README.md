@@ -169,3 +169,24 @@ a linha `LEGADO-` — em vez de deixar duas linhas pro mesmo CNJ/requisitório. 
 crawl (1 SELECT extra por processo), gateado por `config.legadoReconcile` (env
 `LEGADO_RECONCILE`, default `true` — ver `.env.example`). Pode ser desligado depois que os
 `LEGADO-` remanescentes forem absorvidos pelo backfill, já que a partir daí vira overhead morto.
+
+### Valor pago: 3 resultados + log de consultas (FOR-171)
+
+`POST /valor-pago { processo_depre, origem? }` (`origem`: `manual` (default) | `busca_publica` | `crawler`)
+devolve `resultado`:
+
+- `encontrado` — linha na grade do portal (com/sem pagamentos).
+- `nao_consta` — o portal **respondeu** que o processo não consta na lista (mensagem `#TXTNENHUM`
+  visível, grade vazia, rodapé "Data da Consulta"). Resultado válido: marca `pagamentos_consultado_em`.
+- `falha` (HTTP 502 com `etapa`) — instabilidade/página inesperada. **Nunca** marca como consultado.
+
+A classificação é `src/pagamentos-classificar.ts` (pura; testada com HTML real do portal em
+`src/__fixtures__/pagamentos/`, tokens de sessão redigidos). Cada consulta (inclusive falha) é gravada
+em `pagamentos_consultas_log` (últimas 20 por processo, passos com horário/status/etapa) via RPC
+`registrar_consulta_pagamento`, em best-effort. Leitura pelo admin: RPC `listar_consultas_pagamento`.
+
+SQL (aplicar em ordem no SQL Editor do banco que o worker usa): `sql/2026-09-25_for171_1_*.sql`,
+`_2_*`, `_3_*`. **Antes**, confirmar o banco: `grep SUPABASE_URL /opt/precatorio-worker/.env | cut -c1-40`
+(esperado `nxkvfc…`, mesmo projeto do frontend). Se for outro, os SQLs vão para o banco do worker e é
+preciso o ramo alternativo (GET de consultas no worker + edge lendo dele) — ver
+`.claude/sessions/for-171-crawler-pagamentos-log/architecture.md`.
