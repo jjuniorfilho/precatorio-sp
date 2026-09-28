@@ -5,6 +5,7 @@ Se você está trabalhando nesta feature, certifique-se de atualizar este arquiv
 - **Repo/worktree:** `cortex-v1`, `.claude/worktrees/for-173-banco-worker-lead-avulso`, branch `jjuniorfilho/for-173-banco-worker-lead-avulso`, base `origin/main` (`c168f31`, com o código do FOR-171).
 - **Contexto e decisões:** `context.md` e `architecture.md` desta pasta (seções 0 e 13 têm os achados do diagnóstico e o escopo ampliado).
 - **Issues:** FOR-173 (esta) → bloqueia FOR-174 (frontend). Pai: FOR-172. Bug relacionado: FOR-175.
+- **PRs:** cortex-v1 **jjuniorfilho/precatorio-sp#18** (este trabalho) · espelho das migrations no frontend **jjuniorfilho/sp-precat-rios-simples-c2fc47c1#60** (base `jjuniorfilho/precatorio-sp`, PR separado). Nenhum dos dois foi mergeado.
 - **Regras de trabalho:** commit por fase (`feat|docs|test(FOR-173): ...` + linha `Co-Authored-By: Claude Sonnet 5 <noreply@anthropic.com>`); worker: `cd worker-crawler && npm test` e `npm run typecheck`; **nunca consultar o portal TJSP** em teste (site de terceiro); só o humano aplica SQL no SQL Editor e reinicia o pm2 na VPS.
 
 ## Mapa de dependências (o que roda em paralelo)
@@ -25,7 +26,7 @@ FASE 5 (docs) ── paralela às fases 1-4 (README do worker só depois da 4) �
   - Etapas válidas: `na_fila, iniciando, abrir_portal, obter_link, abrir_pesquisa, busca, resultado_carregou, ler_resultado, extrair_pagamentos, persistir, desconhecida` (a RPC troca qualquer outra por `desconhecida`).
   - **Semântica de `etapa`:** a etapa **em andamento** (os passos do coletor são registrados *depois* de concluídos, então o reporter mapeia "concluí X" → "agora está em PROXIMA[X]"; `tentativa(n)` marca `busca` em andamento com a tentativa N).
 
-## FASE 0 — Pré-requisitos e desbloqueios [Em Progresso ⏰]  (humano; paralela; só bloqueia a Fase 7)
+## FASE 0 — Pré-requisitos e desbloqueios [Em Progresso ⏰]  (0.1 e 0.3 feitos; 0.2 é do humano)  (humano; paralela; só bloqueia a Fase 7)
 
 ### 0.1 Diagnóstico do DDL de `leads` [Completada ✅]
 Rodado em 2026-09-28; resultado incorporado em `architecture.md` seção 0. Confirmado também que `capturar-lead-publico` nunca gravou lead (FOR-175 aberta).
@@ -33,7 +34,7 @@ Rodado em 2026-09-28; resultado incorporado em `architecture.md` seção 0. Conf
 ### 0.2 Confirmar o banco da VPS [Não Iniciada ⏳]
 Humano: `grep SUPABASE_URL /opt/precatorio-worker/.env | cut -c1-40` deve começar com `nxkvfc…` (o log de consultas do FOR-171 já sugere que sim). Dependência antes de aplicar o SQL da Fase 7.
 
-### 0.3 Worktree do frontend para o espelho [Não Iniciada ⏳]
+### 0.3 Worktree do frontend para o espelho [Completada ✅]
 Antes da Fase 6: `git fetch` no repo `frontend` e criar worktree a partir de `jjuniorfilho/precatorio-sp` (o Lovable altera essa branch em paralelo). `npm install`, não `npm ci`.
 
 ## FASE 1 — SQL: `leads` avulso + view [Completada ✅]  (~1,5h; paralela às fases 2, 3, 5)
@@ -143,15 +144,15 @@ Garantias do fleet rodadas pelo lead e **verificadas por ele** (não só pelo re
 
 **IMPORTANTE para o humano:** se você já aplicou os SQLs 1 e 4 **antes** desta revisão, rode-os de novo (são re-executáveis) e depois rode `sql/2026-09-28_for173_5_verifica_aplicacao.sql` (somente leitura): todas as linhas devem vir `ok = true`.
 
-## FASE 6 — Espelho da migration no repo `frontend` (PR separado) [Não Iniciada ⏳]  (~1h; depois das fases 1 e 2; usa a worktree da 0.3)
+## FASE 6 — Espelho da migration no repo `frontend` (PR separado) [Completada ✅]  (~1h; depois das fases 1 e 2; usa a worktree da 0.3)
 
-### 6.1 Copiar os 4 SQLs para `frontend/supabase/migrations/` [Não Iniciada ⏳]
+### 6.1 Copiar os 4 SQLs para `frontend/supabase/migrations/` [Completada ✅]
 Mesmo conteúdo de `sql/2026-09-28_for173_{1..4}_*.sql`, com timestamps `2026092810NNNN_for173_*.sql` (depois de `20260926100000_for171_...`). Sem o SQL de diagnóstico. Cabeçalho "espelho de cortex-v1/sql/…; aplicar manualmente no SQL Editor".
 
-### 6.2 Teste de migration e PR [Não Iniciada ⏳]
+### 6.2 Teste de migration e PR [Completada ✅]
 Teste no padrão `leads-etapas-migration.for170.test.ts` (leitura do texto) para os SQLs espelhados; PR pequeno contra `jjuniorfilho/precatorio-sp` (após novo `git fetch`; se o Lovable mexeu na branch, rebasear). **Não** publicar nada no Lovable antes de o humano aplicar o SQL.
 
-## FASE 7 — Verificação, revisão e rollout [Não Iniciada ⏳]  (~1,5h; depois de todas)
+## FASE 7 — Verificação, revisão e rollout [Em Progresso ⏰]  (7.1 feito; 7.2 e 7.3 são do humano)  (~1,5h; depois de todas)
 
 ### 7.1 Garantias do fleet [Completada ✅]
 `fleet-gate.sh` (lint/typecheck/test), `test-engineer` + `code-reviewer`, `adr-compliance-checker` STRICT; depois `/engineer:pre-pr` (agentes branch-*) e `/engineer:pr`. Cobrir explicitamente: PII (nada de CPF/documento em log), GRANTs das RPCs, `SECURITY DEFINER` com `search_path`, e a nota sobre o efeito no FOR-175.
@@ -160,8 +161,13 @@ Teste no padrão `leads-etapas-migration.for170.test.ts` (leitura do texto) para
 **Passo 0:** rodar `sql/2026-09-28_for173_5_verifica_aplicacao.sql` (somente leitura) depois de aplicar; todas as linhas com `ok = true`. **Passo 0b:** rodar `sql/2026-09-28_for173_6_roteiro_teste_transacional.sql` (um único `DO` que termina em `RAISE EXCEPTION`: o relatório vem na mensagem do erro e **nada fica gravado**); esperado `0 FALHOU`. Testar o **cadastro do site** (`/cadastro`) uma vez após o SQL 1 (a policy anônima foi endurecida). Confirmar a versão publicada da `buscar-precatorio` (envia `origem: "busca_publica"`?).
 Ordem: (1) `_1_leads_avulso.sql` → (2) `_2_view_leads_processos_origem.sql` → (3) `_3_tabela_progresso.sql` → (4) `_4_rpcs_progresso.sql`; conferir com `information_schema` que `email`/`relacao` viraram nullable e que `leads_processos` expõe `origem`; (5) deploy do worker na VPS (`git pull`, `npm install`, `pm2 restart` do processo do worker; confirmar o nome, hoje `precatorio-crawler`); (6) só então liberar o FOR-174.
 
-### 7.3 Smoke test [Não Iniciada ⏳]
+### 7.3 Smoke test [Não Iniciada ⏳]  (humano, depois do 7.2)
 Humano dispara **uma** consulta manual no admin (`/admin/processos/:id`, botão de valor pago) e acompanha `select * from pagamentos_consultas_progresso where processo_depre = '0145616-63.2020.8.26.0500'`: deve passar por `na_fila → iniciando → busca (tentativa N) → … → concluida (nao_consta)`. Confirmar que o log do FOR-171 continua igual e que uma busca pública **não** cria linha de progresso.
+
+### Comentários (Fase 6):
+- Frontend: worktree `.claude/worktrees/for-173-espelho-migration` a partir de `origin/jjuniorfilho/precatorio-sp` **já atualizada** (o Lovable tinha avançado a branch para `194ad67`); timestamps `20260928130000..130300`; teste estático em bun (`src/lib/leads-avulso-migration.for173.test.ts`, 8 casos; a mutação da policy do anon derruba exatamente 1). Os 31 testes vizinhos de migration continuam verdes.
+- Armadilha evitada: `git worktree add -b` deixou o upstream da branch nova apontando para a branch do Lovable; o upstream foi removido e o push feito com refspec explícito.
+- O espelho **não aplica nada** (migrations do frontend são aplicadas manualmente no SQL Editor do Lovable).
 
 ## Riscos e pontos de atenção
 - **FOR-175:** o `DROP NOT NULL` em `relacao` passa a gravar leads do `capturar-lead-publico` (hoje perdidos). Comportamento novo em produção; constar no PR e conferir o grid depois.
