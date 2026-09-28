@@ -1,19 +1,18 @@
 -- FOR-173 (6) — ROTEIRO DE TESTE no Postgres REAL (comportamento que os testes de texto do repo não provam).
 --
 -- JÁ VALIDADO em Postgres 15 real, num sandbox descartável que replica o schema vivo (sql/sandbox/
--- for173_validate_local.sh: 38 ok, 0 FALHOU, inclusive com os DEFAULT PRIVILEGES do Supabase). Rode-o TAMBÉM no
+-- for173_validate_local.sh: 39 ok, 0 FALHOU, inclusive com os DEFAULT PRIVILEGES do Supabase). Rode-o TAMBÉM no
 -- SQL Editor do projeto Supabase do worker, DEPOIS de aplicar os SQLs 1 a 4 e de o SQL 5 (verificação) dar tudo
 -- ok = true: o sandbox é uma réplica, e só o banco real prova papéis/grants/policies reais.
 --
--- COMO NADA FICA GRAVADO: o teste inteiro roda num único bloco DO que termina SEMPRE com RAISE EXCEPTION.
--- O erro desfaz TODAS as escritas do teste (leads e linhas de progresso de mentira). O RELATÓRIO vem na
--- própria MENSAGEM DO ERRO ("ERROR: FOR-173 roteiro transacional — RESUMO: N ok, M FALHOU ..."): copie-a e
--- cole no chat. (O SQL Editor mostra só o resultado da última instrução, por isso não há BEGIN/ROLLBACK/
--- SELECT final.) O relatório sai numa LINHA SÓ (casos separados por " ¦ ") porque o editor do Supabase corta
--- a mensagem do erro depois da primeira quebra de linha: o RESUMO e as FALHAS vêm PRIMEIRO, e depois todos
--- os casos.
--- As duas funções auxiliares ficam em pg_temp (somem com a sessão) e são criadas na mesma mensagem, então
--- também são desfeitas pelo erro.
+-- RESULTADO = UMA TABELA (como o SQL 5): status | caso | esperado | atual, com a linha RESUMO e as FALHOU no topo.
+-- Use "Export CSV" e cole o CSV no chat. Esperado: RESUMO "38 ok, 0 FALHOU" e nenhuma linha FALHOU.
+--
+-- COMO NADA FICA GRAVADO: os casos rodam dentro de um SUB-BLOCO plpgsql que termina SEMPRE com um RAISE
+-- EXCEPTION capturado. No PL/pgSQL, uma exceção capturada DESFAZ tudo o que o sub-bloco gravou no banco
+-- (leads e linhas de progresso de mentira), mas as VARIÁVEIS locais sobrevivem — é assim que o relatório sai
+-- depois do desfazer. Uma última linha do relatório confere que nada ficou gravado. As funções auxiliares e a
+-- tabela do relatório ficam em pg_temp (somem com a sessão).
 --
 -- Cobre o que só o banco real prova:
 --   * lead avulso: os CHECKs (um DEPRE só, sem consentimento, documento com 11/14 dígitos), o índice único
@@ -28,6 +27,9 @@
 -- recuando iniciada_em à mão (UPDATE) antes de chamar a RPC.
 --
 -- Códigos esperados: 23514 = CHECK; 23505 = índice único; 42501 = RLS/permissão negada; P0001 = RAISE da RPC.
+
+DROP TABLE IF EXISTS pg_temp.for173_relatorio;
+CREATE TEMP TABLE for173_relatorio (n int, status text, caso text, esperado text, atual text);
 
 CREATE OR REPLACE FUNCTION pg_temp.tenta(p_sql text, p_role text DEFAULT NULL) RETURNS text
 LANGUAGE plpgsql AS $f$
@@ -48,8 +50,9 @@ $f$;
 
 CREATE OR REPLACE FUNCTION pg_temp.linha(p_caso text, p_esperado text, p_atual text) RETURNS text
 LANGUAGE sql AS $f$
-  SELECT CASE WHEN p_atual LIKE p_esperado || '%' THEN 'ok ' ELSE 'FALHOU ' END
-         || p_caso || '  [esperado: ' || p_esperado || ' | atual: ' || p_atual || ']' || ' ¦ '
+  -- campos separados por chr(31), registros por chr(30): o DO desmonta isto em linhas da tabela do relatório
+  SELECT (CASE WHEN p_atual LIKE p_esperado || '%' THEN 'ok' ELSE 'FALHOU' END)
+         || chr(31) || p_caso || chr(31) || p_esperado || chr(31) || p_atual || chr(30)
 $f$;
 
 DO $do$
@@ -57,11 +60,12 @@ DECLARE
   rel     text := '';
   falhas  int;
   oks     int;
-  so_falhas text;
   d1      constant text := '0000101-01.2020.8.26.0500';   -- DEPREs de mentira (não existem na base)
 BEGIN
   RESET ROLE;
 
+  -- Sub-bloco: TUDO que ele grava é desfeito pelo RAISE final (capturado abaixo); `rel` sobrevive.
+  BEGIN
   -- ================= LEADS (papel do editor; RLS não se aplica ao dono da tabela) =================
   rel := rel || pg_temp.linha('avulso válido (email/relacao/nome/telefone NULL) INSERE',
     'OK', pg_temp.tenta($q$INSERT INTO public.leads (processo_depre, origem, lgpd_consent, documento)
@@ -181,14 +185,37 @@ BEGIN
   rel := rel || pg_temp.linha('anon NÃO lê a view leads_processos (PII)', 'BLOQUEADO 42501',
     pg_temp.tenta('SELECT count(*) FROM public.leads_processos', 'anon'));
 
-  SELECT count(*) INTO falhas FROM regexp_matches(rel, '(^| ¦ )FALHOU ', 'g');
-  SELECT count(*) INTO oks    FROM regexp_matches(rel, '(^| ¦ )ok ', 'g');
-  so_falhas := coalesce(
-    nullif(array_to_string(ARRAY(SELECT x FROM unnest(string_to_array(rel, ' ¦ ')) AS x WHERE x LIKE 'FALHOU %'), ' ¦ '), ''),
-    'nenhuma');
+    RAISE EXCEPTION 'for173_rollback_proposital';
+  EXCEPTION WHEN OTHERS THEN
+    IF SQLERRM <> 'for173_rollback_proposital' THEN
+      rel := rel || pg_temp.linha('ERRO INESPERADO no meio do roteiro (os casos seguintes NÃO rodaram)', 'sem erro',
+                                  SQLSTATE || ' ' || left(SQLERRM, 200));
+    END IF;
+  END;
+  RESET ROLE;
 
-  -- UMA LINHA SÓ, resumo e falhas primeiro (o editor corta a mensagem depois da primeira quebra de linha).
-  RAISE EXCEPTION E'FOR-173 roteiro transacional — RESUMO: % ok, % FALHOU — NADA foi gravado (este erro desfaz o teste inteiro). FALHAS: % ¦¦ TODOS OS CASOS: %',
-    oks, falhas, so_falhas, rel;
+  -- Prova, FORA do sub-bloco, de que o desfazer funcionou: nenhuma linha de mentira sobrou.
+  rel := rel || pg_temp.linha('NADA ficou gravado (leads e progresso de mentira foram desfeitos)', 'sim',
+    CASE WHEN (SELECT count(*) FROM public.leads WHERE processo_depre LIKE '0000%-01.2020.8.26.0500%')
+            + (SELECT count(*) FROM public.pagamentos_consultas_progresso WHERE processo_depre LIKE '0000%-01.2020.8.26.0500') = 0
+         THEN 'sim' ELSE 'NAO — sobraram linhas de teste' END);
+
+  SELECT count(*) FILTER (WHERE split_part(x, chr(31), 1) = 'FALHOU'),
+         count(*) FILTER (WHERE split_part(x, chr(31), 1) = 'ok')
+    INTO falhas, oks
+    FROM unnest(string_to_array(rtrim(rel, chr(30)), chr(30))) AS x;
+
+  INSERT INTO pg_temp.for173_relatorio (n, status, caso, esperado, atual)
+  VALUES (0, 'RESUMO', oks || ' ok, ' || falhas || ' FALHOU', '0 FALHOU',
+          CASE WHEN falhas = 0 THEN 'tudo certo' ELSE 'HÁ FALHAS — veja as linhas FALHOU' END);
+
+  INSERT INTO pg_temp.for173_relatorio (n, status, caso, esperado, atual)
+  SELECT ord, split_part(x, chr(31), 1), split_part(x, chr(31), 2), split_part(x, chr(31), 3), split_part(x, chr(31), 4)
+    FROM unnest(string_to_array(rtrim(rel, chr(30)), chr(30))) WITH ORDINALITY AS t(x, ord);
 END
 $do$;
+
+-- ÚLTIMA instrução = o resultado que o editor mostra (e que o "Export CSV" exporta): RESUMO, falhas, depois os ok.
+SELECT status, caso, esperado, atual
+  FROM pg_temp.for173_relatorio
+ ORDER BY CASE status WHEN 'RESUMO' THEN 0 WHEN 'FALHOU' THEN 1 ELSE 2 END, n;

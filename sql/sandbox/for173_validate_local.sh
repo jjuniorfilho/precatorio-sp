@@ -56,14 +56,14 @@ total="$(echo "$verif" | grep -c '|' || true)"; certos="$(echo "$verif" | grep -
 [[ "$total" -ge 30 && "$total" == "$certos" ]] || { echo "$verif" | grep -v '|t$' >&2; falha "SQL 5: $certos/$total ok=true"; }
 ok "SQL 5 (verificação): $certos/$total ok = true"
 
-# --- SQL 6: roteiro comportamental (o RAISE final carrega o relatório e desfaz tudo)
-rel="$(psql_ -d sandbox -f "$ROOT/sql/2026-09-28_for173_6_roteiro_teste_transacional.sql" 2>&1 || true)"
-resumo="$(echo "$rel" | grep -E 'RESUMO:' | head -1)"
-[[ "$resumo" =~ ,\ 0\ FALHOU ]] || { echo "$rel" | grep -oE 'FALHAS: .*' | head -1 >&2; falha "SQL 6: $resumo"; }
-# o editor do Supabase corta a mensagem do erro depois da 1ª quebra de linha: o relatório TEM que sair numa linha só
-[[ "$(echo "$rel" | grep -c 'FOR-173 roteiro transacional')" == "1" && "$(echo "$rel" | grep -c 'TODOS OS CASOS')" == "1" ]] \
-  || falha "SQL 6: o relatório não saiu numa linha só (o editor do Supabase o cortaria)"
-ok "SQL 6 (roteiro, relatório em 1 linha): ${resumo#*RESUMO: }" | cut -c1-140
+# --- SQL 6: roteiro comportamental. Agora DEVOLVE UMA TABELA (RESUMO, FALHOU..., ok...) — o editor do Supabase mantém a
+# tabela velha na tela quando o script termina em erro, então o relatório não pode depender de um erro final.
+rel="$(psql_ -d sandbox -At -f "$ROOT/sql/2026-09-28_for173_6_roteiro_teste_transacional.sql" 2>&1 || true)"
+resumo="$(echo "$rel" | grep '^RESUMO|' | head -1)"
+[[ "$resumo" =~ \|[0-9]+\ ok,\ 0\ FALHOU\| ]] || { echo "$rel" | grep -E '^(FALHOU\||ERROR)' >&2; falha "SQL 6: ${resumo:-sem linha RESUMO}"; }
+[[ "$(echo "$rel" | grep -c '^FALHOU|')" == "0" ]] || falha "SQL 6: há linhas FALHOU"
+[[ "$(echo "$rel" | grep -c '^ok|NADA ficou gravado')" == "1" ]] || falha "SQL 6: o desfazer não foi confirmado pelo próprio relatório"
+ok "SQL 6 (roteiro, devolve tabela): $(echo "$resumo" | cut -d'|' -f2)"
 
 # --- nada persistiu; e o worker fala com a RPC pelos nomes certos (chamada com argumentos nomeados)
 [[ "$(psql_ -d sandbox -Atc "select (select count(*) from leads)+(select count(*) from pagamentos_consultas_progresso)")" == "0" ]] \
