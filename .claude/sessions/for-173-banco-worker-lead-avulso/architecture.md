@@ -88,7 +88,7 @@ CREATE TABLE IF NOT EXISTS public.pagamentos_consultas_progresso (
 ### 3.4 Migration de `leads` (defensiva)
 DDL real desconhecido → SQL `2026-09-28_for173_1_leads_origem.sql` usa `DO $$` que consulta `information_schema.columns` e só faz `DROP NOT NULL` se `is_nullable = 'NO'`; para o CHECK de `relacao`, descobre o nome em `pg_constraint` e o recria aceitando NULL (`relacao IS NULL OR relacao IN (...)`). `origem`/`criado_por` via `ADD COLUMN IF NOT EXISTS`. Um SQL de diagnóstico read-only (`..._0_diag_leads_ddl.sql`) lista colunas, NOT NULLs, CHECKs, triggers e dependências de views para o humano rodar antes.
 
-`nome`/`email`/`telefone`: **não** relaxar por padrão. O `criarLeadAvulso` (FOR-174) grava valores neutros se forem NOT NULL (`nome='Lead avulso'`, e-mail/telefone vazios) — decisão do Gate 1 abaixo.
+`nome`/`email`/`telefone`: **decisão do Gate 1: relaxar para NULL** (`DROP NOT NULL` condicional). O operador pode digitar esses campos se quiser (opcionais no formulário do FOR-174); quando vazios, ficam NULL, sem valor neutro inventado. Cuidados que o diag precisa confirmar antes da migration: (a) CHECK/trigger que exija e-mail/telefone válido ou não vazio; (b) índice UNIQUE em `email`/`telefone`/`processo_depre` (NULL não colide, mas `''` colidiria — o FOR-174 grava NULL, nunca string vazia); (c) `reuse-lead`/`capturar-lead-publico`/`enviar-relatorio`/`processar-comunicacoes`, que hoje podem assumir e-mail preenchido em todo lead (avaliar no plano se precisam ignorar `origem='avulso'` — pelo menos o envio de relatório/comunicações não pode disparar para lead sem e-mail).
 
 ### 3.5 Views
 `leads_com_progresso` usa `l.*`; `CREATE OR REPLACE` falha quando `leads` ganha coluna → `DROP VIEW` + `CREATE`. `leads_processos` depende dela → ordem: DROP `leads_processos`, DROP `leads_com_progresso`, CREATE `leads_com_progresso` (mesmo corpo do FOR-170), CREATE `leads_processos` (mesmo corpo do FOR-169 + `origem`, `criado_por`). GRANTs refeitos (`REVOKE ALL ... FROM PUBLIC, anon, authenticated; GRANT ALL ... TO service_role`, `security_invoker = true`). Numa única transação (`BEGIN/COMMIT`) para o grid nunca ficar sem view.
@@ -154,12 +154,12 @@ Nenhuma biblioteca nova. Dependências operacionais: SQL Editor do Supabase (hum
 ## 10. Ordem de aplicação (humano)
 1. Rodar `..._0_diag_leads_ddl.sql` e conferir. 2. `..._1_leads_origem.sql`. 3. `..._2_views_origem.sql` (fora do horário de uso). 4. `..._3_tabela_progresso.sql`. 5. `..._4_rpcs_progresso.sql`. 6. Deploy do worker (pm2 restart). 7. FOR-174.
 
-## 11. Clarificações para o Gate 1
-1. **Escopo do "fora do funil":** views só expõem `origem`; a exclusão das métricas é filtro TS no FOR-174 (seção 3.5). Confirma corrigir o texto do FOR-173?
-2. **Espelho da migration no repo frontend:** o `frontend/supabase/migrations/` é onde os SQLs de leads (FOR-167..170) vivem para o Lovable. Abrir um PR pequeno separado no frontend com o mesmo SQL, ou manter só em `cortex-v1/sql/` (aplicação manual, como FOR-171)?
-3. **`nome/email/telefone` do avulso:** manter NOT NULL e o FOR-174 grava valores neutros (recomendado), ou relaxar para NULL agora?
-4. **Grants:** leitura só `service_role` (front via server function) — de acordo, ou prefere `anon` como `listar_consultas_pagamento`?
-5. **Diag antes da migration:** você roda `..._0_diag_leads_ddl.sql` no SQL Editor e cola o resultado, ou a migration defensiva basta e o diag fica só como conferência pós-aplicação?
+## 11. Decisões do Gate 1 (respondidas pelo humano em 2026-09-28)
+1. **Escopo do "fora do funil":** SIM — views só expõem `origem`/`criado_por`; a exclusão das métricas é filtro TS `origem='site'` no FOR-174 (seção 3.5). Texto do FOR-173 corrigido no Linear.
+2. **Espelho da migration:** SIM — PR pequeno e separado no repo `frontend` (`supabase/migrations/`) com o mesmo SQL, além de `cortex-v1/sql/`.
+3. **`nome/email/telefone` do avulso:** relaxar para **NULL**, campos opcionais que o operador pode digitar (muda o FOR-172/174: o formulário deixa de ter "campo único"). Ver seção 3.4.
+4. **Grants:** leitura só `service_role` (front via server function).
+5. **Diag antes da migration:** o humano roda `sql/2026-09-28_for173_0_diag_leads_ddl.sql` no SQL Editor e cola o resultado **antes de a migration ser escrita** (Fase 3). A migration `..._1_leads_origem.sql` e a recriação das views `..._2_views_origem.sql` (que precisam da definição viva das views, `definicao_view` do diag) só saem depois disso.
 
 ---
 
