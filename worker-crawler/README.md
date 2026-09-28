@@ -210,7 +210,10 @@ Para o admin mostrar uma barra de progresso **real**, a consulta manual publica 
   A RPC de escrita apaga linhas `concluida|falha` com mais de 7 dias.
 - **`nova` (renova `iniciada_em`)** vai no `na_fila` e é **reenviado em toda escrita até uma dar certo**: se a do `na_fila` falhar, a seguinte ainda renova (o front reconhece a consulta nova pela mudança de `iniciada_em`).
 - **Timeout por escrita:** 5s (`PROGRESSO_TIMEOUT_MS`, `abortSignal`); uma RPC travada não prende as escritas seguintes. Pior caso: o `drenar` segura a resposta HTTP por até 3s no fim da consulta; o front deve tratar a resposta HTTP como a fonte de verdade do fim.
+- **Chamada sem `origem`** (`POST /valor-pago` sem o campo) conta como `manual` e, portanto, publica progresso; a busca pública deve mandar `origem: "busca_publica"` (o código do repo manda; confirmar a versão publicada da edge `buscar-precatorio`).
 - **Compatível com front antigo:** só grava progresso a mais; o contrato do `POST /valor-pago` não mudou.
+
+Validação dos SQLs em Postgres real, sem tocar em produção: `sql/sandbox/for173_validate_local.sh` (requer `brew install postgresql@15`).
 
 SQL (aplicar em ordem no SQL Editor do banco do worker): `sql/2026-09-28_for173_1_leads_avulso.sql`,
 `_2_view_leads_processos_origem.sql`, `_3_tabela_progresso.sql`, `_4_rpcs_progresso.sql`; **depois** deploy do worker
