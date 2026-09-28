@@ -99,6 +99,9 @@ CREATE TABLE IF NOT EXISTS public.pagamentos_consultas_progresso (
 - Tentativa em curso: hoje `passos.tentativas = tentativa` é setado antes de `tentarBusca`, mas o passo só é registrado **depois** da tentativa. Novo `passos.tentativa(n)` atribui e notifica **sem** acrescentar passo (o log do FOR-171 fica idêntico).
 - Fim: `concluida` (com `resultado`) ou `falha` (com `etapa_falha`), **antes** do `registrar` do log; falha aqui não impede o log.
 
+### 3.2b Quem grava progresso (decisão do plan.md)
+Só `origem === 'manual'` (disparo do admin) liga o reporter. Crawler e busca pública não precisam de progresso e só gerariam escritas inúteis; o `CHECK` de `origem` na tabela continua aceitando as três para uso futuro. O ponto único de instrumentação é `consultarEPersistirPagamentos` (não `handleValorPago`): é o único caminho do endpoint e é onde `na_fila` nasce antes da fila. Semântica de `etapa` = etapa **em andamento** (o reporter mapeia "concluí X" → `PROXIMA[X]`; `tentativa(n)` marca `busca` com a tentativa N).
+
 ### 3.3 Best-effort e ordenação
 `pagamentos-progresso.ts` mantém uma cadeia de promises (`ultima = ultima.then(upsert).catch(log)`): upserts saem **em ordem**, nunca em paralelo, e nunca lançam para o chamador. O fim da consulta espera a cadeia esvaziar com teto curto (ex. 3s) para o estado final não ser sobrescrito por um passo atrasado. Sem timer/debounce: a cadência natural é baixa.
 
