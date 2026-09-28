@@ -138,17 +138,23 @@ test("SQL 5: confere os MESMOS nomes que o SQL 1 cria (constraints, índice, pol
   }
 });
 
-test("SQL 6 (roteiro): rollback garantido por construção — sem COMMIT, sem BEGIN/ROLLBACK, termina com RAISE EXCEPTION", () => {
+test("SQL 6 (roteiro): rollback garantido por construção e resultado em TABELA (não em erro)", () => {
   const raw = sql("2026-09-28_for173_6_roteiro_teste_transacional.sql");
   const cod = raw.split("\n").filter((l) => !l.trim().startsWith("--")).join("\n");
   assert.doesNotMatch(cod, /\bCOMMIT\b/i, "nada pode ser confirmado");
-  assert.doesNotMatch(cod, /^\s*(BEGIN|START TRANSACTION|ROLLBACK)\s*;/im, "o SQL Editor mostra só a última instrução: nada de BEGIN/ROLLBACK soltos");
-  // o ÚLTIMO comando do DO é o RAISE EXCEPTION que carrega o relatório e desfaz tudo
-  assert.match(cod.trim(), /RAISE EXCEPTION E'FOR-173 roteiro transacional[\s\S]*END\s*\$do\$;\s*$/);
-  // só pg_temp para helpers (somem com a sessão e são desfeitos pelo erro)
+  assert.doesNotMatch(cod, /^\s*(BEGIN|START TRANSACTION|ROLLBACK)\s*;/im, "nada de BEGIN/ROLLBACK soltos");
+  // o desfazer é um RAISE dentro de um sub-bloco que o captura (variáveis sobrevivem, gravações não)
+  assert.match(cod, /RAISE EXCEPTION 'for173_rollback_proposital';\s*EXCEPTION WHEN OTHERS THEN/);
+  assert.match(cod, /IF SQLERRM <> 'for173_rollback_proposital' THEN/, "erro inesperado tem que virar linha FALHOU, não ser engolido");
+  // a ÚLTIMA instrução é o SELECT que o editor mostra e o Export CSV exporta (o editor mantém a tabela velha se o script termina em erro)
+  assert.match(cod.trim(), /SELECT status, caso, esperado, atual\s+FROM pg_temp\.for173_relatorio\s+ORDER BY[\s\S]*;$/);
+  assert.doesNotMatch(cod.replace(/RAISE EXCEPTION 'for173_rollback_proposital'/, ""), /RAISE EXCEPTION/, "nenhum outro RAISE EXCEPTION: o script não pode terminar em erro");
+  // só pg_temp para helpers (somem com a sessão)
   assert.doesNotMatch(cod, /CREATE (OR REPLACE )?FUNCTION (?!pg_temp\.)/i);
-  // usa now() fixo por transação corretamente: recua iniciada_em à mão antes de provar preserva/renova
+  // now() é fixo por transação: recua iniciada_em à mão antes de provar preserva/renova
   assert.match(cod, /UPDATE public\.pagamentos_consultas_progresso SET iniciada_em = now\(\) - interval '1 hour'/);
+  // confere, FORA do sub-bloco, que nada sobrou
+  assert.match(cod, /NADA ficou gravado/);
 });
 
 test("SQL 6: os nomes das RPCs e das constraints que ele exercita existem nos SQLs 1 e 4", () => {
