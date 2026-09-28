@@ -71,7 +71,7 @@ test("RPC de leitura: SÓ service_role (o front lê por server function)", () =>
 });
 
 test("RPC de escrita: valida DEPRE .0500 e estado; etapas fora da lista viram 'desconhecida'", () => {
-  assert.match(RPCS, /p_processo_depre !~ '\\\.8\\\.26\\\.0500\$'/);
+  assert.ok(RPCS.includes(String.raw`p_processo_depre !~ '^\d{7}-\d{2}\.\d{4}\.8\.26\.0500$'`), "DEPRE completo, não só o sufixo");
   assert.match(RPCS, /p_estado NOT IN \('na_fila', 'em_andamento', 'concluida', 'falha'\)/);
   const etapas = ["na_fila", "iniciando", "abrir_portal", "obter_link", "abrir_pesquisa", "busca", "resultado_carregou", "ler_resultado", "extrair_pagamentos", "persistir"];
   assert.ok(RPCS.includes(`p_etapa IN (${etapas.map((e) => `'${e}'`).join(", ")})`));
@@ -81,6 +81,23 @@ test("RPC de escrita: valida DEPRE .0500 e estado; etapas fora da lista viram 'd
 test("RPC de escrita: p_nova renova iniciada_em; textos truncados; limpeza preguiçosa de 7 dias", () => {
   assert.match(RPCS, /iniciada_em = CASE WHEN COALESCE\(p_nova, false\) THEN now\(\) ELSE t\.iniciada_em END/);
   assert.match(RPCS, /left\(p_detalhe, 200\)/);
-  assert.match(RPCS, /left\(p_etapa_falha, 40\)/);
   assert.match(RPCS, /estado IN \('concluida', 'falha'\) AND atualizado_em < now\(\) - interval '7 days'/);
+  assert.match(RPCS, /estado IN \('na_fila', 'em_andamento'\) AND atualizado_em < now\(\) - interval '1 day'/, "órfãs de worker morto");
+});
+
+test("RPC de escrita: etapa_falha também é validada contra a lista (não guarda texto livre)", () => {
+  assert.match(RPCS, /v_etapa_falha := CASE WHEN p_etapa_falha IS NULL THEN NULL WHEN p_etapa_falha IN \(/);
+  assert.doesNotMatch(RPCS, /left\(p_etapa_falha/);
+});
+
+test("CONTRATO worker↔SQL: os 10 nomes p_* de registrarProgressoPagamento são exatamente os da RPC", () => {
+  const ts = readFileSync(new URL("./supabase.ts", import.meta.url), "utf-8");
+  const bloco = ts.match(/registrarProgressoPagamento\(r: RegistroProgressoPagamento\)[\s\S]*?\.abortSignal/);
+  assert.ok(bloco, "não achou registrarProgressoPagamento em supabase.ts");
+  const doTs = [...bloco![0].matchAll(/\b(p_[a-z_]+):/g)].map((m) => m[1]!).sort();
+  const assinatura = RPCS.match(/registrar_progresso_consulta_pagamento\( (.*?) \) RETURNS void/);
+  assert.ok(assinatura, "não achou a assinatura da RPC");
+  const doSql = [...assinatura![1]!.matchAll(/\b(p_[a-z_]+) /g)].map((m) => m[1]!).sort();
+  assert.equal(doTs.length, 10);
+  assert.deepEqual(doTs, doSql, "divergência de nome faria TODA escrita de progresso falhar em silêncio");
 });

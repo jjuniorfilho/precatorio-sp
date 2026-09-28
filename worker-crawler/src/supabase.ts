@@ -435,10 +435,15 @@ export interface RegistroProgressoPagamento {
   nova: boolean;
 }
 
+/** Teto por escrita de progresso: `supabase.rpc` não tem timeout próprio e uma RPC travada prenderia as
+ * escritas seguintes da mesma consulta (o estado final nunca chegaria). */
+export const PROGRESSO_TIMEOUT_MS = 5000;
+
 /** Publica o progresso (RPC SECURITY DEFINER `registrar_progresso_consulta_pagamento`). Lança em caso de
  * erro; o reporter (pagamentos-progresso.ts) engole: progresso é auxiliar e não pode derrubar a consulta. */
 export async function registrarProgressoPagamento(r: RegistroProgressoPagamento): Promise<void> {
-  const { error } = await supabase.rpc("registrar_progresso_consulta_pagamento", {
+  const { error } = await supabase
+    .rpc("registrar_progresso_consulta_pagamento", {
     p_processo_depre: r.processoDepre,
     p_estado: r.estado,
     p_etapa: r.etapa,
@@ -449,6 +454,7 @@ export async function registrarProgressoPagamento(r: RegistroProgressoPagamento)
     p_etapa_falha: r.etapaFalha,
     p_origem: r.origem,
     p_nova: r.nova,
-  });
+    })
+    .abortSignal(AbortSignal.timeout(PROGRESSO_TIMEOUT_MS));
   if (error) throw new Error(`registrarProgressoPagamento: ${error.message}`);
 }

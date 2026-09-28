@@ -28,9 +28,11 @@ test("SQL 1: email e relacao passam a aceitar NULL; nome/telefone não são toca
   assert.doesNotMatch(LEADS, /ALTER COLUMN (nome|telefone|processo_depre) /);
 });
 
-test("SQL 1: NÃO cria `origem` nem CHECK nela (a coluna já existe e é livre)", () => {
+test("SQL 1: NÃO cria `origem` nem CHECK que RESTRINJA os valores dela (a coluna já existe e é livre)", () => {
   assert.doesNotMatch(LEADS, /ADD COLUMN[^;]*\borigem\b/i);
-  assert.doesNotMatch(LEADS, /CHECK \(origem/i);
+  // CHECKs que só CONDICIONAM outras colunas a origem='avulso' são permitidos (invariantes do avulso);
+  // o que não pode existir é `CHECK (origem IN (...))`/`origem = ...` limitando os valores livres do fluxo público.
+  assert.doesNotMatch(LEADS, /CHECK \(origem (IN|=|<>|!=|~)/i);
 });
 
 test("SQL 1: nada destrutivo (sem DROP TABLE/COLUMN/VIEW/CONSTRAINT nem DELETE)", () => {
@@ -48,6 +50,22 @@ test("SQL 1: índice único PARCIAL — um avulso por DEPRE", () => {
 test("SQL 1: documento só aceita null ou 11/14 dígitos, criado de forma idempotente", () => {
   assert.match(LEADS, /IF NOT EXISTS \( SELECT 1 FROM pg_constraint WHERE conrelid = 'public\.leads'::regclass AND conname = 'leads_documento_check' \)/);
   assert.match(LEADS, /CHECK \(documento IS NULL OR documento ~ '\^\\d\{11\}\(\\d\{3\}\)\?\$'\)/);
+});
+
+test("SQL 1: invariantes do avulso no BANCO (sem consentimento; um único DEPRE)", () => {
+  assert.match(LEADS, /conname = 'leads_avulso_sem_consent_check'/);
+  assert.match(LEADS, /CHECK \(origem IS DISTINCT FROM 'avulso' OR lgpd_consent = false\)/);
+  assert.match(LEADS, /conname = 'leads_avulso_um_depre_check'/);
+  assert.match(LEADS, /CHECK \(origem IS DISTINCT FROM 'avulso' OR \(processo_depre IS NOT NULL AND processo_depre !~ ','\)\)/);
+});
+
+test("SQL 1: o anon NÃO consegue forjar avulso nem gravar colunas novas; email/relacao seguem obrigatórios pra ele", () => {
+  assert.match(
+    LEADS,
+    /ALTER POLICY anon_insert_leads ON public\.leads WITH CHECK \( lgpd_consent = true AND origem IS DISTINCT FROM 'avulso' AND criado_por IS NULL AND documento IS NULL AND email IS NOT NULL AND relacao IS NOT NULL \)/,
+  );
+  // ALTER POLICY é atômico: nunca DROP POLICY (haveria um instante sem policy e o cadastro do site falharia).
+  assert.doesNotMatch(LEADS, /DROP POLICY/i);
 });
 
 test("SQL 1: não mexe em views (criado_por/documento ficam fora delas)", () => {

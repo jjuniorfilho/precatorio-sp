@@ -56,9 +56,21 @@ export function proximaEtapa(etapa: Etapa, status: "ok" | "erro" | "info"): stri
 }
 
 export function criarReporter(op: OpcoesReporter): ProgressoReporter {
-  const log = op.log ?? ((msg, err) => console.error(`[progresso] ${msg} (${op.processoDepre}):`, err));
+  const logBruto = op.log ?? ((msg, err) => console.error(`[progresso] ${msg} (${op.processoDepre}):`, err));
+  // Um `log` injetado que lança viraria promise rejeitada sem handler: blindado como o resto.
+  const log = (msg: string, err: unknown): void => {
+    try {
+      logBruto(msg, err);
+    } catch {
+      /* log é best-effort */
+    }
+  };
   let cadeia: Promise<void> = Promise.resolve();
   let tentativaAtual = 0;
+  // `nova` (renovar `iniciada_em`) é reenviado em TODA escrita até UMA dar certo: se a do `na_fila` falhar,
+  // a seguinte ainda renova; sem isso o front (que reconhece a consulta nova pela mudança de `iniciada_em`)
+  // nunca veria a linha como nova e ficaria sem barra até o timeout.
+  let novaConfirmada = false;
 
   const enfileirar = (r: Omit<RegistroProgressoPagamento, "processoDepre" | "maxTentativas" | "origem">): void => {
     const registro: RegistroProgressoPagamento = {
@@ -68,7 +80,13 @@ export function criarReporter(op: OpcoesReporter): ProgressoReporter {
       ...r,
     };
     // A cadeia nunca rejeita: cada escrita engole o próprio erro. Sequencial por construção.
-    cadeia = cadeia.then(() => op.registrar(registro)).catch((e) => log("registrar falhou", e));
+    cadeia = cadeia
+      .then(async () => {
+        const nova = registro.nova || !novaConfirmada;
+        await op.registrar({ ...registro, nova });
+        if (nova) novaConfirmada = true;
+      })
+      .catch((e) => log("registrar falhou", e));
   };
 
   const emAndamento = (etapa: string, detalhe: string | null): void =>

@@ -13,6 +13,15 @@
 --                           em log, nunca exposto a anon (RLS leads_admin_only já protege a tabela).
 --   3. `email` e `relacao` passam a aceitar NULL.
 --   4. Índice único parcial: no máximo UM lead avulso por DEPRE (corrida de duplo clique).
+--   5. Invariantes do avulso NO BANCO (não só no código): CHECK `avulso ⇒ lgpd_consent = false` e
+--      `avulso ⇒ um único .0500 (sem vírgula)`.
+--   6. Endurece a policy `anon_insert_leads` (achado da revisão): o `anon` tem GRANT INSERT na tabela
+--      inteira e a policy só exigia `lgpd_consent = true`; sem isto qualquer pessoa com a anon key pública
+--      poderia gravar `origem = 'avulso'`, `documento` ou `criado_por` (poluir o grid, ocupar o índice único
+--      e bloquear o cadastro real do operador). A nova WITH CHECK também preserva o que o NOT NULL de
+--      email/relacao garantia no caminho anônimo. O cadastro do site (`src/routes/cadastro.tsx`) envia
+--      email e relacao e NUNCA origem/criado_por/documento, então não é afetado; `capturar-lead-publico`
+--      usa service_role (ignora RLS).
 --
 -- ATENÇÃO — efeito colateral BENÉFICO no FOR-175: a edge `capturar-lead-publico` insere sem `relacao`
 -- (NOT NULL até aqui) e por isso nunca gravou nenhum lead. Com o DROP NOT NULL ela passa a gravar,
@@ -24,7 +33,9 @@
 -- exigiria DROP VIEW; o modal lê essas colunas direto de `leads`.
 --
 -- Re-executável. Aplicar no SQL Editor do projeto Supabase que o worker usa (nxkvfc…), ANTES dos SQLs
--- 2, 3 e 4. Fora do horário de pico não é necessário (sem DROP, sem lock longo).
+-- 2, 3 e 4. Sem DROP e sem lock longo. ATENÇÃO: este é o ÚNICO SQL da série que mexe no caminho PÚBLICO
+-- (policy anon_insert_leads, via ALTER POLICY — atômico, sem janela sem policy). Depois de aplicar, teste o
+-- cadastro do site (/cadastro) uma vez para confirmar que o INSERT anônimo continua passando.
 
 ALTER TABLE public.leads ADD COLUMN IF NOT EXISTS criado_por uuid;
 ALTER TABLE public.leads ADD COLUMN IF NOT EXISTS documento text;
@@ -56,5 +67,40 @@ END $$;
 CREATE UNIQUE INDEX IF NOT EXISTS uq_leads_avulso_processo_depre
   ON public.leads (processo_depre)
   WHERE origem = 'avulso';
+
+-- Invariantes do avulso garantidas pelo banco. Nenhuma linha existente é afetada (todas têm origem NULL).
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_constraint
+     WHERE conrelid = 'public.leads'::regclass AND conname = 'leads_avulso_sem_consent_check'
+  ) THEN
+    -- avulso nunca tem consentimento do titular: nenhuma comunicação automática pode partir dele.
+    ALTER TABLE public.leads
+      ADD CONSTRAINT leads_avulso_sem_consent_check
+      CHECK (origem IS DISTINCT FROM 'avulso' OR lgpd_consent = false);
+  END IF;
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_constraint
+     WHERE conrelid = 'public.leads'::regclass AND conname = 'leads_avulso_um_depre_check'
+  ) THEN
+    -- avulso = exatamente um DEPRE (o índice único parcial só compara o texto exato do CSV).
+    ALTER TABLE public.leads
+      ADD CONSTRAINT leads_avulso_um_depre_check
+      CHECK (origem IS DISTINCT FROM 'avulso' OR (processo_depre IS NOT NULL AND processo_depre !~ ','));
+  END IF;
+END $$;
+
+-- Endurece o INSERT anônimo. ALTER POLICY é atômico (não existe instante sem policy) e re-executável.
+-- A policy `anon_insert_leads` existe no banco vivo (diagnóstico de 2026-09-28).
+ALTER POLICY anon_insert_leads ON public.leads
+  WITH CHECK (
+    lgpd_consent = true
+    AND origem IS DISTINCT FROM 'avulso'
+    AND criado_por IS NULL
+    AND documento IS NULL
+    AND email IS NOT NULL
+    AND relacao IS NOT NULL
+  );
 
 NOTIFY pgrst, 'reload schema';

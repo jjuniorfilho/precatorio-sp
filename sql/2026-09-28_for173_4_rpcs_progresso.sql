@@ -10,9 +10,12 @@
 -- Escrita — contrato (assinatura fixada em plan.md):
 --   * p_nova = true  → nova consulta: renova `iniciada_em` (o front usa a mudança de iniciada_em para
 --     saber que a linha é da consulta que ele acabou de disparar, sem depender de relógio do cliente).
---   * estado inválido → exceção; etapa fora da lista → 'desconhecida'; resultado/origem inválidos → NULL;
---     textos truncados; contadores limitados. Nunca guarda mensagem crua de erro do banco.
---   * Limpeza preguiçosa: a cada escrita apaga linhas concluida|falha com atualizado_em > 7 dias.
+--   * estado inválido → exceção; etapa/etapa_falha fora da lista → 'desconhecida'; resultado/origem
+--     inválidos → NULL; textos truncados; contadores limitados. Nunca guarda mensagem crua de erro do banco.
+--   * `processo_depre` precisa ter o formato COMPLETO de um DEPRE (NNNNNNN-DD.AAAA.8.26.0500): a RPC é
+--     concedida a `authenticated` (mesmo modelo do FOR-171) e não deve aceitar chave arbitrária.
+--   * Limpeza preguiçosa: a cada escrita apaga linhas concluida|falha com atualizado_em > 7 dias e linhas
+--     órfãs (na_fila|em_andamento de worker morto) com atualizado_em > 1 dia.
 -- Nota: o worker autentica como `authenticated` quando não usa service_role (mesmo motivo do FOR-171),
 -- por isso a escrita é concedida a authenticated + service_role. Não há PII na tabela.
 
@@ -31,13 +34,14 @@ CREATE OR REPLACE FUNCTION public.registrar_progresso_consulta_pagamento(
 LANGUAGE plpgsql SECURITY DEFINER SET search_path = public AS $$
 DECLARE
   v_etapa      text;
+  v_etapa_falha text;
   v_resultado  text;
   v_origem     text;
   v_tentativa  integer;
   v_max        integer;
 BEGIN
-  IF p_processo_depre IS NULL OR p_processo_depre !~ '\.8\.26\.0500$' THEN
-    RAISE EXCEPTION 'processo_depre inválido (esperado terminar em .8.26.0500)';
+  IF p_processo_depre IS NULL OR p_processo_depre !~ '^\d{7}-\d{2}\.\d{4}\.8\.26\.0500$' THEN
+    RAISE EXCEPTION 'processo_depre inválido (esperado NNNNNNN-DD.AAAA.8.26.0500)';
   END IF;
   IF p_estado IS NULL OR p_estado NOT IN ('na_fila', 'em_andamento', 'concluida', 'falha') THEN
     RAISE EXCEPTION 'estado inválido';
@@ -47,6 +51,13 @@ BEGIN
     WHEN p_etapa IN ('na_fila', 'iniciando', 'abrir_portal', 'obter_link', 'abrir_pesquisa', 'busca',
                      'resultado_carregou', 'ler_resultado', 'extrair_pagamentos', 'persistir')
       THEN p_etapa
+    ELSE 'desconhecida'
+  END;
+  v_etapa_falha := CASE
+    WHEN p_etapa_falha IS NULL THEN NULL
+    WHEN p_etapa_falha IN ('na_fila', 'iniciando', 'abrir_portal', 'obter_link', 'abrir_pesquisa', 'busca',
+                           'resultado_carregou', 'ler_resultado', 'extrair_pagamentos', 'persistir')
+      THEN p_etapa_falha
     ELSE 'desconhecida'
   END;
   v_resultado := CASE WHEN p_resultado IN ('encontrado', 'nao_consta', 'falha') THEN p_resultado ELSE NULL END;
@@ -59,7 +70,7 @@ BEGIN
     iniciada_em, atualizado_em
   ) VALUES (
     p_processo_depre, p_estado, v_etapa, v_tentativa, v_max, left(p_detalhe, 200), v_resultado,
-    left(p_etapa_falha, 40), v_origem, now(), now()
+    v_etapa_falha, v_origem, now(), now()
   )
   ON CONFLICT (processo_depre) DO UPDATE SET
     estado         = EXCLUDED.estado,
@@ -73,10 +84,10 @@ BEGIN
     iniciada_em    = CASE WHEN COALESCE(p_nova, false) THEN now() ELSE t.iniciada_em END,
     atualizado_em  = now();
 
-  -- Limpeza preguiçosa: consultas terminadas há mais de 7 dias.
+  -- Limpeza preguiçosa: consultas terminadas há mais de 7 dias e órfãs (worker morto no meio) há mais de 1 dia.
   DELETE FROM pagamentos_consultas_progresso
-   WHERE estado IN ('concluida', 'falha')
-     AND atualizado_em < now() - interval '7 days';
+   WHERE (estado IN ('concluida', 'falha') AND atualizado_em < now() - interval '7 days')
+      OR (estado IN ('na_fila', 'em_andamento') AND atualizado_em < now() - interval '1 day');
 END;
 $$;
 

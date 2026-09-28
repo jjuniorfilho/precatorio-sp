@@ -124,7 +124,8 @@ test("reporter: passo de ERRO não publica (nada de mensagem crua); falhar() gra
   await rep.drenar();
 
   assert.ok(!JSON.stringify(registros).includes("SEGREDO"), "detalhe de passo `erro` nunca sai");
-  assert.deepEqual(resumo(registros), ["em_andamento/busca/4", "falha/busca/4"]);
+  // Sem naFila() prévio, a 1ª escrita ainda vai com nova=true (nenhuma foi confirmada); a 2ª não.
+  assert.deepEqual(resumo(registros), ["em_andamento/busca/4/nova", "falha/busca/4"]);
   const fim = registros[1]!;
   assert.equal(fim.etapaFalha, "busca");
   assert.equal(fim.resultado, "falha");
@@ -190,6 +191,49 @@ test("reporter: drenar respeita o teto quando o registrar trava", async () => {
   await rep.drenar(60);
   const dt = Date.now() - t0;
   assert.ok(dt >= 50 && dt < 1000, `drenar deveria voltar pelo teto (levou ${dt}ms)`);
+});
+
+test("reporter: se o na_fila FALHAR, a escrita seguinte ainda renova iniciada_em (nova=true) até uma dar certo", async () => {
+  const recebidas: Array<{ etapa: string; nova: boolean }> = [];
+  let n = 0;
+  const registrar = async (r: RegistroProgressoPagamento) => {
+    n++;
+    if (n === 1) throw new Error("rpc fora do ar no na_fila");
+    recebidas.push({ etapa: r.etapa, nova: r.nova });
+  };
+  const rep = criarReporter({ processoDepre: DEPRE, origem: "manual", maxTentativas: 4, registrar, log: () => {} });
+  const passos = new PassosCollector();
+  rep.ligar(passos);
+  rep.naFila();          // falha
+  passos.iniciar();      // 2ª escrita: deve sair com nova=true (a 1ª não foi confirmada)
+  passos.tentativa(1);   // 3ª: já confirmada → nova=false
+  rep.concluir("nao_consta");
+  await rep.drenar();
+  assert.deepEqual(recebidas, [
+    { etapa: "iniciando", nova: true },
+    { etapa: "busca", nova: false },
+    { etapa: "persistir", nova: false },
+  ]);
+});
+
+test("reporter: `log` injetado que LANÇA não gera unhandled rejection nem quebra a cadeia", async () => {
+  let naoTratadas = 0;
+  const h = () => { naoTratadas++; };
+  process.on("unhandledRejection", h);
+  try {
+    const recebidas: string[] = [];
+    let n = 0;
+    const registrar = async (r: RegistroProgressoPagamento) => { n++; if (n === 1) throw new Error("x"); recebidas.push(r.estado); };
+    const rep = criarReporter({ processoDepre: DEPRE, origem: "manual", maxTentativas: 4, registrar, log: () => { throw new Error("log quebrado"); } });
+    rep.naFila();
+    rep.concluir("encontrado");
+    await rep.drenar();
+    await new Promise((res) => setTimeout(res, 30));
+    assert.equal(naoTratadas, 0);
+    assert.deepEqual(recebidas, ["concluida"]);
+  } finally {
+    process.off("unhandledRejection", h);
+  }
 });
 
 // ---- Guarda da FIAÇÃO que só roda com o Chromium (não dá para exercitar em teste unitário) -------------
