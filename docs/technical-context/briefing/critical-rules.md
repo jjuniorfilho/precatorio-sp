@@ -7,7 +7,7 @@
 ## 🔴 Regras Não-Negociáveis
 
 ### 1. Multi-tenancy / Segurança de dados
-- **NUNCA** expor CPF completo — sempre mascarar (`123.***.***-00`)
+- **NUNCA** expor CPF completo — sempre mascarar (`123.***.***-00`) *(única exceção aprovada: o painel do operador admin autenticado no lead avulso — ver "Exceções aprovadas" abaixo)*
 - **NUNCA** expor dados de um lead para outro usuário
 - **SEMPRE** usar RLS (Row Level Security) no Supabase para proteger tabelas de leads
 - Tabela `precatorios` é pública (dados DEPRE são públicos)
@@ -25,7 +25,7 @@
 - Nunca usar `float` para valores monetários
 
 ### 4. Fluxo de captura de lead
-- Lead só é completo após validar **dois canais**: e-mail E WhatsApp
+- Lead do site só é completo após validar **dois canais**: e-mail E WhatsApp *(exceção aprovada: lead avulso — ver "Exceções aprovadas" abaixo)*
 - Token expira em 10 minutos
 - Limite de 3 tentativas por token antes de bloquear 30 min
 - Registrar cada etapa em `funnel_events` para analytics
@@ -74,6 +74,18 @@ token_whatsapp_enviado
 token_whatsapp_validado
 lead_completo
 ```
+
+---
+
+## 🟠 Exceções aprovadas (FOR-172 / FOR-173 — decididas pelo humano em 2026-09-28)
+
+O **lead avulso** é um lead cadastrado pelo operador no admin (`/admin/leads` → "Novo lead avulso"), sem passar pelo fluxo público. Ele abre duas exceções **conscientes e limitadas**. Fora delas, as regras 1 e 4 continuam valendo integralmente.
+
+1. **Regra 4 (2 canais validados):** lead avulso **não** valida e-mail nem WhatsApp. Ele é sempre identificado por `leads.origem = 'avulso'` e:
+   - fica **fora das métricas do funil público** (filtro `origem IS DISTINCT FROM 'avulso'`; `funnel_events` não recebe eventos dele);
+   - tem `lgpd_consent = false` (não há consentimento do titular) → **nenhuma comunicação automática pode partir dele** (relatório, e-mail de andamentos, WhatsApp);
+   - `email`, `telefone`, `nome` e `relacao` são opcionais (NULL quando o operador não digitou).
+2. **Regra 1 (CPF completo):** o admin **autenticado** (server function com `requireSupabaseAuth` + `ensureAdmin` + `service_role`) vê o titular do DEPRE sem máscara no painel do lead avulso. **Nunca** via `anon`, **nunca** em log, **nunca** em RPC anônima. O CPF/CNPJ pesquisado é guardado em `leads.documento` (só dígitos; PII protegida por `leads_admin_only`).
 
 ---
 
