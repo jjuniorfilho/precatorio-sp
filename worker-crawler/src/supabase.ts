@@ -378,3 +378,40 @@ export async function marcarPagamentosConsultado(processoDepre: string): Promise
   const { error } = await supabase.rpc("marcar_pagamentos_consultado", { p_processo_depre: processoDepre });
   if (error) throw new Error(`marcarPagamentosConsultado: ${error.message}`);
 }
+
+// ---- FOR-171: log das consultas ao portal TJSP (pagamentos_consultas_log) ---------------
+
+export interface RegistroConsultaPagamento {
+  processoDepre: string;
+  iniciadaEm: Date;
+  finalizadaEm: Date;
+  origem: "manual" | "busca_publica" | "crawler";
+  resultado: "encontrado" | "nao_consta" | "falha";
+  tentativas: number;
+  situacao: string | null;
+  qtdPagamentos: number | null;
+  dataConsultaPortal: string | null;
+  erro: string | null;
+  etapaFalha: string | null;
+  passos: unknown[];
+}
+
+/** Grava uma consulta no log (RPC SECURITY DEFINER `registrar_consulta_pagamento`; poda em 20 por
+ * processo). O chamador trata como best-effort: erro aqui não deve derrubar a consulta. */
+export async function registrarConsultaPagamento(r: RegistroConsultaPagamento): Promise<void> {
+  const { error } = await supabase.rpc("registrar_consulta_pagamento", {
+    p_processo_depre: r.processoDepre,
+    p_iniciada_em: r.iniciadaEm.toISOString(),
+    p_finalizada_em: r.finalizadaEm.toISOString(),
+    p_origem: r.origem,
+    p_resultado: r.resultado,
+    p_tentativas: r.tentativas,
+    p_situacao: r.situacao,
+    p_qtd_pagamentos: r.qtdPagamentos,
+    p_data_consulta_portal: r.dataConsultaPortal,
+    p_erro: r.erro,
+    p_etapa_falha: r.etapaFalha,
+    p_passos: r.passos,
+  });
+  if (error) throw new Error(`registrarConsultaPagamento: ${error.message}`);
+}

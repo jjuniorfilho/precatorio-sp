@@ -7,7 +7,8 @@
 // buscar-precatorio (fora da VPS) de fato precisar alcançá-lo pela internet.
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import { config } from "./config.js";
-import { consultarEPersistirPagamentos } from "./pagamentos-tjsp.js";
+import { consultarEPersistirPagamentos, ORIGENS_CONSULTA, origemValida } from "./pagamentos-tjsp.js";
+import { ConsultaPagamentoErro } from "./pagamentos-passos.js";
 
 const MAX_BODY_BYTES = 10_000;
 
@@ -29,7 +30,7 @@ async function readBody(req: IncomingMessage): Promise<string> {
 }
 
 async function handleValorPago(req: IncomingMessage, res: ServerResponse): Promise<void> {
-  let body: { processo_depre?: string };
+  let body: { processo_depre?: string; origem?: string };
   try {
     body = JSON.parse(await readBody(req));
   } catch {
@@ -41,12 +42,25 @@ async function handleValorPago(req: IncomingMessage, res: ServerResponse): Promi
     return json(res, 400, { error: "processo_depre inválido (esperado terminar em .8.26.0500)" });
   }
 
+  // FOR-171: origem do disparo (default "manual"; a edge buscar-precatorio manda "busca_publica").
+  const origem = body.origem ?? "manual";
+  if (!origemValida(origem)) {
+    return json(res, 400, { error: `origem inválida (esperado: ${ORIGENS_CONSULTA.join("|")})` });
+  }
+
   try {
-    const resultado = await consultarEPersistirPagamentos(processoDepre);
+    const resultado = await consultarEPersistirPagamentos(processoDepre, { origem });
     return json(res, 200, resultado);
   } catch (err) {
     console.error(`[http-server] /valor-pago falhou (${processoDepre}):`, err);
-    return json(res, 502, { error: "falha ao consultar o portal TJSP", detalhe: String(err) });
+    // FOR-171: falha explícita com a etapa em que parou (NÃO marca como consultado).
+    const etapa = err instanceof ConsultaPagamentoErro ? err.etapa : "desconhecida";
+    return json(res, 502, {
+      resultado: "falha",
+      etapa,
+      error: "falha ao consultar o portal TJSP",
+      detalhe: String(err instanceof Error ? err.message : err),
+    });
   }
 }
 
