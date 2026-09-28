@@ -111,3 +111,20 @@ test("SQL 2: mantém os 4 LATERAL JOINs da definição viva (processo, precatori
   assert.match(VIEW, /FROM public\.djen_depre d WHERE d\.cnj_normalizado = regexp_replace\(p\.processo, '\\D', '', 'g'\)/);
   assert.match(VIEW, /FROM public\.incidentes i WHERE i\.numero_depre = p\.processo/);
 });
+
+// ---- SQLs de diagnóstico e verificação: têm que ser SOMENTE LEITURA -------------------------------------
+test("SQLs 0 (diagnóstico) e 5 (verificação) são somente leitura", () => {
+  for (const n of ["2026-09-28_for173_0_diag_leads_ddl.sql", "2026-09-28_for173_5_verifica_aplicacao.sql"]) {
+    // tira comentários e o CONTEÚDO de strings ('INSERT' em has_table_privilege não é DML)
+    const semLiterais = sql(n)
+      .split("\n").filter((l) => !l.trim().startsWith("--")).join("\n")
+      .replace(/'[^']*'/g, "''");
+    assert.doesNotMatch(semLiterais, /\b(INSERT|UPDATE|DELETE|ALTER|CREATE|DROP|GRANT|REVOKE|TRUNCATE|COMMENT|NOTIFY)\b/i, n);
+  }
+});
+
+test("SQL 5: nunca usa LIKE com barra invertida (em LIKE ela é o escape e o check viraria sempre falso)", () => {
+  const v = sql("2026-09-28_for173_5_verifica_aplicacao.sql").split("\n").filter((l) => !l.trim().startsWith("--")).join("\n");
+  assert.doesNotMatch(v, /LIKE\s+'[^']*\\/i);
+  assert.match(v, /strpos\(/);
+});

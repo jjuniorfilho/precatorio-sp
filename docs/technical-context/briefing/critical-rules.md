@@ -11,7 +11,7 @@
 - **NUNCA** expor dados de um lead para outro usuário
 - **SEMPRE** usar RLS (Row Level Security) no Supabase para proteger tabelas de leads
 - Tabela `precatorios` é pública (dados DEPRE são públicos)
-- Tabelas `leads`, `tokens`, `funnel_events` são privadas (admin only)
+- Tabelas `leads`, `tokens`, `funnel_events` são privadas: leitura e alteração só admin. Exceção estreita: o `anon` pode apenas **inserir** em `leads` (cadastro do site, com `lgpd_consent = true`; a policy `anon_insert_leads` bloqueia `origem = 'avulso'`, `criado_por` e `documento`) e em `funnel_events` (tracking)
 
 ### 2. Busca tolerante a formato
 - **SEMPRE** normalizar input antes de buscar: remover `.`, `-`, `/`, espaços
@@ -42,7 +42,7 @@
 ### Nomenclatura de tabelas (snake_case)
 ```
 precatorios         — base DEPRE importada
-leads               — leads completos (2 canais validados)
+leads               — leads do site (2 canais validados), leads só com e-mail (`capturar-lead-publico`) e leads avulsos (`origem = 'avulso'`, cadastrados pelo operador)
 tokens              — tokens OTP gerados
 funnel_events       — eventos do funil (busca, cadastro, token, etc.)
 lead_status_history — histórico de mudança de CRM status
@@ -55,7 +55,7 @@ novo → contatado → qualificado → interessado → proposta → negociacao �
 
 ### Tipos de relação do lead
 ```
-titular | herdeiro | advogado
+titular | herdeiro | advogado   (opcional: NULL em lead avulso e em lead só com e-mail)
 ```
 
 ### Canais de token

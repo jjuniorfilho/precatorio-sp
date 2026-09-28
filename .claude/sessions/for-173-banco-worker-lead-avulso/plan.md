@@ -75,49 +75,70 @@ Re-executável, sem `DO $$` (DDL conhecido): `ADD COLUMN IF NOT EXISTS criado_po
 - `npm run typecheck` limpo; `npm test` = 87/87 (21 novos).
 - **Checagem de mutação** dos testes de texto: (1) `lp.origem` no meio da view, (2) leitura concedida a `anon`, (3) `DROP VIEW` no SQL 2 — cada uma derrubou exatamente 1 teste e, restaurado o SQL, voltou a 21/21.
 
-## FASE 3 — Worker: núcleo do progresso [Não Iniciada ⏳]  (~2h; paralela às fases 1, 2, 5)
+## FASE 3 — Worker: núcleo do progresso [Completada ✅]  (~2h; paralela às fases 1, 2, 5)
 
-### 3.1 `PassosCollector`: observador, `iniciar()`, `tentativa(n)` [Não Iniciada ⏳]
+### 3.1 `PassosCollector`: observador, `iniciar()`, `tentativa(n)` [Completada ✅]
 `worker-crawler/src/pagamentos-passos.ts`: `observar(cb)` (vários observadores, exceção de um observador **nunca** propaga); `passo()` notifica **depois** de acrescentar; `iniciar()` notifica "vez chegou" (não vira passo); `tentativa(n)` atribui `tentativas = n` e notifica **sem** acrescentar passo (o log do FOR-171 fica idêntico). Testes em `pagamentos-tjsp.test.ts` ou arquivo novo `pagamentos-passos.test.ts`.
 
-### 3.2 `pagamentos-progresso.ts` (reporter) [Não Iniciada ⏳]
+### 3.2 `pagamentos-progresso.ts` (reporter) [Completada ✅]
 `worker-crawler/src/pagamentos-progresso.ts`: `criarReporter({ processoDepre, origem, maxTentativas, registrar })` com `naFila()`, `ligar(passos)` (observa o coletor), `concluir(resultado)`, `falhar(etapaFalha)`, `drenar(timeoutMs = 3000)`.
 - **Cadeia serial de promises** (`ultima = ultima.then(upsert).catch(log)`): upserts saem em ordem, nunca em paralelo, nunca lançam.
 - `PROXIMA` mapeia "concluí X" → etapa em andamento; `tentativa(n)` → `busca` em andamento com `tentativa=n`; `iniciar()` → `iniciando`; `detalhe` só de texto já sanitizado (nunca mensagem crua de erro do banco).
 - `drenar` espera a cadeia esvaziar (teto 3s) para o estado final não ser sobrescrito por um passo atrasado.
 - Testes (`pagamentos-progresso.test.ts`, `registrar` fake): ordem dos estados `na_fila → iniciando → … → concluida`; `falhar` grava `etapa_falha`; upsert que lança **não** derruba nem atrasa o chamador; `drenar` respeita o teto; `p_nova=true` só no `naFila()`.
 
-### 3.3 `supabase.ts: registrarProgressoPagamento` [Não Iniciada ⏳]
+### 3.3 `supabase.ts: registrarProgressoPagamento` [Completada ✅]
 Wrapper de `supabase.rpc("registrar_progresso_consulta_pagamento", { p_… })` no estilo de `registrarConsultaPagamento` (lança `Error` com a mensagem; o reporter é quem engole). Tipo `RegistroProgressoPagamento`.
 
 ### Comentários:
 - Decisão do plano: o reporter só é ligado quando `origem === 'manual'` (Fase 4.1). O crawler e a busca pública não precisam de progresso e gerariam escritas inúteis na tabela (o `CHECK` de `origem` continua aceitando as três, para não travar uso futuro).
+- Entregue em `pagamentos-passos.ts` (observador, `iniciar()`, `tentativa(n)`), `pagamentos-progresso.ts` (novo) e `supabase.ts` (`registrarProgressoPagamento`, `PROGRESSO_TIMEOUT_MS = 5000`).
+- Pós-revisão: o reporter reenvia `nova=true` em toda escrita até uma dar certo (se o `na_fila` falhar, a seguinte ainda renova `iniciada_em`); o `log` injetado é blindado (sem promise rejeitada solta); cada escrita tem timeout de 5s via `abortSignal`.
+- `etapa` `iniciando` cobre lançar o Chromium + abrir o portal (o diagrama do architecture.md foi corrigido; `abrir_portal` só aparece como etapa em andamento se algum dia o coletor emitir antes).
 
-## FASE 4 — Worker: integração [Não Iniciada ⏳]  (~2h; depende da Fase 3)
+## FASE 4 — Worker: integração [Completada ✅]  (~2h; depende da Fase 3)
 
-### 4.1 Ligar o reporter em `pagamentos-tjsp.ts` [Não Iniciada ⏳]
+### 4.1 Ligar o reporter em `pagamentos-tjsp.ts` [Completada ✅]
 - `DepsPersistencia` ganha `progresso` (fábrica injetável do reporter; padrão = real com `registrarProgressoPagamento`).
 - Em `consultarEPersistirPagamentos`: se `origem === 'manual'`, cria o reporter e chama `naFila()` **antes** de `deps.consultar`; `ligar(passos)`; no fim, `concluir(resultado)` ou `falhar(etapaFalha)` **antes** do `deps.registrar` do log; `await reporter.drenar()`; falha de progresso nunca impede o log nem altera o retorno/erro.
 - Em `consultarPagamentos`: dentro do callback de `comFilaPlaywright`, `passos.iniciar()` antes de `consultarInterno` (é o momento em que a vez na fila chegou).
 - Em `consultarInterno`: `passos.tentativa(tentativa)` no início de cada iteração do loop de captcha, antes de `tentarBusca`.
 - **Não mudar** a assinatura de `consultarPagamentos`, o contrato de resposta do `http-server.ts` nem o conteúdo de `passos` gravado no log FOR-171.
 
-### 4.2 Testes de integração (deps fake, sem portal) [Não Iniciada ⏳]
+### 4.2 Testes de integração (deps fake, sem portal) [Completada ✅]
 Em `pagamentos-tjsp.test.ts`: (a) contrato inalterado — `resultado`, `passos` e chamada de `registrar` com a mesma forma de antes; (b) sequência de progresso `na_fila → iniciando → busca(t=1) → busca(t=2) → … → concluida`; (c) caminho de falha grava `falha` + `etapa_falha`; (d) `registrarProgresso` que lança **não** derruba a consulta; (e) `origem !== 'manual'` não chama progresso.
 
-### 4.3 Gates programáticos do worker [Não Iniciada ⏳]
+### 4.3 Gates programáticos do worker [Completada ✅]
 `cd worker-crawler && npm install && npm run typecheck && npm test` verdes (o `npm test` roda com `SUPABASE_URL` fake; nenhum teste toca a rede).
 
 ### Comentários:
 - Não criar linha de progresso em `http-server.ts`: `consultarEPersistirPagamentos` já é o único caminho do endpoint, e é ali que `na_fila` nasce, **antes** da fila (a issue original falava em `handleValorPago`; o efeito é o mesmo com um só ponto de instrumentação).
+- A fábrica e todos os métodos do reporter são chamados dentro de `try/catch`: um bug futuro no progresso desliga o progresso, nunca a consulta nem o log FOR-171.
+- O `log` do FOR-171 fica **idêntico** com e sem progresso (teste dedicado; `tentativa()`/`iniciar()` não viram passo). O passo real `persistir` do próprio `consultarEPersistirPagamentos` aparece no progresso como `em_andamento/persistir` antes do `concluida`.
+- **Fiação só verificável com Chromium** (`passos.iniciar()` dentro do callback da fila; `passos.tentativa()` antes de `tentarBusca`) ficou protegida por teste de texto sobre `pagamentos-tjsp.ts`. Falha no sentido seguro (um reformat quebra o teste, não o esconde).
+- `npm run typecheck` limpo; `npm test` = 116/116 (sem rede; nenhum teste toca o portal).
 
-## FASE 5 — Master docs e README [Não Iniciada ⏳]  (~1h; 5.1 paralela às fases 1-4; 5.2 depois da Fase 4)
+## FASE 5 — Master docs e README [Completada ✅]  (~1h; 5.1 paralela às fases 1-4; 5.2 depois da Fase 4)
 
-### 5.1 `critical-rules.md` e `backend-conventions.md` [Não Iniciada ⏳]
+### 5.1 `critical-rules.md` e `backend-conventions.md` [Completada ✅]
 `docs/technical-context/briefing/`: registrar as duas exceções aprovadas (lead avulso sem 2 canais validados; admin autenticado vê CPF completo no painel do avulso); modelo atual de `leads` (valores de `origem`: `busca_em_formacao|monitorar|antecipacao|avulso`; `email` e `relacao` opcionais; `criado_por`, `documento`; `lgpd_consent=false` no avulso e **nenhuma comunicação automática parte dele**); tabelas novas (`pagamentos_consultas_log` do FOR-171 e `pagamentos_consultas_progresso`); corrigir o schema de `leads` desatualizado do `backend-conventions.md`.
 
-### 5.2 `worker-crawler/README.md` [Não Iniciada ⏳]
+### 5.2 `worker-crawler/README.md` [Completada ✅]
 Seção "Progresso da consulta de valor pago (FOR-173)": estados, RPCs, que só `origem='manual'` grava, limpeza de 7 dias, ordem de deploy (SQL → worker) e como inspecionar (`select * from pagamentos_consultas_progresso order by atualizado_em desc`).
+
+### Comentários (Fase 5):
+- `critical-rules.md`: seção "Exceções aprovadas" (regras 1 e 4), linhas de `leads`/relação/tabelas privadas corrigidas. `backend-conventions.md`: schema real de `leads` (colunas, `origem`, índices, triggers, views, FKs conferidas no diagnóstico, invariantes do avulso), policies reais (`anon_insert_leads` endurecida, `leads_admin_only`), convenção `uq_`, aviso de `l.*` ao recriar `leads_com_progresso` e as tabelas do valor pago.
+
+## REVISÃO PRÉ-PR (Fase 7.1) — achados e correções [Completada ✅]
+
+Garantias do fleet rodadas pelo lead e **verificadas por ele** (não só pelo relatório dos agentes): `fleet-gate.sh` oficial (typecheck + test do worker, com config temporária não commitada) verde; `code-reviewer` e `branch-master-docs-checker`; **14 mutações** de código/SQL, cada uma derrubando de 1 a 3 testes (restaurado, 0 falhas). Nenhum CRITICAL. Corrigido, com teste para cada item:
+
+- **HIGH (H1, apontado pelos dois revisores):** o `anon` tem `GRANT INSERT` na tabela `leads` inteira e a policy só exigia `lgpd_consent = true` → qualquer pessoa com a anon key pública poderia gravar `origem='avulso'`, `documento`, `criado_por` (poluir o grid, ocupar o índice único e bloquear o cadastro real do operador). **Verificado no código** (`GRANT SELECT, INSERT, UPDATE ON public.leads TO anon`; o cadastro do site envia email/relacao e nunca origem/criado_por/documento). Correção no SQL 1: `ALTER POLICY anon_insert_leads` (atômico) com `origem IS DISTINCT FROM 'avulso' AND criado_por IS NULL AND documento IS NULL AND email IS NOT NULL AND relacao IS NOT NULL`, mais dois CHECKs no banco (`avulso ⇒ lgpd_consent = false`; `avulso ⇒ um único .0500`).
+- **MEDIUM:** se o `na_fila` falhasse, o front nunca reconheceria a consulta nova → reporter reenvia `nova=true` até uma escrita confirmar. RPC de escrita aceitava qualquer chave terminada em `.8.26.0500` → regex do DEPRE completo e `etapa_falha` validada contra a lista.
+- **LOW corrigidos:** órfãs `na_fila|em_andamento` > 1 dia agora são limpas; timeout de 5s por escrita; `log` que lança não gera rejeição solta; teste cruzando os 10 nomes `p_*` do worker com a assinatura da RPC; docs residuais dos master docs; texto "sem `DO $$`" do architecture.md.
+- **Não corrigidos / decisão registrada:** (a) RPC de escrita segue concedida a `authenticated` (mesmo modelo do FOR-171; só restringir a `service_role` depois de confirmar na Fase 0.2 com qual chave o worker autentica); (b) a busca pública no ar pode ainda não enviar `origem: "busca_publica"` (o código do repo envia; confirmar a versão publicada na Fase 7.2) — se não enviar, grava progresso como `manual`, inofensivo; (c) `reloptions` da view: o diagnóstico mostrou só `security_invoker=true` nas duas views, então o `CREATE OR REPLACE` não perde opção nenhuma; (d) a limitação do `upsert({ onConflict })` do supabase-js contra índice único **parcial** é do FOR-174 (usar INSERT e tratar o erro 23505 como "já existe").
+
+**IMPORTANTE para o humano:** se você já aplicou os SQLs 1 e 4 **antes** desta revisão, rode-os de novo (são re-executáveis) e depois rode `sql/2026-09-28_for173_5_verifica_aplicacao.sql` (somente leitura): todas as linhas devem vir `ok = true`.
 
 ## FASE 6 — Espelho da migration no repo `frontend` (PR separado) [Não Iniciada ⏳]  (~1h; depois das fases 1 e 2; usa a worktree da 0.3)
 
@@ -129,10 +150,11 @@ Teste no padrão `leads-etapas-migration.for170.test.ts` (leitura do texto) para
 
 ## FASE 7 — Verificação, revisão e rollout [Não Iniciada ⏳]  (~1,5h; depois de todas)
 
-### 7.1 Garantias do fleet [Não Iniciada ⏳]
+### 7.1 Garantias do fleet [Completada ✅]
 `fleet-gate.sh` (lint/typecheck/test), `test-engineer` + `code-reviewer`, `adr-compliance-checker` STRICT; depois `/engineer:pre-pr` (agentes branch-*) e `/engineer:pr`. Cobrir explicitamente: PII (nada de CPF/documento em log), GRANTs das RPCs, `SECURITY DEFINER` com `search_path`, e a nota sobre o efeito no FOR-175.
 
 ### 7.2 Aplicação e rollout (humano) [Não Iniciada ⏳]
+**Passo 0:** rodar `sql/2026-09-28_for173_5_verifica_aplicacao.sql` (somente leitura) depois de aplicar; todas as linhas com `ok = true`. Testar o **cadastro do site** (`/cadastro`) uma vez após o SQL 1 (a policy anônima foi endurecida). Confirmar a versão publicada da `buscar-precatorio` (envia `origem: "busca_publica"`?).
 Ordem: (1) `_1_leads_avulso.sql` → (2) `_2_view_leads_processos_origem.sql` → (3) `_3_tabela_progresso.sql` → (4) `_4_rpcs_progresso.sql`; conferir com `information_schema` que `email`/`relacao` viraram nullable e que `leads_processos` expõe `origem`; (5) deploy do worker na VPS (`git pull`, `npm install`, `pm2 restart` do processo do worker; confirmar o nome, hoje `precatorio-crawler`); (6) só então liberar o FOR-174.
 
 ### 7.3 Smoke test [Não Iniciada ⏳]

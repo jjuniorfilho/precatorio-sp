@@ -36,7 +36,7 @@ sequenceDiagram
   EF->>W: POST /valor-pago
   W->>DB: RPC progresso: estado=na_fila (iniciada_em novo)
   W->>Q: comFilaPlaywright(...)
-  Q->>DB: estado=em_andamento, etapa=abrir_portal
+  Q->>DB: estado=em_andamento, etapa=iniciando (lançar Chromium + abrir o portal)
   loop cada passo / tentativa de captcha
     Q->>DB: etapa, tentativa N/4, atualizado_em
     FE->>DB: polling ~2s (RPC leitura)
@@ -106,7 +106,7 @@ Só `origem === 'manual'` (disparo do admin) liga o reporter. Crawler e busca p�
 `pagamentos-progresso.ts` mantém uma cadeia de promises (`ultima = ultima.then(upsert).catch(log)`): upserts saem **em ordem**, nunca em paralelo, e nunca lançam para o chamador. O fim da consulta espera a cadeia esvaziar com teto curto (ex. 3s) para o estado final não ser sobrescrito por um passo atrasado. Sem timer/debounce: a cadência natural é baixa.
 
 ### 3.4 Migration de `leads` — `sql/2026-09-28_for173_1_leads_avulso.sql`
-Re-executável, sem DO $$ defensivo (o DDL agora é conhecido):
+Re-executável; sem `DO $$` *defensivo* (o DDL é conhecido), mas com `DO $$` idempotentes só para criar CHECKs (guarda em `pg_constraint`):
 
 ```sql
 ALTER TABLE public.leads ADD COLUMN IF NOT EXISTS criado_por uuid;
@@ -220,6 +220,16 @@ O humano voltou a pedir os três tipos de entrada do site. Decisões: **seleçã
 - **Fallback ao vivo (miss de CPF/CNPJ):** o "DOCPARTE" do site só **descobre CNJs no e-SAJ e enfileira o crawler** (`enqueue_crawler_job`, origem `manual`); não devolve DEPRE na hora. O operador vê "N processos enfileirados; busque de novo em alguns minutos". Para busca por processo/DEPRE não há fallback (igual ao site).
 - **Limite do worker:** a fila é serial e a edge `disparar-valor-pago` tem timeout de 120s **incluindo a espera na fila**. Disparar N consultas em paralelo daria falso "falha" nas últimas. O front despacha **uma por vez** e limita a seleção (proposta: máx. 10 DEPREs por lote, ~7 min no pior caso). Uma busca pública na frente da fila também pode empurrar uma consulta do operador além dos 120s (risco já existente).
 - Itens sem `.0500` (direito creditório ainda sem ofício) aparecem na lista mas não são selecionáveis para valor pago.
+
+## 14. Achados da revisão pré-PR (2026-09-28) e mudanças de desenho
+
+Revisão por `code-reviewer` + `branch-master-docs-checker` + 14 mutações. Ver o detalhe em `plan.md` ("REVISÃO PRÉ-PR"). Mudanças de desenho decorrentes:
+
+- **`anon_insert_leads` endurecida** (o `anon` tem `GRANT INSERT` na tabela inteira): `WITH CHECK (lgpd_consent = true AND origem IS DISTINCT FROM 'avulso' AND criado_por IS NULL AND documento IS NULL AND email IS NOT NULL AND relacao IS NOT NULL)`, via `ALTER POLICY` (atômico). É o **único** SQL da série que toca o caminho público; testar o cadastro do site depois de aplicar.
+- **Invariantes do avulso no banco:** `leads_avulso_sem_consent_check` (`avulso ⇒ lgpd_consent = false`) e `leads_avulso_um_depre_check` (`avulso ⇒ processo_depre` não nulo e sem vírgula). Passam a valer para o FOR-174 sem depender de disciplina de código.
+- **RPC de escrita:** `processo_depre` no formato completo `NNNNNNN-DD.AAAA.8.26.0500`; `etapa_falha` validada contra a lista; limpeza também das órfãs (`na_fila|em_andamento` > 1 dia).
+- **Reporter:** `nova=true` reenviado até uma escrita confirmar; `log` blindado; timeout de 5s por escrita (`abortSignal`).
+- **Para o FOR-174:** `upsert({ onConflict: 'processo_depre' })` do supabase-js **não funciona** contra índice único **parcial**; usar INSERT e tratar o erro `23505` como "já existe".
 
 ---
 

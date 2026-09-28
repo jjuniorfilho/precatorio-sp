@@ -101,3 +101,9 @@ test("CONTRATO worker↔SQL: os 10 nomes p_* de registrarProgressoPagamento são
   assert.equal(doTs.length, 10);
   assert.deepEqual(doTs, doSql, "divergência de nome faria TODA escrita de progresso falhar em silêncio");
 });
+
+test("worker: cada escrita de progresso tem timeout (RPC travada não prende as seguintes)", () => {
+  const ts = readFileSync(new URL("./supabase.ts", import.meta.url), "utf-8");
+  assert.match(ts, /PROGRESSO_TIMEOUT_MS = 5000/);
+  assert.match(ts, /\.abortSignal\(AbortSignal\.timeout\(PROGRESSO_TIMEOUT_MS\)\)/);
+});
