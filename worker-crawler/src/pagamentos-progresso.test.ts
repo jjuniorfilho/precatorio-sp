@@ -252,3 +252,52 @@ test("fiação: passos.tentativa(n) vem ANTES de tentarBusca e ninguém mais atr
 test("fiação: a origem que publica progresso é só 'manual'", () => {
   assert.match(FONTE, /ORIGENS_COM_PROGRESSO: readonly OrigemConsulta\[\] = \["manual"\]/);
 });
+
+test("reporter: bordas de tentativa — 0 antes da busca; 4 rejeitadas terminam em falha/busca/4 sem texto do passo erro", async () => {
+  const registros: RegistroProgressoPagamento[] = [];
+  const rep = criarReporter({ processoDepre: DEPRE, origem: "manual", maxTentativas: 4, registrar: async (r) => { registros.push(r); } });
+  const passos = new PassosCollector();
+  rep.ligar(passos);
+  rep.naFila();
+  passos.iniciar();
+  for (let n = 1; n <= 4; n++) {
+    passos.tentativa(n);
+    passos.passo("busca", "info", `Tentativa ${n}: captcha rejeitado ou sem resultado`);
+  }
+  passos.passo("busca", "erro", "captcha não resolvido após 4 tentativas SEGREDO");
+  rep.falhar("busca");
+  await rep.drenar();
+  assert.equal(registros[0]!.tentativa, 0);
+  assert.equal(registros[1]!.tentativa, 0);
+  const fim = registros.at(-1)!;
+  assert.deepEqual([fim.estado, fim.etapa, fim.tentativa, fim.etapaFalha], ["falha", "busca", 4, "busca"]);
+  assert.equal(registros.at(-2)!.detalhe, "Tentativa 4: captcha rejeitado ou sem resultado");
+  assert.ok(!JSON.stringify(registros).includes("SEGREDO"));
+});
+
+test("fiação: depsPadrao liga o reporter ao registrarProgressoPagamento real (senão a produção fica sem barra em silêncio)", () => {
+  assert.match(FONTE, /progresso: \(a\) => criarReporter\(\{ \.\.\.a, registrar: registrarProgressoPagamento \}\)/);
+  assert.match(FONTE, /import \{[^}]*registrarProgressoPagamento[^}]*\} from "\.\/supabase\.js"/);
+});
+
+test("CONTRATO worker↔SQL: toda etapa que o reporter pode emitir está na lista da RPC; etapa e etapa_falha usam a MESMA lista", () => {
+  const passosTs = readFileSync(new URL("./pagamentos-passos.ts", import.meta.url), "utf-8");
+  const uniao = passosTs.match(/export type Etapa =([\s\S]*?);/);
+  assert.ok(uniao, "não achou a união Etapa");
+  const etapas = [...uniao![1]!.matchAll(/"([a-z_]+)"/g)].map((m) => m[1]!);
+  assert.ok(etapas.length >= 9);
+
+  const rpc = readFileSync(new URL("../../sql/2026-09-28_for173_4_rpcs_progresso.sql", import.meta.url), "utf-8")
+    .split("\n").filter((l) => !l.trim().startsWith("--")).join("\n").replace(/\s+/g, " ");
+  const lista = (re: RegExp) => [...(rpc.match(re)![1]!.matchAll(/'([a-z_]+)'/g))].map((m) => m[1]!).sort();
+  const daEtapa = lista(/p_etapa IN \(([^)]*)\)/);
+  const daFalha = lista(/p_etapa_falha IN \(([^)]*)\)/);
+  assert.deepEqual(daEtapa, daFalha, "etapa e etapa_falha divergem");
+
+  const emitidas = new Set<string>(["na_fila", "iniciando"]);
+  for (const e of etapas) for (const st of ["ok", "info"] as const) emitidas.add(proximaEtapa(e as never, st));
+  for (const e of emitidas) {
+    // `desconhecida` é o coringa da RPC e pode ser emitida (Etapa "desconhecida"); o resto TEM que estar na lista.
+    assert.ok(e === "desconhecida" || daEtapa.includes(e), `etapa '${e}' emitida pelo reporter mas ausente da lista da RPC (viraria 'desconhecida' em silêncio)`);
+  }
+});

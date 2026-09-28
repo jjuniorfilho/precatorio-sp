@@ -236,3 +236,110 @@ test("progresso (reporter real + fake): sequência gravada de ponta a ponta sem 
   assert.equal(registros[0]!.nova, true);
   assert.equal(registros.at(-1)!.resultado, "encontrado");
 });
+
+// ---- FOR-173: lacunas apontadas pela revisão de cobertura ----
+function gravadorReal() {
+  const registros: RegistroProgressoPagamento[] = [];
+  const fabrica = (over: { registrar?: (r: RegistroProgressoPagamento) => Promise<void>; drenarMs?: number } = {}) =>
+    (a: { processoDepre: string; origem: "manual" | "busca_publica" | "crawler"; maxTentativas: number }) =>
+      criarReporter({ ...a, registrar: over.registrar ?? (async (r) => { registros.push(r); }), log: () => {}, drenarMs: over.drenarMs });
+  return { registros, fabrica };
+}
+
+test("progresso: falha ao PERSISTIR grava falha/persistir e a mensagem crua do banco não vaza", async () => {
+  const { registros, fabrica } = gravadorReal();
+  const { deps } = fakeDeps({ resultado: "nao_consta", marcar: async () => { throw new Error("SEGREDO do banco"); } });
+  deps.consultar = async (_d, _m, passos) => { passos.iniciar(); passos.tentativa(1); passos.passo("busca", "ok", "Tentativa 1: busca executada"); return consultaBase("nao_consta"); };
+  deps.progresso = fabrica();
+  await assert.rejects(() => consultarEPersistirPagamentos(DEPRE, { origem: "manual" }, deps));
+  const fim = registros.at(-1)!;
+  assert.equal(fim.estado, "falha");
+  assert.equal(fim.etapaFalha, "persistir");
+  assert.ok(!JSON.stringify(registros).includes("SEGREDO"));
+  assert.ok(!registros.some((r) => r.estado === "em_andamento" && r.etapa === "persistir"), "o passo persistir com erro não é publicado");
+});
+
+test("progresso: Error simples (não ConsultaPagamentoErro) → falha/desconhecida", async () => {
+  const { registros, fabrica } = gravadorReal();
+  const { deps } = fakeDeps({});
+  deps.consultar = async () => { throw new Error("boom"); };
+  deps.progresso = fabrica();
+  await assert.rejects(() => consultarEPersistirPagamentos(DEPRE, { origem: "manual" }, deps), /boom/);
+  const fim = registros.at(-1)!;
+  assert.deepEqual([fim.estado, fim.etapa, fim.etapaFalha, fim.resultado], ["falha", "desconhecida", "desconhecida", "falha"]);
+});
+
+test("progresso: registrar TRAVADO não prende a consulta (drenar tem teto) e o log FOR-171 ainda é gravado", async () => {
+  const { fabrica } = gravadorReal();
+  const { deps, chamadas } = fakeDeps({ resultado: "nao_consta" });
+  deps.progresso = fabrica({ registrar: () => new Promise<void>(() => { /* nunca resolve */ }), drenarMs: 40 });
+  const t0 = Date.now();
+  const r = await consultarEPersistirPagamentos(DEPRE, { origem: "manual" }, deps);
+  assert.equal(r.resultado, "nao_consta");
+  assert.equal(chamadas.registrar.length, 1, "o log do FOR-171 foi gravado");
+  assert.ok(Date.now() - t0 < 1000, "a resposta não ficou refém do progresso");
+});
+
+test("progresso: registrar do progresso lançando + consulta falhando → relança o erro ORIGINAL e loga a etapa", async () => {
+  const { fabrica } = gravadorReal();
+  const { deps, chamadas } = fakeDeps({ erro: new Error("timeout do portal") });
+  deps.progresso = fabrica({ registrar: async () => { throw new Error("rpc de progresso fora do ar"); } });
+  await assert.rejects(() => consultarEPersistirPagamentos(DEPRE, { origem: "manual" }, deps), /timeout do portal/);
+  assert.equal(chamadas.marcar, 0);
+  assert.deepEqual(chamadas.registrar, [{ resultado: "falha", origem: "manual", etapaFalha: "busca" }]);
+});
+
+test("progresso: falhar() que LANÇA também não derruba a consulta nem troca o erro", async () => {
+  const { deps, chamadas } = fakeDeps({ erro: new Error("timeout do portal") });
+  deps.progresso = () => ({ ...reporterFake([]), falhar: () => { throw new Error("bug no falhar"); } });
+  await assert.rejects(() => consultarEPersistirPagamentos(DEPRE, { origem: "manual" }, deps), /timeout do portal/);
+  assert.equal(chamadas.registrar.length, 1);
+});
+
+test("progresso: maxTentativas numérico chega à fábrica e ao detalhe; sem opções vale manual/4", async () => {
+  const recebidos: Array<{ origem: string; maxTentativas: number }> = [];
+  const { registros, fabrica } = gravadorReal();
+  const real = fabrica();
+  const { deps } = fakeDeps({});
+  deps.consultar = async (_d, _m, passos) => { passos.tentativa(1); return consultaBase("encontrado"); };
+  deps.progresso = (a) => { recebidos.push({ origem: a.origem, maxTentativas: a.maxTentativas }); return real(a); };
+
+  await consultarEPersistirPagamentos(DEPRE, 2, deps); // forma numérica = maxTentativas
+  assert.deepEqual(recebidos[0], { origem: "manual", maxTentativas: 2 });
+  assert.equal(registros.find((r) => r.etapa === "busca")!.detalhe, "Tentativa 1 de 2");
+  assert.ok(registros.every((r) => r.maxTentativas === 2));
+
+  await consultarEPersistirPagamentos(DEPRE, {}, deps);
+  await consultarEPersistirPagamentos(DEPRE, undefined, deps);
+  assert.deepEqual(recebidos.slice(1), [{ origem: "manual", maxTentativas: 4 }, { origem: "manual", maxTentativas: 4 }]);
+});
+
+test("progresso: resultado 'falha' que chega SEM lançar vira falha no progresso (nunca concluida/falha)", async () => {
+  const linha: string[] = [];
+  const { deps } = fakeDeps({});
+  deps.consultar = async () => ({ ...consultaBase("nao_consta"), resultado: "falha" as const });
+  deps.progresso = () => reporterFake(linha);
+  await consultarEPersistirPagamentos(DEPRE, { origem: "manual" }, deps);
+  assert.ok(linha.includes("falhar:null") && !linha.some((l) => l.startsWith("concluir")), linha.join(","));
+});
+
+test("progresso: encontrado com o fluxo REAL de passos (extrair_pagamentos + persistir) — sequência exata", async () => {
+  const { registros, fabrica } = gravadorReal();
+  const { deps } = fakeDeps({});
+  deps.consultar = async (_d, _m, passos) => {
+    passos.iniciar();
+    passos.passo("abrir_portal", "ok"); passos.passo("obter_link", "ok"); passos.passo("abrir_pesquisa", "ok");
+    passos.tentativa(1); passos.passo("busca", "ok", "Tentativa 1: busca executada");
+    passos.passo("resultado_carregou", "ok"); passos.passo("ler_resultado", "ok", "grade com pagamento");
+    passos.passo("extrair_pagamentos", "ok", "3 pagamento(s) no relatório");
+    return { ...consultaBase("encontrado"), tentativas: 1 };
+  };
+  deps.progresso = fabrica();
+  await consultarEPersistirPagamentos(DEPRE, { origem: "manual" }, deps);
+  assert.deepEqual(registros.map((r) => `${r.estado}/${r.etapa}`), [
+    "na_fila/na_fila", "em_andamento/iniciando", "em_andamento/obter_link", "em_andamento/abrir_pesquisa",
+    "em_andamento/busca", "em_andamento/busca", "em_andamento/resultado_carregou", "em_andamento/ler_resultado",
+    "em_andamento/extrair_pagamentos", "em_andamento/persistir", "em_andamento/persistir", "concluida/persistir",
+  ]);
+  assert.equal(registros.at(-1)!.resultado, "encontrado");
+});

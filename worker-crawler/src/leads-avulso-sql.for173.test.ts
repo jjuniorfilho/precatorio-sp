@@ -16,6 +16,7 @@ const codigo = (s: string) =>
 
 const LEADS = codigo(sql("2026-09-28_for173_1_leads_avulso.sql"));
 const VIEW = codigo(sql("2026-09-28_for173_2_view_leads_processos_origem.sql"));
+const RPC4 = codigo(sql("2026-09-28_for173_4_rpcs_progresso.sql"));
 
 test("SQL 1: colunas novas são idempotentes (criado_por, documento)", () => {
   assert.match(LEADS, /ADD COLUMN IF NOT EXISTS criado_por uuid/);
@@ -127,4 +128,31 @@ test("SQL 5: nunca usa LIKE com barra invertida (em LIKE ela é o escape e o che
   const v = sql("2026-09-28_for173_5_verifica_aplicacao.sql").split("\n").filter((l) => !l.trim().startsWith("--")).join("\n");
   assert.doesNotMatch(v, /LIKE\s+'[^']*\\/i);
   assert.match(v, /strpos\(/);
+});
+
+test("SQL 5: confere os MESMOS nomes que o SQL 1 cria (constraints, índice, policy) — sem check inútil por erro de digitação", () => {
+  const v5 = sql("2026-09-28_for173_5_verifica_aplicacao.sql");
+  for (const nome of ["leads_documento_check", "leads_avulso_sem_consent_check", "leads_avulso_um_depre_check", "uq_leads_avulso_processo_depre", "anon_insert_leads"]) {
+    assert.ok(LEADS.includes(nome), `SQL 1 não menciona ${nome}`);
+    assert.ok(v5.includes(nome), `SQL 5 não confere ${nome}`);
+  }
+});
+
+test("SQL 6 (roteiro): rollback garantido por construção — sem COMMIT, sem BEGIN/ROLLBACK, termina com RAISE EXCEPTION", () => {
+  const raw = sql("2026-09-28_for173_6_roteiro_teste_transacional.sql");
+  const cod = raw.split("\n").filter((l) => !l.trim().startsWith("--")).join("\n");
+  assert.doesNotMatch(cod, /\bCOMMIT\b/i, "nada pode ser confirmado");
+  assert.doesNotMatch(cod, /^\s*(BEGIN|START TRANSACTION|ROLLBACK)\s*;/im, "o SQL Editor mostra só a última instrução: nada de BEGIN/ROLLBACK soltos");
+  // o ÚLTIMO comando do DO é o RAISE EXCEPTION que carrega o relatório e desfaz tudo
+  assert.match(cod.trim(), /RAISE EXCEPTION E'FOR-173 roteiro transacional[\s\S]*END\s*\$do\$;\s*$/);
+  // só pg_temp para helpers (somem com a sessão e são desfeitos pelo erro)
+  assert.doesNotMatch(cod, /CREATE (OR REPLACE )?FUNCTION (?!pg_temp\.)/i);
+  // usa now() fixo por transação corretamente: recua iniciada_em à mão antes de provar preserva/renova
+  assert.match(cod, /UPDATE public\.pagamentos_consultas_progresso SET iniciada_em = now\(\) - interval '1 hour'/);
+});
+
+test("SQL 6: os nomes das RPCs e das constraints que ele exercita existem nos SQLs 1 e 4", () => {
+  const cod = sql("2026-09-28_for173_6_roteiro_teste_transacional.sql");
+  assert.ok(cod.includes("registrar_progresso_consulta_pagamento") && RPC4.includes("registrar_progresso_consulta_pagamento"));
+  assert.ok(cod.includes("obter_progresso_consulta_pagamento") && RPC4.includes("obter_progresso_consulta_pagamento"));
 });

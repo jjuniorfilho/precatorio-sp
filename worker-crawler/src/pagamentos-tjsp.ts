@@ -150,8 +150,11 @@ export async function consultarEPersistirPagamentos(
   // FOR-173: estado final ANTES do log e drenado (com teto), para nenhum passo atrasado sobrescrevê-lo.
   if (reporter) {
     try {
-      if (erro) reporter.falhar(etapaFalha);
-      else reporter.concluir(consulta!.resultado as "encontrado" | "nao_consta");
+      // Mesma regra do log FOR-171 (`resultado: erro ? "falha" : consulta.resultado`): um resultado "falha" que
+      // chegue sem lançar também é falha no progresso (nunca `concluida` com resultado "falha").
+      const final = erro ? "falha" : consulta!.resultado;
+      if (final === "falha") reporter.falhar(etapaFalha);
+      else reporter.concluir(final);
       await reporter.drenar();
     } catch (e) {
       console.error(`[pagamentos] estado final do progresso não gravado (${processoDepre}):`, e);

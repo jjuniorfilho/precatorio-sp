@@ -21,6 +21,8 @@ export interface OpcoesReporter {
   registrar: RegistrarProgresso;
   /** Destino do erro engolido do `registrar` (default: console.error). Injetável para teste. */
   log?: (msg: string, err: unknown) => void;
+  /** Teto (ms) do `drenar()` quando chamado sem argumento (default 3000). Injetável para teste. */
+  drenarMs?: number;
 }
 
 export interface ProgressoReporter {
@@ -117,7 +119,7 @@ export function criarReporter(op: OpcoesReporter): ProgressoReporter {
     falhar(etapaFalha) {
       enfileirar({ estado: "falha", etapa: etapaFalha ?? "desconhecida", tentativa: tentativaAtual, detalhe: null, resultado: "falha", etapaFalha, nova: false });
     },
-    async drenar(timeoutMs = 3000) {
+    async drenar(timeoutMs = op.drenarMs ?? 3000) {
       let timer: ReturnType<typeof setTimeout> | undefined;
       const teto = new Promise<void>((res) => {
         timer = setTimeout(res, timeoutMs);
