@@ -14,14 +14,14 @@
 O operador do admin vai cadastrar um lead só com o número DEPRE (`.0500`) e ver o valor pago, com barra de progresso. A consulta ao portal TJSP leva 40s–2min e falha por captcha em parte das vezes. Hoje o worker só grava os passos no **fim** da consulta (`registrar_consulta_pagamento`, FOR-171), então o front não tem como mostrar a etapa real durante a execução. Além disso, o modelo de `leads` assume que todo lead vem do site (nome/e-mail/telefone/relação obrigatórios) e as views do grid não distinguem origem.
 
 ## Meta (resultado esperado desta issue)
-1. `leads` ganha `origem` (`'site'` default | `'avulso'`), `criado_por` e `relacao` opcional — sem quebrar o fluxo do site nem os triggers/constraints do FOR-166.
-2. Views `leads_com_progresso` e `leads_processos` expõem `origem` e `criado_por` (o grid do FOR-174 precisa do selo/filtro).
+1. `leads` passa a aceitar o lead avulso: `origem='avulso'` (a coluna `origem` **já existe** e é livre), `criado_por` novo, `email` e `relacao` opcionais — sem quebrar o fluxo do site nem os triggers/constraints.
+2. A view `leads_processos` passa a expor `origem` (o grid do FOR-174 precisa do selo/filtro); `leads_com_progresso` já expõe. Sem DROP VIEW.
 3. Tabela `pagamentos_consultas_progresso` + RPC de escrita (worker) + RPC de leitura (front, via server function).
 4. Worker grava o progresso de forma incremental (na_fila → em_andamento → concluida/falha; etapa; tentativa N/4) sem alterar o contrato da resposta nem o log do FOR-171.
 5. Master docs atualizados com as duas exceções e o novo modelo de `leads`.
 
 ## Estratégia (direcional)
-Migration em 4 SQLs pequenos (diag → colunas → views → tabela+RPCs) + um módulo novo no worker (`pagamentos-progresso.ts`) plugado via observador do `PassosCollector` e via `DepsPersistencia`. Tudo best-effort: falha ao gravar progresso nunca derruba a consulta.
+Migration em SQLs pequenos (diag feito → `leads` → `leads_processos` → tabela → RPCs) + um módulo novo no worker (`pagamentos-progresso.ts`) plugado via observador do `PassosCollector` e via `DepsPersistencia`. Tudo best-effort: falha ao gravar progresso nunca derruba a consulta.
 
 ## Repos / base
 - `cortex-v1` (worker-crawler + `sql/` + docs): este PR. Base `origin/main` (`c168f31`, já contém o FOR-171). A branch local `jjuniorfilho/oab-cpopg-credores-conjuntos` NÃO tem o código do FOR-171 — não usar.
@@ -33,7 +33,7 @@ Migration em 4 SQLs pequenos (diag → colunas → views → tabela+RPCs) + um m
 - **NÃO consultar o portal TJSP em nenhum teste** (site de terceiro, captcha; ver memória "segurança de terceiros"). Qualquer teste real exige autorização explícita do humano.
 
 ## Dependências / limitações
-- DDL real de `leads` não está no repo (criado pelo Lovable); `backend-conventions.md` descreve NOT NULL em `nome`, `email`, `telefone`, `processo_depre`, `relacao` + CHECK em `relacao`, mas o banco pode diferir. Migration precisa ser **defensiva** e há um SQL de diagnóstico read-only para rodar antes.
+- DDL real de `leads` (diag rodado em 2026-09-28, ver architecture.md seção 0): só `email` e `relacao` eram NOT NULL; `origem` e `cnj` já existem; sem UNIQUE; triggers só `leads_updated_at` e `trg_leads_enfileira_crawler`. O `backend-conventions.md` está desatualizado nesse ponto (atualizar nesta issue).
 - Confirmar que o `SUPABASE_URL` do worker na VPS é o mesmo projeto do frontend (nota do FOR-171; memória de 26/09 diz que sim).
 - Worker tem fila de concorrência 1 (1 vCPU): consultas do operador competem com busca pública e crawler.
 - Só o humano aplica SQL (SQL Editor) e reinicia o pm2 na VPS.
