@@ -205,7 +205,7 @@ Nenhuma biblioteca nova. Dependências operacionais: SQL Editor do Supabase (hum
    select origem, count(*) as total, count(relacao) as com_relacao, min(created_at) as primeiro, max(created_at) as ultimo
    from public.leads group by origem order by 1;
    ```
-   Se não houver nenhum lead com `origem` em (`busca_em_formacao`, `monitorar`, `antecipacao`), o fluxo de captura por e-mail nunca gravou nada (bug confirmado). Também dá para olhar os logs da function `capturar-lead-publico` no painel do Supabase e procurar `lead: null value in column "relacao"`. **Decisão pendente do humano:** abrir uma issue de bug separada (falha silenciosa na captura pública) — o `DROP NOT NULL` desta issue já destrava a gravação, mas a UI continua sem mostrar erro quando a function falha por outro motivo.
+   **RESULTADO (humano, 2026-09-28): 11 leads no total, todos com `origem` NULL e `relacao` preenchida (primeiro 2026-06-07, último 2026-09-22) → nenhum lead jamais foi gravado pelo `capturar-lead-publico`; a captura por e-mail da tela de resultado público nunca funcionou em produção (bug confirmado, ~3 meses).** Todos os leads existentes vêm do fluxo `cadastro.tsx`. (Regra do teste original: sem lead com `origem` em `busca_em_formacao`, `monitorar` ou `antecipacao` = o fluxo nunca gravou.) Também dá para olhar os logs da function `capturar-lead-publico` no painel do Supabase e procurar `lead: null value in column "relacao"`. **Decisão pendente do humano:** abrir uma issue de bug separada (falha silenciosa na captura pública) — o `DROP NOT NULL` desta issue já destrava a gravação, mas a UI continua sem mostrar erro quando a function falha por outro motivo.
 
 ## 13. Escopo ampliado em 2026-09-28: busca por processo, CPF/CNPJ e DEPRE (impacto)
 
