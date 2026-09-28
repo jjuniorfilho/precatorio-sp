@@ -14,7 +14,7 @@
 O operador do admin vai cadastrar um lead só com o número DEPRE (`.0500`) e ver o valor pago, com barra de progresso. A consulta ao portal TJSP leva 40s–2min e falha por captcha em parte das vezes. Hoje o worker só grava os passos no **fim** da consulta (`registrar_consulta_pagamento`, FOR-171), então o front não tem como mostrar a etapa real durante a execução. Além disso, o modelo de `leads` assume que todo lead vem do site (nome/e-mail/telefone/relação obrigatórios) e as views do grid não distinguem origem.
 
 ## Meta (resultado esperado desta issue)
-1. `leads` passa a aceitar o lead avulso: `origem='avulso'` (a coluna `origem` **já existe** e é livre), `criado_por` novo, `email` e `relacao` opcionais — sem quebrar o fluxo do site nem os triggers/constraints.
+1. `leads` passa a aceitar o lead avulso: `origem='avulso'` (a coluna `origem` **já existe** e é livre), `criado_por` e `documento` (CPF/CNPJ pesquisado) novos, `email` e `relacao` opcionais — sem quebrar o fluxo do site nem os triggers/constraints.
 2. A view `leads_processos` passa a expor `origem` (o grid do FOR-174 precisa do selo/filtro); `leads_com_progresso` já expõe. Sem DROP VIEW.
 3. Tabela `pagamentos_consultas_progresso` + RPC de escrita (worker) + RPC de leitura (front, via server function).
 4. Worker grava o progresso de forma incremental (na_fila → em_andamento → concluida/falha; etapa; tentativa N/4) sem alterar o contrato da resposta nem o log do FOR-171.

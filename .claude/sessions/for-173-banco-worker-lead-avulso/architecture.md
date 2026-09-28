@@ -52,6 +52,7 @@ sequenceDiagram
 |---|---|
 | `leads` (tabela) | + `criado_por uuid`; `DROP NOT NULL` em `email` e `relacao`; índice único parcial `(processo_depre) WHERE origem='avulso'` |
 | `leads.origem` | sem mudança de DDL; novo valor `'avulso'` (COMMENT documenta os valores) |
+| `leads.documento` (nova) | `text`, só dígitos (CPF 11 / CNPJ 14) do que o operador pesquisou; PII, RLS `leads_admin_only` já protege; **fora das views** |
 | `leads_com_progresso` (view) | **não muda** |
 | `leads_processos` (view) | `CREATE OR REPLACE` + `lp.origem` no fim; mesmas opções e GRANTs |
 | `pagamentos_consultas_progresso` (nova) | RLS ligado, sem GRANT de tabela |
@@ -106,15 +107,18 @@ Re-executável, sem DO $$ defensivo (o DDL agora é conhecido):
 
 ```sql
 ALTER TABLE public.leads ADD COLUMN IF NOT EXISTS criado_por uuid;
+ALTER TABLE public.leads ADD COLUMN IF NOT EXISTS documento text;   -- CPF/CNPJ pesquisado (só dígitos)
 ALTER TABLE public.leads ALTER COLUMN email    DROP NOT NULL;
 ALTER TABLE public.leads ALTER COLUMN relacao  DROP NOT NULL;
 COMMENT ON COLUMN public.leads.origem IS
   'Origem do lead: busca_em_formacao | monitorar | antecipacao (fluxo público) | avulso (cadastrado pelo operador no admin, sem 2 canais validados).';
 COMMENT ON COLUMN public.leads.criado_por IS 'auth.users.id do admin que cadastrou o lead avulso (null nos leads do site).';
+COMMENT ON COLUMN public.leads.documento IS 'CPF (11) ou CNPJ (14) pesquisado pelo operador ao cadastrar o lead avulso, só dígitos. PII: nunca em log, nunca exposto a anon; null nos leads do site.';
 CREATE UNIQUE INDEX IF NOT EXISTS uq_leads_avulso_processo_depre
   ON public.leads (processo_depre) WHERE origem = 'avulso';
 ```
 - `criado_por` sem FK (evita acoplar a `auth.users`; é só auditoria).
+- `documento`: só dígitos (a server function normaliza; CHECK opcional `documento IS NULL OR documento ~ '^\d{11}(\d{3})?$'`). Sem índice (nenhuma consulta filtra por ele nesta versão) e fora das views (uma coluna nova no meio de `l.*` exigiria DROP).
 - Índice único parcial impede dois avulsos para o mesmo DEPRE em corrida; o `criarLeadAvulso` (FOR-174) trata o conflito como "já existe" e reconsulta.
 - `nome`/`telefone` já são nullable; o FOR-174 grava **NULL**, nunca string vazia.
 - `saldo_consultado` (NOT NULL default 0) e `devedora` (nullable): o FOR-174 preenche de `precatorios` quando existir.
@@ -198,6 +202,17 @@ Nenhuma biblioteca nova. Dependências operacionais: SQL Editor do Supabase (hum
 1. **`lgpd_consent=false` no avulso** e regra de que nenhuma comunicação automática parte dele (aceitável?).
 2. **Achado 9:** `capturar-lead-publico` parece inserir sem `relacao` (NOT NULL até agora). Essa function está em uso/deployada? Se sim, o relaxamento corrige um bug que talvez já esteja em produção.
 
+## 13. Escopo ampliado em 2026-09-28: busca por processo, CPF/CNPJ e DEPRE (impacto)
+
+O humano voltou a pedir os três tipos de entrada do site. Decisões: **seleção múltipla, 1 lead por DEPRE**; **guardar o CPF/CNPJ em `leads.documento`**; **fallback ao vivo no e-SAJ como o site**.
+
+- **FOR-173 (esta issue):** só ganha a coluna `documento` (seção 3.4). Worker, progresso, views e RPCs não mudam.
+- **FOR-174 (frontend) carrega o resto** (detalhado na issue): busca em 2 etapas — (1) resolução admin-only, **só base local**, por DEPRE/CNJ/CPF/CNPJ → lista de DEPREs candidatos, sem tocar no portal; (2) o operador marca N DEPREs, o front cria N leads e dispara as consultas **em sequência**.
+- **Não reusar a edge `buscar-precatorio`:** para cada item com `.0500` ela chama o worker (90s cada, sem progresso), grava `busca_realizada` em `funnel_events` (poluiria as métricas do funil) e persiste o documento em `djen_depre`/`precatorios`. A resolução do operador é uma server function própria (padrão `consulta-oab.functions.ts`: `supabaseAdmin` + `enqueue_crawler_job`).
+- **Fallback ao vivo (miss de CPF/CNPJ):** o "DOCPARTE" do site só **descobre CNJs no e-SAJ e enfileira o crawler** (`enqueue_crawler_job`, origem `manual`); não devolve DEPRE na hora. O operador vê "N processos enfileirados; busque de novo em alguns minutos". Para busca por processo/DEPRE não há fallback (igual ao site).
+- **Limite do worker:** a fila é serial e a edge `disparar-valor-pago` tem timeout de 120s **incluindo a espera na fila**. Disparar N consultas em paralelo daria falso "falha" nas últimas. O front despacha **uma por vez** e limita a seleção (proposta: máx. 10 DEPREs por lote, ~7 min no pior caso). Uma busca pública na frente da fila também pode empurrar uma consulta do operador além dos 120s (risco já existente).
+- Itens sem `.0500` (direito creditório ainda sem ofício) aparecem na lista mas não são selecionáveis para valor pago.
+
 ---
 
 ## ✅ Verificação de Consistência
@@ -218,6 +233,7 @@ Nenhuma biblioteca nova. Dependências operacionais: SQL Editor do Supabase (hum
 - **Migration defensiva (`DO $$`):** descartada, o DDL agora é conhecido.
 - **Nome do hook:** observador + `iniciar()` + `tentativa(n)` em vez de só `onPasso`.
 - **Exclusão do funil:** filtro TS `origem IS DISTINCT FROM 'avulso'` (não `= 'site'`).
+- **Escopo ampliado (seção 13):** `leads.documento` entra no `_1_leads_avulso.sql`; nada mais muda no FOR-173.
 
 ### Notas
 - Sem consulta ao portal TJSP em nenhum teste (site de terceiro).
