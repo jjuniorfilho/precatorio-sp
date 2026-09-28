@@ -1,6 +1,6 @@
 # Convenções de Backend — Consulta Precatório SP
 
-> Backend a implementar via Supabase. Este documento define as convenções que devem ser
+> Backend em Supabase (schema de `leads` e das tabelas do valor pago já conferido no banco real; `tokens`, `funnel_events` e `lead_status_history` abaixo seguem no formato original do MVP, sem diagnóstico do DDL vivo). Este documento define as convenções que devem ser
 > seguidas na criação do schema, funções e integrações.
 
 ---
@@ -33,28 +33,45 @@ CREATE INDEX idx_precatorios_cnpj     ON precatorios (cnpj_titular);
 ```
 
 ### Tabela: `leads`
+> Schema **real do banco** (conferido por diagnóstico em 2026-09-28; o schema original do MVP era mais simples).
+> Colunas de funil (`nivel_funil`, `etapa1..6_*`) NÃO são da tabela: vêm da view `leads_com_progresso`.
 ```sql
-CREATE TABLE leads (
-  id                      UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  nome                    TEXT NOT NULL,
-  email                   TEXT NOT NULL,
-  telefone                TEXT NOT NULL,
-  relacao                 TEXT NOT NULL CHECK (relacao IN ('titular','herdeiro','advogado')),
-  processo_depre          TEXT NOT NULL,
-  saldo_consultado        BIGINT NOT NULL DEFAULT 0,  -- em CENTAVOS
-  devedora                TEXT,
-  status_crm              TEXT NOT NULL DEFAULT 'novo',
-  notas                   TEXT DEFAULT '',
-  token_email_validado    BOOLEAN NOT NULL DEFAULT false,
-  token_telefone_validado BOOLEAN NOT NULL DEFAULT false,
-  session_id              TEXT,
-  created_at              TIMESTAMPTZ DEFAULT NOW(),
-  updated_at              TIMESTAMPTZ DEFAULT NOW()
-);
-
-CREATE INDEX idx_leads_status_crm  ON leads (status_crm);
-CREATE INDEX idx_leads_created_at  ON leads (created_at DESC);
+-- colunas (ordem real)
+id                      UUID PRIMARY KEY DEFAULT gen_random_uuid()
+nome                    TEXT                       -- nullable
+email                   TEXT                       -- nullable desde o FOR-173 (lead avulso)
+telefone                TEXT                       -- nullable
+relacao                 TEXT CHECK (relacao IN ('titular','herdeiro','advogado'))  -- nullable desde o FOR-173
+processo_depre          TEXT                       -- nullable; pode ser CSV de .0500 (a view leads_processos expande)
+saldo_consultado        BIGINT NOT NULL DEFAULT 0  -- em CENTAVOS
+devedora                TEXT
+status_crm              TEXT NOT NULL DEFAULT 'novo' CHECK (status_crm IN ('novo','contatado','qualificado','interessado','proposta','negociacao','fechado','descartado'))
+notas                   TEXT DEFAULT ''
+token_email_validado    BOOLEAN NOT NULL DEFAULT false
+token_telefone_validado BOOLEAN NOT NULL DEFAULT false
+session_id              TEXT
+utm_source, utm_medium, utm_campaign  TEXT
+lgpd_consent            BOOLEAN NOT NULL DEFAULT false
+lgpd_consent_at         TIMESTAMPTZ
+created_at, updated_at  TIMESTAMPTZ DEFAULT NOW()  -- updated_at mantido pelo trigger leads_updated_at
+intent                  TEXT CHECK (intent IN ('cessao','acordo','info'))
+relatorio_enviado_at    TIMESTAMPTZ
+verified_at             TIMESTAMPTZ
+origem                  TEXT                       -- livre, sem CHECK (ver valores abaixo)
+cnj                     TEXT
+criado_por              UUID                       -- FOR-173: auth.users.id do admin que cadastrou o avulso (sem FK)
+documento               TEXT CHECK (documento IS NULL OR documento ~ '^\d{11}(\d{3})?$')  -- FOR-173: CPF/CNPJ pesquisado, só dígitos (PII)
 ```
+- **`origem`** (texto livre): `busca_em_formacao` | `monitorar` | `antecipacao` (gravadas por `capturar-lead-publico`) | **`avulso`** (FOR-173: cadastrado pelo operador; sem 2 canais validados; `lgpd_consent = false`). Lead do site = `origem IS DISTINCT FROM 'avulso'` (no PostgREST `.neq()` descarta NULL: usar `.or('origem.is.null,origem.neq.avulso')`).
+- **Índices:** `idx_leads_created_at`, `idx_leads_email`, `idx_leads_intent`, `idx_leads_origem`, `idx_leads_status_crm` e o único parcial `uq_leads_avulso_processo_depre (processo_depre) WHERE origem = 'avulso'` (um avulso por DEPRE).
+- **Triggers:** `leads_updated_at` e `trg_leads_enfileira_crawler` (FOR-169: enfileira no crawler cada `.0500` sem capa).
+- **Views (só `service_role`, `security_invoker = true`):** `leads_com_progresso` (`l.*` + `nivel_funil` e `etapa1..6`, inferidas — FOR-170) e `leads_processos` (uma linha por lead × processo consultado; expõe `origem` desde o FOR-173). `criado_por` e `documento` ficam fora das views de propósito (coluna nova no meio de `l.*` exigiria `DROP VIEW`). **Cuidado ao recriar `leads_com_progresso`:** ela é `l.*`, então um `DROP` + `CREATE` puxaria `documento` (CPF/CNPJ) para a view automaticamente; ao recriá-la, liste as colunas explicitamente e deixe `documento` de fora.
+- **FKs para `leads`** (conferidas no diagnóstico): `tokens`, `lead_status_history`, `lead_precatorios` e `comunicacoes_agendadas` com `ON DELETE CASCADE`; `funnel_events` com `ON DELETE SET NULL`.
+- **Invariantes do avulso garantidas pelo banco:** `leads_avulso_sem_consent_check` (`origem='avulso'` ⇒ `lgpd_consent = false`) e `leads_avulso_um_depre_check` (`origem='avulso'` ⇒ `processo_depre` não nulo e sem vírgula).
+
+### Tabelas do valor pago (portal TJSP "Pagamentos Precatórios")
+- `pagamentos_consultas_log` (FOR-171): histórico das consultas (últimas 20 por processo; passos, resultado, etapa da falha). Escrita por RPC `registrar_consulta_pagamento`; leitura admin por `listar_consultas_pagamento`.
+- `pagamentos_consultas_progresso` (FOR-173): **progresso efêmero** da consulta em andamento — uma linha por `processo_depre` (`estado` na_fila|em_andamento|concluida|falha, `etapa` em andamento, `tentativa`/`max_tentativas`, `iniciada_em`, `atualizado_em`). Só o disparo `manual` grava. Escrita pelo worker (RPC `registrar_progresso_consulta_pagamento`); leitura só `service_role` (RPC `obter_progresso_consulta_pagamento`). Sem PII. Limpeza preguiçosa de 7 dias.
 
 ### Tabela: `tokens`
 ```sql
@@ -113,10 +130,17 @@ ALTER TABLE precatorios ENABLE ROW LEVEL SECURITY;
 CREATE POLICY "public_read_precatorios"
   ON precatorios FOR SELECT TO anon, authenticated USING (true);
 
--- leads: apenas usuário autenticado (admin)
+-- leads (real): INSERT anônimo só com consentimento; todo o resto só admin (app_metadata.role = 'admin')
 ALTER TABLE leads ENABLE ROW LEVEL SECURITY;
-CREATE POLICY "admin_all_leads"
-  ON leads FOR ALL TO authenticated USING (true);
+CREATE POLICY "anon_insert_leads" ON leads FOR INSERT TO anon
+  WITH CHECK (lgpd_consent = true AND origem IS DISTINCT FROM 'avulso' AND criado_por IS NULL
+              AND documento IS NULL AND email IS NOT NULL AND relacao IS NOT NULL);
+-- (endurecida no FOR-173: o anon tem GRANT INSERT na tabela inteira; sem isto poderia forjar origem='avulso'/documento/criado_por.
+--  O cadastro do site envia email e relacao e nunca origem/criado_por/documento. `capturar-lead-publico` usa service_role.)
+CREATE POLICY "leads_admin_only" ON leads FOR ALL TO authenticated
+  USING (((auth.jwt() -> 'app_metadata') ->> 'role') = 'admin')
+  WITH CHECK (((auth.jwt() -> 'app_metadata') ->> 'role') = 'admin');
+-- O lead avulso (FOR-173) é inserido por server function com service_role (ignora RLS), nunca pelo anon.
 
 -- tokens: service role only (sem acesso via anon)
 ALTER TABLE tokens ENABLE ROW LEVEL SECURITY;
@@ -138,8 +162,8 @@ CREATE POLICY "admin_read_funnel"
 |------|--------|---------|
 | Tabelas | snake_case plural | `funnel_events`, `leads` |
 | Colunas | snake_case | `status_crm`, `token_email_validado` |
-| Índices | `idx_{tabela}_{coluna}` | `idx_leads_status_crm` |
-| Policies | string descritiva | `"admin_all_leads"` |
+| Índices | `idx_{tabela}_{coluna}`; únicos (parciais ou não): `uq_{tabela}_{descrição}` | `idx_leads_status_crm`, `uq_leads_avulso_processo_depre` |
+| Policies | string descritiva | `"leads_admin_only"`, `"anon_insert_leads"` |
 | Funções Supabase | snake_case | `get_funnel_stats()` |
 
 ---

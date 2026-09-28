@@ -190,3 +190,33 @@ SQL (aplicar em ordem no SQL Editor do banco que o worker usa): `sql/2026-09-25_
 (esperado `nxkvfc…`, mesmo projeto do frontend). Se for outro, os SQLs vão para o banco do worker e é
 preciso o ramo alternativo (GET de consultas no worker + edge lendo dele) — ver
 `.claude/sessions/for-171-crawler-pagamentos-log/architecture.md`.
+
+### Progresso da consulta de valor pago (FOR-173)
+
+Para o admin mostrar uma barra de progresso **real**, a consulta manual publica seu andamento em
+`pagamentos_consultas_progresso` (uma linha por DEPRE, sobrescrita a cada consulta) via RPC
+`registrar_progresso_consulta_pagamento`. O front lê por `obter_progresso_consulta_pagamento` (só `service_role`).
+
+- **Só `origem: "manual"` grava** (`ORIGENS_COM_PROGRESSO` em `src/pagamentos-tjsp.ts`). Crawler e busca pública não.
+- **Estados:** `na_fila` (nasce em `consultarEPersistirPagamentos`, ANTES da fila do Playwright, e renova
+  `iniciada_em`) → `em_andamento` (a vez chegou; `PassosCollector.iniciar()`) → `concluida` | `falha`.
+- **`etapa` = etapa EM ANDAMENTO.** O coletor registra os passos depois de concluídos, então o reporter
+  (`src/pagamentos-progresso.ts`, `proximaEtapa`) converte "concluí X" em "agora está em Y";
+  `PassosCollector.tentativa(n)` marca `busca` com a tentativa N sem virar passo do log FOR-171.
+- **Nunca derruba a consulta:** as escritas saem em ordem (cadeia serial), erro do `registrar` só vai para o
+  console, e fábrica/reporter que lançarem são desligados. O estado final é gravado e drenado (teto de 3s)
+  **antes** do log do FOR-171. O `detalhe` nunca leva texto de passo `erro` (mensagem crua de exceção).
+- **Linha órfã** (worker morto no meio) fica `em_andamento`; o front trata `atualizado_em` parado > 150s como timeout.
+  A RPC de escrita apaga linhas `concluida|falha` com mais de 7 dias.
+- **`nova` (renova `iniciada_em`)** vai no `na_fila` e é **reenviado em toda escrita até uma dar certo**: se a do `na_fila` falhar, a seguinte ainda renova (o front reconhece a consulta nova pela mudança de `iniciada_em`).
+- **Timeout por escrita:** 5s (`PROGRESSO_TIMEOUT_MS`, `abortSignal`); uma RPC travada não prende as escritas seguintes. Pior caso: o `drenar` segura a resposta HTTP por até 3s no fim da consulta; o front deve tratar a resposta HTTP como a fonte de verdade do fim.
+- **Chamada sem `origem`** (`POST /valor-pago` sem o campo) conta como `manual` e, portanto, publica progresso; a busca pública deve mandar `origem: "busca_publica"` (o código do repo manda; confirmar a versão publicada da edge `buscar-precatorio`).
+- **Compatível com front antigo:** só grava progresso a mais; o contrato do `POST /valor-pago` não mudou.
+
+Validação dos SQLs em Postgres real, sem tocar em produção: `sql/sandbox/for173_validate_local.sh` (requer `brew install postgresql@15`).
+
+SQL (aplicar em ordem no SQL Editor do banco do worker): `sql/2026-09-28_for173_1_leads_avulso.sql`,
+`_2_view_leads_processos_origem.sql`, `_3_tabela_progresso.sql`, `_4_rpcs_progresso.sql`; **depois** deploy do worker
+(`git pull`, `npm install`, `pm2 restart` do processo do worker). Inspecionar:
+`select * from pagamentos_consultas_progresso order by atualizado_em desc;`
+
