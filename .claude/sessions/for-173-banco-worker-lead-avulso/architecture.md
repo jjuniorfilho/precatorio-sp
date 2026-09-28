@@ -12,7 +12,7 @@ O diag mudou o desenho do banco. O que o banco vivo diz:
 6. **RLS:** `anon_insert_leads` (check `lgpd_consent = true`) e `leads_admin_only` (`authenticated` com `app_metadata.role='admin'`). O avulso é inserido por server function com `service_role` (ignora RLS). `lgpd_consent` é NOT NULL default `false` → **lead avulso fica com `lgpd_consent=false`** (sem consentimento do titular): registrar na exceção dos master docs e nunca disparar comunicação automática para avulso.
 7. **FOR-171 está aplicado** no banco (tabela + `registrar_consulta_pagamento` + `listar_consultas_pagamento`); e o log de consultas que o humano consultou confirma que worker e frontend usam o mesmo banco.
 8. **FKs para `leads`:** `comunicacoes_agendadas` (CASCADE), `funnel_events` (SET NULL), `lead_precatorios`, `lead_status_history`, `tokens` (CASCADE). Risco de e-mail NULL é baixo: `enviar-relatorio` exige os dois tokens validados antes de usar o e-mail; `comunicacoes_agendadas` só é escrita por `capturar-lead-publico`; `reuse-lead` só lê lead verificado (avulso nunca é).
-9. **Achado lateral (não é escopo):** `capturar-lead-publico` insere sem `relacao`, mas `relacao` era NOT NULL sem default — aparentemente esse insert falharia. Relaxar `relacao` também resolve isso. Confirmar com o humano se essa function está em uso.
+9. **Achado lateral (investigado, fora do escopo):** `capturar-lead-publico` **está em uso** — é chamada por `CapturaEmail` em `src/components/resultado-fase.tsx:161` (captura de e-mail da tela de resultado público, no ar desde o FOR-83, 2026-06-28). Ela insere `{ email, cnj, origem, status_crm, lgpd_consent, lgpd_consent_at, session_id }` **sem `relacao`**, e `relacao` é NOT NULL sem default → o INSERT deve falhar (23502) e a function responde 500. **A UI mascara a falha:** `setDone(ok)` com `ok=false` deixa o formulário parado, sem mensagem de erro. Só o código do repo foi verificado (a function no ar pode diferir; o histórico dela é um único commit do Lovable). Confirmação em produção pendente da query de conferência (seção 12). Efeito desta issue: `DROP NOT NULL` em `relacao` faz esse fluxo público passar a gravar leads que hoje seriam perdidos; é benéfico, mas muda comportamento em produção e deve constar no PR e no rollout.
 
 ## 1. Visão de alto nível
 
@@ -199,8 +199,13 @@ Nenhuma biblioteca nova. Dependências operacionais: SQL Editor do Supabase (hum
 5. **Diag antes da migration:** feito; resultado incorporado na seção 0.
 
 ## 12. Pontos para o humano confirmar (novos, vindos do diag)
-1. **`lgpd_consent=false` no avulso** e regra de que nenhuma comunicação automática parte dele (aceitável?).
-2. **Achado 9:** `capturar-lead-publico` parece inserir sem `relacao` (NOT NULL até agora). Essa function está em uso/deployada? Se sim, o relaxamento corrige um bug que talvez já esteja em produção.
+1. **`lgpd_consent=false` no avulso** e nenhuma comunicação automática parte dele: **APROVADO** pelo humano (2026-09-28).
+2. **Achado 9 (investigado):** a function está em uso e o INSERT deve estar falhando em produção, com falha silenciosa na UI. Para confirmar no banco vivo:
+   ```sql
+   select origem, count(*) as total, count(relacao) as com_relacao, min(created_at) as primeiro, max(created_at) as ultimo
+   from public.leads group by origem order by 1;
+   ```
+   Se não houver nenhum lead com `origem` em (`busca_em_formacao`, `monitorar`, `antecipacao`), o fluxo de captura por e-mail nunca gravou nada (bug confirmado). Também dá para olhar os logs da function `capturar-lead-publico` no painel do Supabase e procurar `lead: null value in column "relacao"`. **Decisão pendente do humano:** abrir uma issue de bug separada (falha silenciosa na captura pública) — o `DROP NOT NULL` desta issue já destrava a gravação, mas a UI continua sem mostrar erro quando a function falha por outro motivo.
 
 ## 13. Escopo ampliado em 2026-09-28: busca por processo, CPF/CNPJ e DEPRE (impacto)
 
