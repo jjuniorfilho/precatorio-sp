@@ -129,3 +129,110 @@ test("origemValida", () => {
   assert.ok(origemValida("manual") && origemValida("busca_publica") && origemValida("crawler"));
   assert.ok(!origemValida("x") && !origemValida(undefined) && !origemValida(1));
 });
+
+// ---- FOR-173: progresso incremental (deps injetadas, sem portal) ----
+import { criarReporter, type ProgressoReporter } from "./pagamentos-progresso.js";
+import type { RegistroProgressoPagamento } from "./supabase.js";
+
+/** Reporter fake que só anota a ordem das chamadas (junto com as demais dependências). */
+function reporterFake(linha: string[]): ProgressoReporter {
+  return {
+    naFila: () => { linha.push("naFila"); },
+    ligar: () => { linha.push("ligar"); },
+    concluir: (r) => { linha.push(`concluir:${r}`); },
+    falhar: (e) => { linha.push(`falhar:${e}`); },
+    drenar: async () => { linha.push("drenar"); },
+  };
+}
+
+test("progresso (manual): na_fila ANTES de consultar; estado final e drenar ANTES do log", async () => {
+  const linha: string[] = [];
+  const { deps } = fakeDeps({ resultado: "nao_consta" });
+  const consultar = deps.consultar;
+  deps.consultar = async (...a) => { linha.push("consultar"); return consultar(...a); };
+  deps.registrar = async () => { linha.push("log"); };
+  deps.progresso = () => reporterFake(linha);
+  await consultarEPersistirPagamentos(DEPRE, { origem: "manual" }, deps);
+  assert.deepEqual(linha, ["ligar", "naFila", "consultar", "concluir:nao_consta", "drenar", "log"]);
+});
+
+test("progresso (manual): falha grava falhar(etapa) antes do log e a consulta relança o erro", async () => {
+  const linha: string[] = [];
+  const { deps } = fakeDeps({ erro: new Error("timeout") });
+  deps.registrar = async () => { linha.push("log"); };
+  deps.progresso = () => reporterFake(linha);
+  await assert.rejects(() => consultarEPersistirPagamentos(DEPRE, { origem: "manual" }, deps), /timeout/);
+  assert.deepEqual(linha, ["ligar", "naFila", "falhar:busca", "drenar", "log"]);
+});
+
+test("progresso: crawler e busca_publica NÃO criam reporter (só o disparo manual publica progresso)", async () => {
+  for (const origem of ["crawler", "busca_publica"] as const) {
+    let fabricas = 0;
+    const { deps } = fakeDeps({ resultado: "encontrado" });
+    deps.progresso = () => { fabricas++; return reporterFake([]); };
+    await consultarEPersistirPagamentos(DEPRE, { origem }, deps);
+    assert.equal(fabricas, 0, origem);
+  }
+});
+
+test("progresso: fábrica ou reporter que LANÇAM não derrubam a consulta nem o log", async () => {
+  for (const quebra of ["fabrica", "naFila", "concluir"] as const) {
+    const { deps, chamadas } = fakeDeps({ resultado: "nao_consta" });
+    deps.progresso = () => {
+      if (quebra === "fabrica") throw new Error("bug na fábrica");
+      return { ...reporterFake([]), ...(quebra === "naFila" && { naFila: () => { throw new Error("bug"); } }), ...(quebra === "concluir" && { concluir: () => { throw new Error("bug"); } }) };
+    };
+    const r = await consultarEPersistirPagamentos(DEPRE, { origem: "manual" }, deps);
+    assert.equal(r.resultado, "nao_consta", quebra);
+    assert.equal(chamadas.marcar, 1, quebra);
+    assert.equal(chamadas.registrar.length, 1, `${quebra}: o log do FOR-171 ainda é gravado`);
+  }
+});
+
+test("progresso: o LOG do FOR-171 fica idêntico com e sem progresso (tentativa()/iniciar() não viram passo)", async () => {
+  const emiteEventos = async (_d: string, _m: number, passos: PassosCollector) => {
+    passos.iniciar();
+    passos.passo("abrir_portal", "ok", "Abriu o portal");
+    passos.tentativa(1);
+    passos.passo("busca", "info", "Tentativa 1: captcha rejeitado ou sem resultado");
+    passos.tentativa(2);
+    passos.passo("busca", "ok", "Tentativa 2: busca executada");
+    return { ...consultaBase("nao_consta"), tentativas: passos.tentativas };
+  };
+  const logados: unknown[] = [];
+  const captura = (deps: DepsPersistencia) => { deps.registrar = async (r) => { logados.push({ passos: r.passos.map((p) => (p as { etapa: string; status: string; detalhe?: string }).detalhe ?? ""), tentativas: r.tentativas, resultado: r.resultado }); }; };
+
+  const sem = fakeDeps({}); sem.deps.consultar = emiteEventos; captura(sem.deps);
+  await consultarEPersistirPagamentos(DEPRE, { origem: "manual" }, sem.deps);
+
+  const com = fakeDeps({}); com.deps.consultar = emiteEventos; captura(com.deps);
+  com.deps.progresso = (a) => criarReporter({ ...a, registrar: async () => {} });
+  await consultarEPersistirPagamentos(DEPRE, { origem: "manual" }, com.deps);
+
+  assert.equal(logados.length, 2);
+  assert.deepEqual(logados[1], logados[0], "log idêntico com e sem progresso");
+  // 3 passos emitidos pelo fake + o passo real `persistir` que o próprio consultarEPersistirPagamentos acrescenta.
+  // Nenhum vem de tentativa()/iniciar().
+  assert.equal((logados[0] as { passos: string[] }).passos.length, 4, "3 passos do fake + `persistir`; nada de tentativa()/iniciar()");
+});
+
+test("progresso (reporter real + fake): sequência gravada de ponta a ponta sem tocar no portal", async () => {
+  const registros: RegistroProgressoPagamento[] = [];
+  const { deps } = fakeDeps({});
+  deps.consultar = async (_d, _m, passos) => {
+    passos.iniciar();
+    passos.tentativa(1);
+    passos.passo("busca", "ok", "Tentativa 1: busca executada");
+    passos.passo("resultado_carregou", "ok");
+    passos.passo("ler_resultado", "ok", "grade com pagamento");
+    return { ...consultaBase("encontrado"), tentativas: 1 };
+  };
+  deps.progresso = (a) => criarReporter({ ...a, registrar: async (r) => { registros.push(r); } });
+  await consultarEPersistirPagamentos(DEPRE, { origem: "manual" }, deps);
+  assert.deepEqual(
+    registros.map((r) => `${r.estado}/${r.etapa}/${r.tentativa}`),
+    ["na_fila/na_fila/0", "em_andamento/iniciando/0", "em_andamento/busca/1", "em_andamento/resultado_carregou/1", "em_andamento/ler_resultado/1", "em_andamento/extrair_pagamentos/1", "em_andamento/persistir/1", "concluida/persistir/1"],
+  );
+  assert.equal(registros[0]!.nova, true);
+  assert.equal(registros.at(-1)!.resultado, "encontrado");
+});

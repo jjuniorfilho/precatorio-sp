@@ -415,3 +415,40 @@ export async function registrarConsultaPagamento(r: RegistroConsultaPagamento): 
   });
   if (error) throw new Error(`registrarConsultaPagamento: ${error.message}`);
 }
+
+// ---- FOR-173: progresso incremental da consulta de valor pago (pagamentos_consultas_progresso) ----
+
+export type EstadoProgresso = "na_fila" | "em_andamento" | "concluida" | "falha";
+
+export interface RegistroProgressoPagamento {
+  processoDepre: string;
+  estado: EstadoProgresso;
+  /** Etapa EM ANDAMENTO (na_fila | iniciando | uma Etapa do coletor); a RPC troca o que não conhecer por 'desconhecida'. */
+  etapa: string;
+  tentativa: number;
+  maxTentativas: number;
+  detalhe: string | null;
+  resultado: "encontrado" | "nao_consta" | "falha" | null;
+  etapaFalha: string | null;
+  origem: "manual" | "busca_publica" | "crawler";
+  /** true só no `na_fila`: renova `iniciada_em` (o front usa a mudança dele para reconhecer a consulta nova). */
+  nova: boolean;
+}
+
+/** Publica o progresso (RPC SECURITY DEFINER `registrar_progresso_consulta_pagamento`). Lança em caso de
+ * erro; o reporter (pagamentos-progresso.ts) engole: progresso é auxiliar e não pode derrubar a consulta. */
+export async function registrarProgressoPagamento(r: RegistroProgressoPagamento): Promise<void> {
+  const { error } = await supabase.rpc("registrar_progresso_consulta_pagamento", {
+    p_processo_depre: r.processoDepre,
+    p_estado: r.estado,
+    p_etapa: r.etapa,
+    p_tentativa: r.tentativa,
+    p_max_tentativas: r.maxTentativas,
+    p_detalhe: r.detalhe,
+    p_resultado: r.resultado,
+    p_etapa_falha: r.etapaFalha,
+    p_origem: r.origem,
+    p_nova: r.nova,
+  });
+  if (error) throw new Error(`registrarProgressoPagamento: ${error.message}`);
+}

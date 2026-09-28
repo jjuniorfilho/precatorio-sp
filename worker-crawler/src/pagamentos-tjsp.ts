@@ -22,7 +22,8 @@ import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import { solveCaptcha } from "./captcha.js";
 import { comFilaPlaywright } from "./fila.js";
-import { upsertPagamentos, marcarPagamentosConsultado, registrarConsultaPagamento } from "./supabase.js";
+import { upsertPagamentos, marcarPagamentosConsultado, registrarConsultaPagamento, registrarProgressoPagamento } from "./supabase.js";
+import { criarReporter, type ProgressoReporter } from "./pagamentos-progresso.js";
 import { classificarHtml, type ResultadoConsulta } from "./pagamentos-classificar.js";
 import { PassosCollector, ConsultaPagamentoErro, type Etapa, type Passo } from "./pagamentos-passos.js";
 
@@ -36,6 +37,9 @@ const RESULTADO_RE = /pesquisainternetnumanoep\.aspx/;
 
 export type OrigemConsulta = "manual" | "busca_publica" | "crawler";
 export const ORIGENS_CONSULTA: readonly OrigemConsulta[] = ["manual", "busca_publica", "crawler"];
+/** FOR-173: só o disparo manual do admin publica progresso (a barra do "Novo lead avulso"). Crawler e busca
+ * pública não precisam e só gerariam escritas inúteis em `pagamentos_consultas_progresso`. */
+export const ORIGENS_COM_PROGRESSO: readonly OrigemConsulta[] = ["manual"];
 
 export interface Pagamento {
   data: string | null; // ISO (YYYY-MM-DD) quando possível
@@ -64,7 +68,10 @@ export async function consultarPagamentos(
   maxTentativas = 4,
   passos: PassosCollector = new PassosCollector(),
 ): Promise<ConsultaPagamento> {
-  return comFilaPlaywright(() => consultarInterno(processoDepre, maxTentativas, passos));
+  return comFilaPlaywright(() => {
+    passos.iniciar(); // FOR-173: a vez na fila chegou (na_fila → em_andamento); não vira passo do log
+    return consultarInterno(processoDepre, maxTentativas, passos);
+  });
 }
 
 /** Dependências injetáveis (testes) de consultarEPersistirPagamentos. */
@@ -73,12 +80,15 @@ export interface DepsPersistencia {
   upsert: typeof upsertPagamentos;
   marcar: typeof marcarPagamentosConsultado;
   registrar: typeof registrarConsultaPagamento;
+  /** FOR-173: fábrica do reporter de progresso. Opcional: sem ela (ex.: testes antigos) não há progresso. */
+  progresso?: (args: { processoDepre: string; origem: OrigemConsulta; maxTentativas: number }) => ProgressoReporter;
 }
 const depsPadrao: DepsPersistencia = {
   consultar: consultarPagamentos,
   upsert: upsertPagamentos,
   marcar: marcarPagamentosConsultado,
   registrar: registrarConsultaPagamento,
+  progresso: (a) => criarReporter({ ...a, registrar: registrarProgressoPagamento }),
 };
 
 export function origemValida(v: unknown): v is OrigemConsulta {
@@ -105,6 +115,19 @@ export async function consultarEPersistirPagamentos(
   const iniciadaEm = new Date();
   let consulta: ConsultaPagamento | null = null;
   let erro: unknown = null;
+
+  // FOR-173: progresso incremental (só origem manual). `na_fila` nasce ANTES de deps.consultar, que é quem
+  // entra na fila do Playwright. Qualquer falha do reporter é engolida por ele: nunca afeta a consulta.
+  let reporter: ProgressoReporter | null = null;
+  try {
+    reporter = ORIGENS_COM_PROGRESSO.includes(origem) ? deps.progresso?.({ processoDepre, origem, maxTentativas }) ?? null : null;
+    reporter?.ligar(passos);
+    reporter?.naFila();
+  } catch (e) {
+    console.error(`[pagamentos] progresso desligado (${processoDepre}):`, e);
+    reporter = null; // progresso é auxiliar: jamais derruba a consulta
+  }
+
   try {
     consulta = await deps.consultar(processoDepre, maxTentativas, passos);
     try {
@@ -123,6 +146,18 @@ export async function consultarEPersistirPagamentos(
   }
 
   const etapaFalha = erro ? (erro instanceof ConsultaPagamentoErro ? erro.etapa : "desconhecida") : null;
+
+  // FOR-173: estado final ANTES do log e drenado (com teto), para nenhum passo atrasado sobrescrevê-lo.
+  if (reporter) {
+    try {
+      if (erro) reporter.falhar(etapaFalha);
+      else reporter.concluir(consulta!.resultado as "encontrado" | "nao_consta");
+      await reporter.drenar();
+    } catch (e) {
+      console.error(`[pagamentos] estado final do progresso não gravado (${processoDepre}):`, e);
+    }
+  }
+
   await deps.registrar({
     processoDepre,
     iniciadaEm,
@@ -175,7 +210,7 @@ async function consultarInterno(
     etapa = "busca";
     for (let tentativa = 1; tentativa <= maxTentativas; tentativa++) {
       if (RESULTADO_RE.test(page.url())) break; // busca de uma tentativa anterior já completou
-      passos.tentativas = tentativa;
+      passos.tentativa(tentativa); // FOR-173: atribui `tentativas` e notifica o progresso (não acrescenta passo)
       const ok = await tentarBusca(page, processoDepre);
       passos.passo("busca", ok ? "ok" : "info", ok ? `Tentativa ${tentativa}: busca executada` : `Tentativa ${tentativa}: captcha rejeitado ou sem resultado`);
       if (ok) break;
