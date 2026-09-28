@@ -36,31 +36,44 @@ Humano: `grep SUPABASE_URL /opt/precatorio-worker/.env | cut -c1-40` deve começ
 ### 0.3 Worktree do frontend para o espelho [Não Iniciada ⏳]
 Antes da Fase 6: `git fetch` no repo `frontend` e criar worktree a partir de `jjuniorfilho/precatorio-sp` (o Lovable altera essa branch em paralelo). `npm install`, não `npm ci`.
 
-## FASE 1 — SQL: `leads` avulso + view [Não Iniciada ⏳]  (~1,5h; paralela às fases 2, 3, 5)
+## FASE 1 — SQL: `leads` avulso + view [Completada ✅]  (~1,5h; paralela às fases 2, 3, 5)
 
-### 1.1 `sql/2026-09-28_for173_1_leads_avulso.sql` [Não Iniciada ⏳]
+### 1.1 `sql/2026-09-28_for173_1_leads_avulso.sql` [Completada ✅]
 Re-executável, sem `DO $$` (DDL conhecido): `ADD COLUMN IF NOT EXISTS criado_por uuid` e `documento text`; `ALTER COLUMN email DROP NOT NULL`, `ALTER COLUMN relacao DROP NOT NULL`; `COMMENT` em `origem` (valores) / `criado_por` / `documento`; `CHECK` opcional de `documento` (`NULL` ou 11/14 dígitos) via `DO`/`IF NOT EXISTS` em `pg_constraint`; `CREATE UNIQUE INDEX IF NOT EXISTS uq_leads_avulso_processo_depre ON leads (processo_depre) WHERE origem = 'avulso'`; `NOTIFY pgrst, 'reload schema'`. Cabeçalho com ordem de aplicação, pré-requisito (mesmo projeto Supabase) e o aviso: **`DROP NOT NULL` em `relacao` destrava o `capturar-lead-publico` (FOR-175)**.
 
-### 1.2 `sql/2026-09-28_for173_2_view_leads_processos_origem.sql` [Não Iniciada ⏳]
+### 1.2 `sql/2026-09-28_for173_2_view_leads_processos_origem.sql` [Completada ✅]
 `CREATE OR REPLACE VIEW public.leads_processos WITH (security_invoker = true)` com a definição **viva** colada do diagnóstico (`lp.id … inc.cessao_credito`) + `lp.origem` como **última** coluna. Reafirma `REVOKE ALL … FROM PUBLIC, anon, authenticated` e `GRANT ALL … TO service_role`. Sem `DROP VIEW`. `leads_com_progresso` não é tocada.
 
-### 1.3 Teste de texto do SQL [Não Iniciada ⏳]
+### 1.3 Teste de texto do SQL [Completada ✅]
 `worker-crawler/src/leads-avulso-sql.for173.test.ts` (node:test, `readFileSync` de `../../sql/...`): 1.1 tem `IF NOT EXISTS`, os dois `DROP NOT NULL`, índice parcial e **não** tem `DROP`/`CREATE TABLE`; 1.2 é `CREATE OR REPLACE` (sem `DROP VIEW`), `lp.origem` vem depois de `inc.cessao_credito`/última coluna do SELECT, mantém `security_invoker` e o REVOKE/GRANT.
 
 ### Comentários:
-- Não criar `origem` nem CHECK nela: a coluna já existe e é livre (achado 1 do diag).
+- Não criar `origem` nem CHECK nela: a coluna já existe e é livre (achado 1 do diag). O teste trava isso.
+- A view foi reescrita a partir da definição VIVA (`pg_get_viewdef` do diagnóstico), com os mesmos 4 LATERAL JOINs e as 32 colunas na mesma ordem; `lp.origem` é a 33ª. O teste compara a lista de colunas inteira (guarda contra drift).
+- Adicionei um `CHECK` de `documento` (null ou 11/14 dígitos), criado de forma idempotente por `DO $$`/`pg_constraint`. Não estava no plano original; barato e impede lixo em PII.
+- **Nada aplicado no banco.** Os SQLs só existem no repo; quem aplica é o humano na Fase 7.
+- **Não validado contra um Postgres real** (não há banco local): a sintaxe foi conferida por leitura e por teste de texto. A validação real é o `apply` da Fase 7 (o `CREATE OR REPLACE VIEW` falha com erro claro se a definição viva divergir da colada aqui).
 
-## FASE 2 — SQL: tabela e RPCs de progresso [Não Iniciada ⏳]  (~1,5h; paralela às fases 1, 3, 5)
+## FASE 2 — SQL: tabela e RPCs de progresso [Completada ✅]  (~1,5h; paralela às fases 1, 3, 5)
 
-### 2.1 `sql/2026-09-28_for173_3_tabela_progresso.sql` [Não Iniciada ⏳]
+### 2.1 `sql/2026-09-28_for173_3_tabela_progresso.sql` [Completada ✅]
 `pagamentos_consultas_progresso` como em `architecture.md` 3.1 (PK `processo_depre`, `estado` CHECK, `resultado`/`origem` CHECK, `tentativa`/`max_tentativas`, `detalhe`, `etapa_falha`, `iniciada_em`/`atualizado_em`), `ENABLE ROW LEVEL SECURITY`, `REVOKE ALL … FROM anon, authenticated`, `NOTIFY pgrst`. Re-executável.
 
-### 2.2 `sql/2026-09-28_for173_4_rpcs_progresso.sql` [Não Iniciada ⏳]
+### 2.2 `sql/2026-09-28_for173_4_rpcs_progresso.sql` [Completada ✅]
 - `registrar_progresso_consulta_pagamento` (contrato acima): `plpgsql SECURITY DEFINER SET search_path = public`; valida `processo_depre ~ '\.8\.26\.0500$'`; `estado` inválido → exceção; etapa fora da lista → `desconhecida`; `left(p_detalhe, 200)`, `left(p_etapa_falha, 40)`, `tentativa` limitada 0–100; `INSERT … ON CONFLICT (processo_depre) DO UPDATE` (com `p_nova` renovando `iniciada_em`); **limpeza preguiçosa**: `DELETE` de linhas `concluida|falha` com `atualizado_em < now() - interval '7 days'`. `REVOKE ALL … FROM PUBLIC, anon; GRANT EXECUTE … TO authenticated, service_role`.
 - `obter_progresso_consulta_pagamento`: `STABLE SECURITY DEFINER`; devolve o `jsonb` acima ou `null`. `REVOKE ALL … FROM PUBLIC, anon, authenticated; GRANT EXECUTE … TO service_role`.
 
-### 2.3 Teste de texto do SQL [Não Iniciada ⏳]
+### 2.3 Teste de texto do SQL [Completada ✅]
 `worker-crawler/src/progresso-sql.for173.test.ts`: SECURITY DEFINER + `search_path` fixo nas duas RPCs; GRANTs exatos (leitura **só** `service_role`); tabela com RLS e sem GRANT a anon/authenticated; assinatura das RPCs bate com o contrato deste plano.
+
+### Comentários (Fase 2):
+- Além do plano: índice `idx_pagamentos_consultas_progresso_atualizado (atualizado_em)` para a limpeza preguiçosa; a RPC de escrita limita `tentativa` (0–100) e `max_tentativas` (1–100) e converte `resultado`/`origem` inválidos em NULL em vez de estourar o CHECK (o progresso nunca deve derrubar a consulta).
+- `origem` na atualização usa `COALESCE(EXCLUDED.origem, t.origem)`: um passo sem origem não apaga a origem gravada pelo `na_fila`.
+- O teste da tabela garante que **não há PII** (`cpf|cnpj|documento|nome|email|telefone`) no DDL.
+
+### Verificação da fase (Fases 1 e 2)
+- `npm run typecheck` limpo; `npm test` = 87/87 (21 novos).
+- **Checagem de mutação** dos testes de texto: (1) `lp.origem` no meio da view, (2) leitura concedida a `anon`, (3) `DROP VIEW` no SQL 2 — cada uma derrubou exatamente 1 teste e, restaurado o SQL, voltou a 21/21.
 
 ## FASE 3 — Worker: núcleo do progresso [Não Iniciada ⏳]  (~2h; paralela às fases 1, 2, 5)
 
