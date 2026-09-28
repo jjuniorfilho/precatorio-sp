@@ -7,8 +7,11 @@
 --
 -- COMO NADA FICA GRAVADO: o teste inteiro roda num único bloco DO que termina SEMPRE com RAISE EXCEPTION.
 -- O erro desfaz TODAS as escritas do teste (leads e linhas de progresso de mentira). O RELATÓRIO vem na
--- própria MENSAGEM DO ERRO ("ERROR: FOR-173 roteiro ... nada foi gravado ..."): copie-a e cole no chat.
--- (O SQL Editor mostra só o resultado da última instrução, por isso não há BEGIN/ROLLBACK/SELECT final.)
+-- própria MENSAGEM DO ERRO ("ERROR: FOR-173 roteiro transacional — RESUMO: N ok, M FALHOU ..."): copie-a e
+-- cole no chat. (O SQL Editor mostra só o resultado da última instrução, por isso não há BEGIN/ROLLBACK/
+-- SELECT final.) O relatório sai numa LINHA SÓ (casos separados por " ¦ ") porque o editor do Supabase corta
+-- a mensagem do erro depois da primeira quebra de linha: o RESUMO e as FALHAS vêm PRIMEIRO, e depois todos
+-- os casos.
 -- As duas funções auxiliares ficam em pg_temp (somem com a sessão) e são criadas na mesma mensagem, então
 -- também são desfeitas pelo erro.
 --
@@ -46,7 +49,7 @@ $f$;
 CREATE OR REPLACE FUNCTION pg_temp.linha(p_caso text, p_esperado text, p_atual text) RETURNS text
 LANGUAGE sql AS $f$
   SELECT CASE WHEN p_atual LIKE p_esperado || '%' THEN 'ok ' ELSE 'FALHOU ' END
-         || p_caso || '  [esperado: ' || p_esperado || ' | atual: ' || p_atual || ']' || E'\n'
+         || p_caso || '  [esperado: ' || p_esperado || ' | atual: ' || p_atual || ']' || ' ¦ '
 $f$;
 
 DO $do$
@@ -54,6 +57,7 @@ DECLARE
   rel     text := '';
   falhas  int;
   oks     int;
+  so_falhas text;
   d1      constant text := '0000101-01.2020.8.26.0500';   -- DEPREs de mentira (não existem na base)
 BEGIN
   RESET ROLE;
@@ -177,10 +181,14 @@ BEGIN
   rel := rel || pg_temp.linha('anon NÃO lê a view leads_processos (PII)', 'BLOQUEADO 42501',
     pg_temp.tenta('SELECT count(*) FROM public.leads_processos', 'anon'));
 
-  SELECT count(*) INTO falhas FROM regexp_matches(rel, E'(^|\\n)FALHOU ', 'g');
-  SELECT count(*) INTO oks    FROM regexp_matches(rel, E'(^|\\n)ok ', 'g');
+  SELECT count(*) INTO falhas FROM regexp_matches(rel, '(^| ¦ )FALHOU ', 'g');
+  SELECT count(*) INTO oks    FROM regexp_matches(rel, '(^| ¦ )ok ', 'g');
+  so_falhas := coalesce(
+    nullif(array_to_string(ARRAY(SELECT x FROM unnest(string_to_array(rel, ' ¦ ')) AS x WHERE x LIKE 'FALHOU %'), ' ¦ '), ''),
+    'nenhuma');
 
-  RAISE EXCEPTION E'FOR-173 roteiro transacional — NADA foi gravado (este erro desfaz o teste inteiro).\n\n%\nRESUMO: % ok, % FALHOU',
-    rel, oks, falhas;
+  -- UMA LINHA SÓ, resumo e falhas primeiro (o editor corta a mensagem depois da primeira quebra de linha).
+  RAISE EXCEPTION E'FOR-173 roteiro transacional — RESUMO: % ok, % FALHOU — NADA foi gravado (este erro desfaz o teste inteiro). FALHAS: % ¦¦ TODOS OS CASOS: %',
+    oks, falhas, so_falhas, rel;
 END
 $do$;
