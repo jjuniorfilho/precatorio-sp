@@ -347,24 +347,30 @@ export async function vincularNumeroDepreReverso(origemCnj: string, processoId: 
 /** Upsert idempotente dos pagamentos encontrados. Re-consultar não duplica (índice único
  * em processo_depre+data_pagamento+valor+tipo — colunas NOT NULL, ver
  * sql/2026-07-22_fix_precatorios_pagamentos_index.sql). `tipo` vira `''` em vez de NULL
- * (NULL não conflita com NULL num índice único do Postgres, o que quebraria a idempotência). */
+ * (NULL não conflita com NULL num índice único do Postgres, o que quebraria a idempotência).
+ *
+ * Achado em produção (FOR-174, 2026-09-29): um `.upsert()` DIRETO na tabela como fazíamos antes
+ * SEMPRE falhava com "new row violates row-level security policy" quando o worker roda sem
+ * `SUPABASE_SERVICE_ROLE_KEY` (autentica como `authenticated` via login admin — "Opção B" logo
+ * acima nesse arquivo). A tabela nunca teve policy de INSERT/UPDATE pra `authenticated`
+ * (`sql/2026-07-21_pagamentos_tjsp.sql`: "escrita só via service_role"), então TODO pagamento
+ * real encontrado pelo scraper (não "não consta") se perdia. Agora passa pela RPC
+ * `SECURITY DEFINER` `upsert_precatorios_pagamentos`
+ * (sql/2026-09-29_for174_fix_upsert_pagamentos_rls.sql), mesmo padrão de
+ * `marcarPagamentosConsultado` logo abaixo — sem abrir uma policy geral de INSERT. */
 export async function upsertPagamentos(
   processoDepre: string,
   pagamentos: Array<{ data: string | null; valorCentavos: number; tipo: string | null }>,
 ): Promise<void> {
   if (pagamentos.length === 0) return;
-  const rows = pagamentos
-    .filter((p) => p.data) // data_pagamento é NOT NULL na tabela
-    .map((p) => ({
-      processo_depre: processoDepre,
-      data_pagamento: p.data,
-      valor: p.valorCentavos,
-      tipo: p.tipo ?? "",
-    }));
-  const { error } = await supabase
-    .from("precatorios_pagamentos")
-    .upsert(rows, { onConflict: "processo_depre,data_pagamento,valor,tipo", ignoreDuplicates: true });
-  if (error) throw new Error(`upsert precatorios_pagamentos: ${error.message}`);
+  const itens = pagamentos
+    .filter((p) => p.data) // data_pagamento é NOT NULL na tabela (a RPC também filtra, defesa em profundidade)
+    .map((p) => ({ data: p.data, valor: p.valorCentavos, tipo: p.tipo ?? "" }));
+  const { error } = await supabase.rpc("upsert_precatorios_pagamentos", {
+    p_processo_depre: processoDepre,
+    p_pagamentos: itens,
+  });
+  if (error) throw new Error(`upsert_precatorios_pagamentos: ${error.message}`);
 }
 
 /** Marca que a consulta de pagamentos foi feita (mesmo sem pagamentos encontrados —
