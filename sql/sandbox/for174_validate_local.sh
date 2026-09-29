@@ -113,5 +113,42 @@ echo "$erro_direto" | grep -qi "row-level security policy" \
   || falha "INSERT direto deveria CONTINUAR bloqueado (o fix não deve abrir uma policy geral)"
 ok "blast radius contido: INSERT direto continua bloqueado, só a RPC ganhou acesso"
 
+# --- Achado AO VALIDAR O DEPLOY em produção (não pego pelo script original): o Postgres concede
+# EXECUTE a PUBLIC em toda função nova por padrão — a migration anterior só deu GRANT pra
+# authenticated/service_role, sem REVOKE ... FROM PUBLIC antes. Resultado real em produção: a
+# chave `anon` (sem autenticação nenhuma) conseguia chamar a RPC e gravar pagamento falso.
+erro_anon_antes="$(psql_ -d sandbox -Atc "
+  SET ROLE anon;
+  SELECT upsert_precatorios_pagamentos('outro-depre', '[{\"data\":\"2020-01-01\",\"valor\":1,\"tipo\":null}]'::jsonb);
+" 2>&1 || true)"
+[[ -z "$erro_anon_antes" ]] \
+  && ok "reproduzido: ANTES do fix2, anon consegue chamar a RPC sem autenticação (bug real achado em produção)" \
+  || falha "esperava que anon conseguisse chamar a RPC antes do fix2 (senão o teste abaixo não prova nada); saída: $erro_anon_antes"
+psql_ -d sandbox -c "DELETE FROM precatorios_pagamentos WHERE processo_depre = 'outro-depre'"
+
+for rodada in 1 2; do
+  erros="$(psql_ -d sandbox -f "$ROOT/sql/2026-09-29_for174b_revoke_public_execute_pagamentos_rpc.sql" 2>&1 | grep -c 'ERROR' || true)"
+  [[ "$erros" == "0" ]] || falha "fix2 (revoke) deu erro na rodada ${rodada}"
+done
+ok "fix2 (revoke public) aplicado 2x sem erro (re-executável)"
+
+erro_anon_depois="$(psql_ -d sandbox -Atc "
+  SET ROLE anon;
+  SELECT upsert_precatorios_pagamentos('outro-depre', '[{\"data\":\"2020-01-01\",\"valor\":1,\"tipo\":null}]'::jsonb);
+" 2>&1 || true)"
+echo "$erro_anon_depois" | grep -qi "permission denied" \
+  || falha "DEPOIS do fix2, anon deveria tomar 'permission denied' chamando a RPC; saída: $erro_anon_depois"
+ok "fix2 confirmado: anon NÃO consegue mais chamar a RPC"
+[[ "$(psql_ -d sandbox -Atc "SELECT count(*) FROM precatorios_pagamentos WHERE processo_depre='outro-depre'")" == "0" ]] \
+  || falha "não deveria ter gravado nada como anon"
+
+erro_authenticated_depois="$(psql_ -d sandbox -Atc "
+  SET ROLE authenticated;
+  SELECT upsert_precatorios_pagamentos('0253361-73.2018.8.26.0500', '[{\"data\":\"2020-03-01\",\"valor\":1,\"tipo\":null}]'::jsonb);
+" 2>&1 || true)"
+[[ -z "$erro_authenticated_depois" ]] \
+  || falha "authenticated (o worker de verdade) não deveria ter sido afetado pelo fix2; saída: $erro_authenticated_depois"
+ok "fix2 não quebrou o caso de uso real: authenticated (o worker) continua conseguindo chamar a RPC"
+
 echo
-echo "=== FOR-174 (fix RLS pagamentos): tudo ok ==="
+echo "=== FOR-174 (fix RLS pagamentos + revoke public): tudo ok ==="
