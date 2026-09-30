@@ -31,11 +31,13 @@ Cobre só **lógica pura, sem I/O** (`classifyEsfera` em `parse.ts`; `parseCsvLi
 `normIncidente`, `parseValorCentavos`, `agruparPorChave`, `separarJaExistemEAInserir`,
 `resolverProcessoRealPorCnj` em `import-csv-legado.ts`), incluindo regressão dos bugs reais
 encontrados no code-review do FOR-143 (ver
-`.claude/sessions/for-143-importar-precatorios-csv-legado/plan.md`). O código que fala com o
-Supabase (`persistTree`, `reconcileLegadoProcesso`/`reconcileLegadoIncidente`, o próprio
-`inserirLinha`/`main` do import) **não** tem teste automatizado — validado manualmente/em
-produção, como sempre foi feito neste worker (sem mocks de Supabase; se algum dia isso mudar,
-prefira um Supabase local/staging real a mockar o client). `main()` de `import-csv-legado.ts` só
+`.claude/sessions/for-143-importar-precatorios-csv-legado/plan.md`). Exceção (FOR-178):
+`src/supabase-persist-tree-legado.test.ts` cobre a **orquestração** da reconciliação LEGADO- do
+`persistTree` (raiz + cumprimento + incidente, idempotência) com um banco fake em memória no lugar
+de `supabase.from`/`supabase.rpc`; o SQL real das RPCs é validado à parte em
+`sql/sandbox/for178_validate_local.sh` (Postgres local descartável). O restante do código que fala
+com o Supabase (o próprio `inserirLinha`/`main` do import) **não** tem teste automatizado —
+validado manualmente/em produção. `main()` de `import-csv-legado.ts` só
 roda quando o arquivo é executado diretamente (`tsx src/import-csv-legado.ts`), nunca ao ser
 importado pelos testes.
 
@@ -169,6 +171,21 @@ a linha `LEGADO-` — em vez de deixar duas linhas pro mesmo CNJ/requisitório. 
 crawl (1 SELECT extra por processo), gateado por `config.legadoReconcile` (env
 `LEGADO_RECONCILE`, default `true` — ver `.env.example`). Pode ser desligado depois que os
 `LEGADO-` remanescentes forem absorvidos pelo backfill, já que a partir daí vira overhead morto.
+
+**Nível do cumprimento (FOR-178):** a linha `processos` `LEGADO-` do import guarda o CNJ do
+**cumprimento de sentença**, um nível abaixo da raiz que o crawler descobre (`normalizeToRoot`) —
+por isso `reconcileLegadoProcesso` (que casa pelo CNJ da raiz) não a achava e o crawl criava a
+hierarquia real em paralelo, duplicando `incidentes.numero_depre`. Agora `persistTree` faz dois
+passes: (1) upsert de todos os cumprimentos e, pra cada um, `reconcileLegadoCumprimento` procura
+`processos` `LEGADO-` com o mesmo `cnj_normalizado` e chama a RPC
+`merge_legado_processo_para_cumprimento` (reaponta incidentes/partes pro processo raiz + cumprimento
+reais, apaga a linha legado); (2) monta o Map de incidentes `LEGADO-` do processo e roda o loop de
+incidentes, que renomeia/mescla cada legado com o real pelo `numero_depre` (entrada do Map é
+consumida — um legado nunca é renomeado duas vezes). A RPC
+(`sql/2026-09-29_for178_merge_legado_processo_para_cumprimento.sql`) precisa estar aplicada
+**antes** do deploy do worker. Incidentes legado cujo `numero_depre` o e-SAJ não devolve continuam
+`LEGADO-`, mas já com `cumprimento_id` preenchido (a equivalência `LEGADO-% ⇔ cumprimento_id IS
+NULL` deixa de valer pra eles).
 
 ### Valor pago: 3 resultados + log de consultas (FOR-171)
 
