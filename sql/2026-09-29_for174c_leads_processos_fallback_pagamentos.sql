@@ -28,6 +28,24 @@
 -- realmente não existe pro schema novo ainda — mesma limitação que buscar-precatorio/index.ts
 -- já tem; acordo/cessão já eram origem-agnósticas desde o FOR-169).
 --
+-- CORREÇÕES (2026-09-29, 1ª tentativa de aplicar em produção falhou — 2 erros reais, um atrás
+-- do outro):
+-- 1) A 1ª versão deste arquivo foi baseada em sql/2026-09-25_for169_2_view_leads_processos.sql
+--    (32 colunas) e esqueceu que sql/2026-09-28_for173_2_view_leads_processos_origem.sql já
+--    tinha acrescentado `lp.origem` como 33ª coluna em produção (pro selo "Avulso"/filtro de
+--    origem do FOR-174). `CREATE OR REPLACE VIEW` não aceita remover uma coluna existente —
+--    Postgres devolveu "42P16: cannot drop columns from view". Corrigido: `lp.origem` volta
+--    como a ÚLTIMA coluna, exatamente como o FOR-173 deixou.
+-- 2) Depois de corrigir (1), um 2º erro: "cannot change data type of view column valor_pago
+--    from bigint to numeric". `SUM(bigint)` devolve NUMERIC no Postgres (evita overflow
+--    silencioso) — sem cast explícito, o COALESCE mudava o TIPO da coluna `valor_pago`
+--    (bigint em produção). Corrigido com `::bigint` na soma (ver comentário no ponto exato).
+--
+-- Os dois só foram pegos reproduzindo o estado VIVO da view (33 colunas) no sandbox ANTES de
+-- aplicar esta migration — contra uma view inexistente, `CREATE OR REPLACE VIEW` não faz
+-- NENHUMA dessas duas checagens (vira um CREATE normal). `sql/sandbox/for174c_validate_local.sh`
+-- foi corrigido pra recriar esse estado anterior primeiro (ver comentário lá).
+--
 -- Aplicar no SQL Editor. Re-executável.
 
 CREATE OR REPLACE VIEW public.leads_processos
@@ -66,7 +84,8 @@ SELECT
   COALESCE(pr.valor_pago, vivo.valor_pago_vivo) AS valor_pago,
   COALESCE(pr.pagamentos_consultado_em, vivo.consultado_em_vivo) AS pagamentos_consultado_em,
   dj.acordo_homologado,
-  inc.cessao_credito
+  inc.cessao_credito,
+  lp.origem
 FROM public.leads_com_progresso lp
 LEFT JOIN LATERAL (
   SELECT DISTINCT btrim(x) AS processo
@@ -91,7 +110,11 @@ LEFT JOIN LATERAL (
     END AS valor_pago_vivo,
     log.finalizada_em AS consultado_em_vivo
   FROM (
-    SELECT COALESCE(SUM(valor), 0) AS total
+    -- SUM(bigint) devolve NUMERIC no Postgres (evita overflow) — sem o ::bigint aqui, o
+    -- COALESCE final mudaria o TIPO da coluna valor_pago de bigint pra numeric, o que o
+    -- CREATE OR REPLACE VIEW também rejeita (2º erro real batido tentando aplicar em produção,
+    -- depois do 42P16 de coluna faltando).
+    SELECT COALESCE(SUM(valor), 0)::bigint AS total
     FROM public.precatorios_pagamentos
     WHERE processo_depre = p.processo
   ) soma

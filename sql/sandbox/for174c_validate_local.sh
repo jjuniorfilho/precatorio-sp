@@ -66,8 +66,44 @@ CREATE VIEW public.leads_com_progresso WITH (security_invoker = true) AS
    FROM leads l;
 REVOKE ALL ON public.leads_com_progresso FROM PUBLIC, anon, authenticated;
 GRANT ALL ON public.leads_com_progresso TO service_role;
+
+-- Estado VIVO de produção ANTES desta migration: leads_processos como o FOR-173 deixou (33
+-- colunas, `origem` por último — sql/2026-09-28_for173_2_view_leads_processos_origem.sql).
+-- Achado real (2026-09-29, 1ª tentativa de aplicar em prod): sem recriar esse estado ANTERIOR
+-- aqui, `CREATE OR REPLACE VIEW` na migration nova nunca teria uma view pré-existente pra
+-- comparar — o Postgres só reclama de "cannot drop columns" quando REALMENTE substitui uma
+-- view já viva; contra uma view inexistente é um CREATE normal, sem checagem nenhuma. Esta
+-- seção existe especificamente pra fechar essa lacuna de metodologia.
+CREATE VIEW public.leads_processos WITH (security_invoker = true) AS
+SELECT
+  lp.id, lp.nome, lp.email, lp.telefone, lp.relacao, lp.processo_depre, lp.saldo_consultado,
+  lp.devedora, lp.status_crm, lp.notas, lp.token_email_validado, lp.token_telefone_validado,
+  lp.relatorio_enviado_at, lp.session_id, lp.intent, lp.created_at, lp.updated_at, lp.verified_at,
+  lp.nivel_funil, lp.etapa1_busca, lp.etapa2_cadastro, lp.etapa3_token_email,
+  lp.etapa4_email_validado, lp.etapa5_whatsapp_validado, lp.etapa6_relatorio,
+  p.processo, dj.valor_causa, pr.saldo_depre, pr.valor_pago, pr.pagamentos_consultado_em,
+  dj.acordo_homologado, inc.cessao_credito, lp.origem
+FROM public.leads_com_progresso lp
+LEFT JOIN LATERAL (
+  SELECT DISTINCT btrim(x) AS processo FROM regexp_split_to_table(coalesce(lp.processo_depre, ''), ',') AS x WHERE btrim(x) <> ''
+) p ON true
+LEFT JOIN LATERAL (
+  SELECT r.saldo_depre, r.valor_pago, r.pagamentos_consultado_em FROM public.precatorios r
+  WHERE r.processo_depre = p.processo ORDER BY r.updated_at DESC NULLS LAST LIMIT 1
+) pr ON true
+LEFT JOIN LATERAL (
+  SELECT bool_or(d.acordo_homologado) AS acordo_homologado,
+         max(d.valor_acao) FILTER (WHERE d.ficha_crawled_at IS NOT NULL) AS valor_causa
+  FROM public.djen_depre d WHERE d.cnj_normalizado = regexp_replace(p.processo, '\D', '', 'g')
+) dj ON true
+LEFT JOIN LATERAL (
+  SELECT bool_or(i.cessao_credito) AS cessao_credito FROM public.incidentes i WHERE i.numero_depre = p.processo
+) inc ON true;
+REVOKE ALL ON public.leads_processos FROM PUBLIC, anon, authenticated;
+GRANT ALL ON public.leads_processos TO service_role;
 EOF
 ok "réplica mínima carregada (leads/leads_com_progresso + precatorios/precatorios_pagamentos/pagamentos_consultas_log/djen_depre/incidentes)"
+ok "estado VIVO pré-migration recriado: leads_processos com 33 colunas (origem por último, FOR-173)"
 
 for rodada in 1 2; do
   erros="$(psql_ -d sandbox -f "$ROOT/sql/2026-09-29_for174c_leads_processos_fallback_pagamentos.sql" 2>&1 | grep -c 'ERROR' || true)"
@@ -125,6 +161,12 @@ psql_ -d sandbox -c "
 [[ "$(read_valor "$DEP_NAO_CONSTA")" == "0" ]] \
   || falha "nao_consta (0 pagamentos, consultado com sucesso) deveria dar valor_pago=0, não null; achou '$(read_valor "$DEP_NAO_CONSTA")'"
 ok "nao_consta vira valor_pago=0 (não null) — formatPagamento mostra 'Não (consultado em X)', não 'Não verificado'"
+
+# --- Regressão específica do erro real (42P16 cannot drop columns): confirma que `origem`
+# (33ª coluna, FOR-173) sobreviveu à substituição da view e continua legível.
+[[ "$(psql_ -d sandbox -Atc "SELECT origem FROM leads_processos WHERE processo = '$DEP_NOVO'")" == "avulso" ]] \
+  || falha "coluna 'origem' (FOR-173) não sobreviveu à substituição da view"
+ok "coluna 'origem' (FOR-173, 33ª coluna) sobrevive à substituição da view — não é mais possível reintroduzir o 42P16"
 
 echo
 echo "=== FOR-174c (fallback leads_processos): tudo ok ==="
