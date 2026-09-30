@@ -44,7 +44,10 @@ begin
   end if;
 
   update incidentes
-     set processo_id = p_real_processo_id, cumprimento_id = p_real_cumprimento_id
+     set processo_id = p_real_processo_id,
+         -- legado tem cumprimento_id NULL; se algum já tiver um (cumprimento pendurado na linha
+         -- legado, reapontado abaixo), preserva o vínculo original.
+         cumprimento_id = coalesce(cumprimento_id, p_real_cumprimento_id)
    where processo_id = p_legado_processo_id;
   update partes       set processo_id = p_real_processo_id where processo_id = p_legado_processo_id;
   update cumprimentos set processo_id = p_real_processo_id where processo_id = p_legado_processo_id;

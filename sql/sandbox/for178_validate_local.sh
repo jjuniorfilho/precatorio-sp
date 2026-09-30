@@ -194,6 +194,28 @@ fi
 grep -q "não pertence ao processo" "$TMP/err" && ok "[D] cumprimento de outra árvore → exceção" || falha "[D] mensagem inesperada: $(cat "$TMP/err")"
 eq "$(val "select count(*) from processos where id = '11111111-1111-1111-1111-111111111111'")" "1" "[D] após exceção a linha legado continua intacta (rollback)"
 
+# ---- F) sem apagar nada em cascata: incidente Y sem par no e-SAJ + cumprimento pendurado no legado
+reset_db
+seed_legado
+psql_ -d sandbox <<'EOF'
+INSERT INTO incidentes (id, processo_id, processo_codigo, numero_depre) VALUES
+  ('77777777-7777-7777-7777-777777777777', '11111111-1111-1111-1111-111111111111', 'LEGADO-00165252920228260053-00002', '0077777-00.2023.8.26.0500');
+INSERT INTO andamentos (incidente_id, hash) VALUES ('77777777-7777-7777-7777-777777777777', 'h-y');
+INSERT INTO cumprimentos (id, processo_id, processo_codigo, cnj) VALUES
+  ('88888888-8888-8888-8888-888888888888', '11111111-1111-1111-1111-111111111111', 'CUMP-NO-LEGADO', 'y');
+INSERT INTO incidentes (id, processo_id, cumprimento_id, processo_codigo, numero_depre) VALUES
+  ('99999999-9999-9999-9999-999999999999', '11111111-1111-1111-1111-111111111111', '88888888-8888-8888-8888-888888888888', 'INC-DO-CUMP-NO-LEGADO', '0066666-00.2023.8.26.0500');
+EOF
+simula_worker
+eq "$(val "select count(*) from incidentes where numero_depre = '0088499-12.2023.8.26.0500' and cumprimento_id is not null")" "1" "[F] DEPRE X: 1 incidente, com cumprimento_id"
+eq "$(val "select count(*) from processos where processo_codigo like 'LEGADO-%'")" "0" "[F] linha processos LEGADO- apagada"
+eq "$(val "select count(*) from processos")" "1" "[F] só a raiz real em processos"
+eq "$(val "select count(*) from incidentes i join processos p on p.id = i.processo_id join cumprimentos c on c.id = i.cumprimento_id
+           where i.id = '77777777-7777-7777-7777-777777777777' and p.cnj = '0023830-02.2001.8.26.0053' and c.processo_codigo = '1H0000CUMP'")" "1" "[F] incidente Y (sem par no e-SAJ) sobrevive, reapontado pra raiz/cumprimento reais"
+eq "$(val "select count(*) from andamentos where incidente_id = '77777777-7777-7777-7777-777777777777'")" "1" "[F] andamentos de Y preservados"
+eq "$(val "select count(*) from cumprimentos c join processos p on p.id = c.processo_id where c.id = '88888888-8888-8888-8888-888888888888' and p.cnj = '0023830-02.2001.8.26.0053'")" "1" "[F] cumprimento pendurado no legado reapontado (não apagado em cascata)"
+eq "$(val "select count(*) from incidentes where id = '99999999-9999-9999-9999-999999999999' and cumprimento_id = '88888888-8888-8888-8888-888888888888'")" "1" "[F] incidente desse cumprimento preservado, com o vínculo original"
+
 # ---- E) grants --------------------------------------------------------------
 SIG="public.merge_legado_processo_para_cumprimento(uuid, uuid, uuid)"
 eq "$(val "select has_function_privilege('anon', '$SIG', 'execute')")" "f" "[E] anon SEM execute"

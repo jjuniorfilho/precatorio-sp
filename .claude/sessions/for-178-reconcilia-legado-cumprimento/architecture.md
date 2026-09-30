@@ -88,6 +88,17 @@ Depois do passo 3 o incidente legado tem `processo_id = processoId`; recarregand
 - Grants antigos do FOR-143 (`merge_legado_processo`/`merge_legado_incidente`) não revogam PUBLIC —
   achado registrado no relatório, fora do escopo desta tarefa.
 
+## Revisão pós code review (pre-pr) — substitui o diagrama "Depois" acima
+
+- `persistTree` em **dois passes**: (1) upsert de TODOS os cumprimentos + `reconcileLegadoCumprimento`
+  em cada; (2) Map de incidentes legado montado uma vez, depois o loop de incidentes. Motivo: o
+  incidente real que casa com um legado pendurado no cumprimento B pode estar sob o cumprimento A.
+- Entrada do Map consumida (`delete`) após uso — um legado nunca é renomeado duas vezes.
+- `reconcileLegadoRows` (FOR-143): com 2+ legados e nenhum real, renomeia só o 1º e funde os demais
+  nele (antes: unique violation). Afeta também o caminho de processos (legado duplicado).
+- RPC: `cumprimento_id = coalesce(cumprimento_id, p_real_cumprimento_id)` — preserva vínculo de
+  incidente cujo cumprimento estava pendurado na linha legado.
+
 ---
 
 ## ✅ Verificação de Consistência

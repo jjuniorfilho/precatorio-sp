@@ -119,13 +119,18 @@ async function reconcileLegadoRows(
   if (!legadoIds.length) return;
   const { data: real, error: eReal } = await supabase.from(table).select("id").eq("processo_codigo", processoCodigoReal).maybeSingle();
   if (eReal) throw new Error(`reconcileLegado ${table} (lookup real): ${eReal.message}`);
+  // FOR-178 (achado do code review): com 2+ linhas legado e nenhuma real, renomear TODAS pro mesmo
+  // processo_codigo estourava unique violation na 2ª. Agora só a 1ª é renomeada (vira o "real") e
+  // as demais são fundidas nela pela RPC de merge.
+  let alvoId = (real as { id: string } | null)?.id ?? null;
   for (const legadoId of legadoIds) {
-    if (real) {
-      const { error } = await supabase.rpc(mergeRpc, { p_legado_id: legadoId, p_real_id: (real as { id: string }).id });
+    if (alvoId) {
+      const { error } = await supabase.rpc(mergeRpc, { p_legado_id: legadoId, p_real_id: alvoId });
       if (error) throw new Error(`${mergeRpc}: ${error.message}`);
     } else {
       const { error } = await supabase.from(table).update({ processo_codigo: processoCodigoReal }).eq("id", legadoId);
       if (error) throw new Error(`reconcileLegado ${table} (rename): ${error.message}`);
+      alvoId = legadoId;
     }
   }
 }
@@ -147,17 +152,16 @@ async function reconcileLegadoProcesso(cnjNormalizado: string | null, processoCo
  * duplicando incidentes.numero_depre. Aqui, pra cada cumprimento persistido, procura linha
  * `processos` LEGADO- com o mesmo cnj_normalizado e a funde no processo raiz real + cumprimento
  * real (RPC merge_legado_processo_para_cumprimento: reaponta incidentes/partes e apaga a legado).
- * Retorna quantas linhas foram fundidas — o caller recarrega os incidentes LEGADO- do processo
- * quando > 0, pra que reconcileLegadoIncidente enxergue os que acabaram de ser reapontados. */
+ * O caller (persistTree) roda isto pra TODOS os cumprimentos antes de montar o Map de incidentes
+ * legado, pra que reconcileLegadoIncidente enxergue os incidentes que acabaram de ser reapontados. */
 async function reconcileLegadoCumprimento(
   cnjNormalizado: string | null,
   processoId: string,
   cumprimentoId: string,
-): Promise<number> {
-  if (!config.legadoReconcile || !cnjNormalizado) return 0;
+): Promise<void> {
+  if (!config.legadoReconcile || !cnjNormalizado) return;
   const { data, error } = await supabase.from("processos").select("id").eq("cnj_normalizado", cnjNormalizado).like("processo_codigo", "LEGADO-%");
   if (error) throw new Error(`reconcileLegadoCumprimento (busca): ${error.message}`);
-  let merged = 0;
   for (const { id: legadoId } of (data ?? []) as Array<{ id: string }>) {
     if (legadoId === processoId) continue;
     const { error: eRpc } = await supabase.rpc("merge_legado_processo_para_cumprimento", {
@@ -166,9 +170,7 @@ async function reconcileLegadoCumprimento(
       p_real_cumprimento_id: cumprimentoId,
     });
     if (eRpc) throw new Error(`merge_legado_processo_para_cumprimento: ${eRpc.message}`);
-    merged++;
   }
-  return merged;
 }
 
 /** Busca TODOS os incidentes "LEGADO-" de um processo numa única query (em vez de 1 SELECT por
@@ -226,8 +228,11 @@ export async function persistTree(tree: ProcessoTree): Promise<string> {
     last_crawled_at: new Date().toISOString(),
   }, "processo_codigo");
 
-  let incidentesLegadoDoProcesso = await buscarIncidentesLegadoDoProcesso(processoId);
-
+  // Passo 1: TODOS os cumprimentos primeiro + FOR-178 (funde a linha processos LEGADO- que guardava
+  // o CNJ do cumprimento, reapontando os incidentes LEGADO- dela pra este processo). Tem que
+  // terminar ANTES de montar o Map de incidentes legado: o incidente real que casa com um legado
+  // pendurado no cumprimento B pode estar sob o cumprimento A (achado do code review).
+  const cumprimentoIds: string[] = [];
   for (const c of tree.cumprimentos) {
     const cumprimentoId = await upsertReturningId("cumprimentos", {
       processo_id: processoId,
@@ -235,17 +240,22 @@ export async function persistTree(tree: ProcessoTree): Promise<string> {
       cnj: c.cnj,
       cnj_normalizado: cnjNorm(c.cnj),
     }, "processo_codigo");
+    await reconcileLegadoCumprimento(cnjNorm(c.cnj), processoId, cumprimentoId);
+    cumprimentoIds.push(cumprimentoId);
+  }
 
-    // FOR-178: funde a linha processos LEGADO- que guardava o CNJ deste cumprimento ANTES do loop
-    // de incidentes; se fundiu, os incidentes LEGADO- dela agora têm processo_id = processoId —
-    // recarrega o Map pra reconcileLegadoIncidente renomeá-los/mergeá-los com os reais.
-    if (await reconcileLegadoCumprimento(cnjNorm(c.cnj), processoId, cumprimentoId) > 0) {
-      incidentesLegadoDoProcesso = await buscarIncidentesLegadoDoProcesso(processoId);
-    }
+  // Passo 2: Map montado uma vez, já enxergando os incidentes reapontados no passo 1.
+  const incidentesLegadoDoProcesso = await buscarIncidentesLegadoDoProcesso(processoId);
 
+  for (const [idx, c] of tree.cumprimentos.entries()) {
+    const cumprimentoId = cumprimentoIds[idx]!;
     for (const inc of c.incidentes) {
       if (inc.numero_depre) {
-        await reconcileLegadoIncidente(incidentesLegadoDoProcesso.get(inc.numero_depre) ?? [], inc.processo_codigo);
+        // Consome a entrada: um legado reconciliado não pode ser renomeado de novo por outro
+        // incidente crawleado com o mesmo numero_depre (o rename o "moveria" de incidente).
+        const legadoIds = incidentesLegadoDoProcesso.get(inc.numero_depre) ?? [];
+        incidentesLegadoDoProcesso.delete(inc.numero_depre);
+        await reconcileLegadoIncidente(legadoIds, inc.processo_codigo);
       }
       const incidenteId = await upsertReturningId("incidentes", {
         cumprimento_id: cumprimentoId,

@@ -39,6 +39,15 @@ LEGADO_RECONCILE=false; erro da RPC propaga.
 - Achado fora de escopo: os GRANTs dos RPCs FOR-143 (`merge_legado_processo`/`merge_legado_incidente`)
   não revogam PUBLIC → `anon` provavelmente tem EXECUTE neles em produção. Reportado, não corrigido.
 
-## FASE 3 — pre-pr / PR [Em Progresso ⏰]
+## FASE 3 — pre-pr / PR [Completada ✅]
 
 Review, PR para `main`, card FOR-178 → In Review.
+
+### Comentários:
+- code-reviewer: sem bloqueantes; 2 "should address" corrigidos (dois passes no persistTree;
+  consumo do Map + rename-1-merge-resto no reconcileLegadoRows). Ver architecture.md "Revisão pós
+  code review".
+- test-planner-branch: 5 lacunas → 5 testes TS novos (11/11) + cenário F no sandbox. Os 4 testes
+  novos que cobrem os achados falham contra o 1º commit (a1a183a) e passam agora.
+- Suíte 145/145, typecheck limpo, sandbox 42 checks OK.
+- Pendente de decisão humana (fora do escopo): hotfix de grants dos RPCs FOR-143 (PUBLIC/anon).

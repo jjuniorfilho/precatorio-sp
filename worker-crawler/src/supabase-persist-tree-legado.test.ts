@@ -138,7 +138,7 @@ function rpcFake(db: Db, chamadas: Array<[string, Record<string, string>]>, falh
       if (leg === real) return { data: null, error: null };
       if (!db.processos!.some((r) => r.id === leg && String(r.processo_codigo).startsWith("LEGADO-"))) return { data: null, error: null };
       if (!db.cumprimentos!.some((r) => r.id === cump && r.processo_id === real)) return { data: null, error: { message: "cumprimento não pertence ao processo" } };
-      db.incidentes!.forEach((r) => { if (r.processo_id === leg) { r.processo_id = real; r.cumprimento_id = cump; } });
+      db.incidentes!.forEach((r) => { if (r.processo_id === leg) { r.processo_id = real; r.cumprimento_id = r.cumprimento_id ?? cump; } });
       db.partes!.forEach((r) => { if (r.processo_id === leg) r.processo_id = real; });
       db.cumprimentos!.forEach((r) => { if (r.processo_id === leg) r.processo_id = real; });
       db.processos = db.processos!.filter((r) => r.id !== leg);
@@ -264,4 +264,106 @@ test("FOR-178: erro da RPC nova propaga com o nome da RPC", async (t) => {
   semeiaLegado(db);
   instala(t, db, "merge_legado_processo_para_cumprimento");
   await assert.rejects(() => persistTree(arvore()), /merge_legado_processo_para_cumprimento: boom/);
+});
+
+// ---- Cenários extras (achados do code review / test planner no pre-pr) -------
+const CNJ_OUTRO_CUMP = "0009999-11.2020.8.26.0053";
+const DEPRE_Y = "0077777-00.2023.8.26.0500";
+
+function incidente(processo_codigo: string, numero_depre: string): ProcessoTree["cumprimentos"][number]["incidentes"][number] {
+  return { ...arvore().cumprimentos[0]!.incidentes[0]!, processo_codigo, numero_depre, cnj: numero_depre };
+}
+function arvoreCom(cumprimentos: ProcessoTree["cumprimentos"]): ProcessoTree {
+  return { ...arvore(), cumprimentos };
+}
+
+test("FOR-178: 2 cumprimentos — legado pendurado no B, incidente real do mesmo DEPRE sob o A → 1 linha, sob o A", async (t) => {
+  const db = novoDb();
+  semeiaLegado(db);
+  const chamadas = instala(t, db);
+
+  await persistTree(arvoreCom([
+    { processo_codigo: "1H0000CUMPA", cnj: CNJ_OUTRO_CUMP, incidentes: [incidente("1H0000INC1", DEPRE)] },
+    { processo_codigo: "1H0000CUMP", cnj: CNJ_CUMP, incidentes: [] },
+  ]));
+
+  const incs = db.incidentes!.filter((r) => r.numero_depre === DEPRE);
+  assert.equal(incs.length, 1, "sem duplicata mesmo com o real num cumprimento anterior");
+  const cumpA = db.cumprimentos!.find((r) => r.processo_codigo === "1H0000CUMPA")!;
+  const cumpB = db.cumprimentos!.find((r) => r.processo_codigo === "1H0000CUMP")!;
+  assert.equal(incs[0]!.cumprimento_id, cumpA.id, "fica no cumprimento onde o e-SAJ o mostra");
+  const merge = chamadas.filter(([n]) => n === "merge_legado_processo_para_cumprimento");
+  assert.equal(merge.length, 1);
+  assert.equal(merge[0]![1].p_real_cumprimento_id, cumpB.id, "a RPC usa o cumprimento cujo CNJ casou com o legado");
+  assert.equal(db.processos!.filter((r) => String(r.processo_codigo).startsWith("LEGADO-")).length, 0);
+});
+
+test("FOR-178: legado com DEPRE que o e-SAJ não devolveu — sobrevive, reapontado pra raiz/cumprimento reais, com partes", async (t) => {
+  const db = novoDb();
+  semeiaLegado(db);
+  const incY = "33333333-3333-3333-3333-333333333333";
+  db.incidentes!.push({ id: incY, processo_id: LEGADO_PROC_ID, cumprimento_id: null, processo_codigo: `LEGADO-${norm(CNJ_CUMP)}-00002`, numero_depre: DEPRE_Y, cnj: CNJ_CUMP });
+  db.partes!.push({ id: randomUUID(), incidente_id: incY, processo_id: LEGADO_PROC_ID, papel: "ativa", nome: "CREDOR Y" });
+  instala(t, db);
+
+  const processoId = await persistTree(arvore());
+
+  const incsX = db.incidentes!.filter((r) => r.numero_depre === DEPRE);
+  assert.equal(incsX.length, 1);
+  assert.equal(incsX[0]!.cumprimento_id, db.cumprimentos![0]!.id);
+  assert.equal(db.processos!.length, 1, "linha legado apagada");
+  const y = db.incidentes!.find((r) => r.id === incY)!;
+  assert.ok(y, "incidente Y não foi apagado em cascata");
+  assert.equal(y.processo_id, processoId);
+  assert.equal(y.cumprimento_id, db.cumprimentos![0]!.id);
+  assert.ok(String(y.processo_codigo).startsWith("LEGADO-"), "continua LEGADO- (sem par no e-SAJ)");
+  assert.deepEqual(db.partes!.filter((p) => p.incidente_id === incY).map((p) => p.nome), ["CREDOR Y"]);
+  assert.ok(db.partes!.every((p) => p.processo_id === processoId));
+});
+
+test("FOR-178: LEGADO- na raiz E no cumprimento com o mesmo DEPRE — sem unique violation, 1 incidente", async (t) => {
+  const db = novoDb();
+  semeiaLegado(db);
+  const raizLegId = "44444444-4444-4444-4444-444444444444";
+  db.processos!.push({ id: raizLegId, processo_codigo: `LEGADO-${norm(CNJ_RAIZ)}`, cnj: CNJ_RAIZ, cnj_normalizado: norm(CNJ_RAIZ) });
+  db.incidentes!.push({ id: randomUUID(), processo_id: raizLegId, cumprimento_id: null, processo_codigo: `LEGADO-${norm(CNJ_RAIZ)}-00001`, numero_depre: DEPRE, cnj: CNJ_RAIZ });
+  instala(t, db);
+
+  const processoId = await persistTree(arvore());
+
+  assert.equal(processoId, raizLegId, "legado da raiz renomeado in-place (FOR-143)");
+  conferePosMerge(db, "raiz+cumprimento");
+  await persistTree(arvore());
+  conferePosMerge(db, "raiz+cumprimento 2º crawl");
+});
+
+test("FOR-178: 2 linhas LEGADO- com o mesmo cnj_normalizado (import duplicado) — funde ambas, 1 incidente", async (t) => {
+  const db = novoDb();
+  semeiaLegado(db);
+  const dupId = "55555555-5555-5555-5555-555555555555";
+  db.processos!.push({ id: dupId, processo_codigo: `LEGADO-${CNJ_CUMP}`, cnj: CNJ_CUMP, cnj_normalizado: norm(CNJ_CUMP) });
+  db.incidentes!.push({ id: randomUUID(), processo_id: dupId, cumprimento_id: null, processo_codigo: `LEGADO-${CNJ_CUMP}-00001`, numero_depre: DEPRE, cnj: CNJ_CUMP });
+  const chamadas = instala(t, db);
+
+  await persistTree(arvore());
+
+  conferePosMerge(db, "legado duplicado");
+  assert.equal(chamadas.filter(([n]) => n === "merge_legado_processo_para_cumprimento").length, 2);
+});
+
+test("FOR-178: 2 incidentes crawleados com o mesmo DEPRE — o legado é consumido pelo 1º e não 'migra' pro 2º", async (t) => {
+  const db = novoDb();
+  semeiaLegado(db);
+  instala(t, db);
+
+  await persistTree(arvoreCom([
+    { processo_codigo: "1H0000CUMP", cnj: CNJ_CUMP, incidentes: [incidente("1H0000INC1", DEPRE), incidente("1H0000INC2", DEPRE)] },
+  ]));
+
+  const inc1 = db.incidentes!.find((r) => r.processo_codigo === "1H0000INC1")!;
+  const inc2 = db.incidentes!.find((r) => r.processo_codigo === "1H0000INC2")!;
+  assert.equal(inc1.id, LEGADO_INC_ID, "o legado virou o INC1 e ficou nele");
+  assert.notEqual(inc2.id, LEGADO_INC_ID);
+  assert.equal(db.incidentes!.length, 2);
+  assert.equal(db.incidentes!.filter((r) => String(r.processo_codigo).startsWith("LEGADO-")).length, 0);
 });
