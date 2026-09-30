@@ -130,14 +130,16 @@ read_col() {
 }
 
 DEP_HIERARQUIA="0253361-73.2018.8.26.0500"  # tem incidente+cumprimento+processo ligados
-DEP_SO_FICHA="0000003-03.2020.8.26.0500"    # só tem ficha (djen_depre), sem incidente ligado
+DEP_SO_FICHA="0000003-03.2020.8.26.0500"    # só tem ficha (djen_depre) COM origem_cnjs, sem incidente ligado
 DEP_LEGADO="0000004-04.2020.8.26.0500"      # nem ficha nem incidente — nada disso disponível
+DEP_FICHA_SEM_ORIGEM="0000005-05.2020.8.26.0500"  # tem ficha (djen_depre) mas SEM origem_cnjs — caso mais comum na prática
 
 psql_ -d sandbox -c "
   INSERT INTO leads (email, relacao, lgpd_consent, origem, processo_depre) VALUES
     ('a@x.com','titular',true,'avulso','$DEP_HIERARQUIA'),
     ('b@x.com','titular',true,'avulso','$DEP_SO_FICHA'),
-    ('c@x.com','titular',true,'avulso','$DEP_LEGADO');
+    ('c@x.com','titular',true,'avulso','$DEP_LEGADO'),
+    ('e@x.com','titular',true,'avulso','$DEP_FICHA_SEM_ORIGEM');
 
   INSERT INTO processos (id, cnj) VALUES ('11111111-1111-1111-1111-111111111111', '0009394-05.2011.8.26.0565');
   INSERT INTO cumprimentos (id, cnj, processo_id) VALUES ('22222222-2222-2222-2222-222222222222', '0006914-78.2016.8.26.0565', '11111111-1111-1111-1111-111111111111');
@@ -146,6 +148,20 @@ psql_ -d sandbox -c "
 
   INSERT INTO djen_depre (cnj_normalizado, origem_cnjs, ficha_crawled_at)
     VALUES (regexp_replace('$DEP_SO_FICHA', '\D', '', 'g'), ARRAY['1005875-81.2022.8.26.0609'], now());
+
+  -- Regressão do bug real batido em produção: DEP_HIERARQUIA (que já tem incidente ligado)
+  -- TAMBÉM tem ficha crawleada (djen_depre existe), mas SEM origem_cnjs preenchido — o caso
+  -- mais COMUM na prática (a maioria das fichas não lista CNJ de origem), não o raro. Sem essa
+  -- linha, nenhum teste aqui exercitava array_agg(origem_cnjs) contra uma linha com origem_cnjs
+  -- NULL — e foi exatamente isso que derrubou a grade inteira de /admin/leads em produção
+  -- ('cannot accumulate null arrays').
+  INSERT INTO djen_depre (cnj_normalizado, origem_cnjs, ficha_crawled_at)
+    VALUES (regexp_replace('$DEP_HIERARQUIA', '\D', '', 'g'), NULL, now());
+
+  -- Mesmo caso, mas isolado (sem incidente/cumprimento/processo ligados também) — representa a
+  -- MAIORIA dos leads reais: ficha crawleada, sem origem_cnjs, sem hierarquia do schema novo.
+  INSERT INTO djen_depre (cnj_normalizado, origem_cnjs, ficha_crawled_at)
+    VALUES (regexp_replace('$DEP_FICHA_SEM_ORIGEM', '\D', '', 'g'), NULL, now());
 "
 
 [[ "$(read_col processo_principal "$DEP_HIERARQUIA")" == "0009394-05.2011.8.26.0565" ]] \
@@ -166,6 +182,13 @@ ok "só ficha (sem incidente ligado): processo_principal cai pro fallback, cumpr
 [[ -z "$(read_col cumprimento_sentenca "$DEP_LEGADO")" ]] || falha "cumprimento_sentenca deveria ser null"
 [[ -z "$(read_col numero_incidente "$DEP_LEGADO")" ]] || falha "numero_incidente deveria ser null"
 ok "nenhuma fonte: os 3 campos ficam null (nunca '—' fabricado na view)"
+
+# Regressão do bug real que derrubou a grade inteira de /admin/leads em produção: ficha
+# crawleada (djen_depre existe) mas SEM origem_cnjs — array_agg sem FILTER lançava "cannot
+# accumulate null arrays" pra QUALQUER lead nesse caso (a maioria).
+[[ -z "$(read_col processo_principal "$DEP_FICHA_SEM_ORIGEM")" ]] \
+  || falha "processo_principal deveria ser null (ficha sem origem_cnjs, sem incidente)"
+ok "REGRESSÃO REAL: ficha com origem_cnjs NULL não lança 'cannot accumulate null arrays' (bug que derrubou a grade em produção)"
 
 # Regressão específica dos 2 erros reais do FOR-176: confirma que as colunas ANTERIORES (33,
 # incl. origem) sobrevivem à substituição.

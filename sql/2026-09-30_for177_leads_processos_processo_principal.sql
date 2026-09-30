@@ -101,7 +101,16 @@ LEFT JOIN LATERAL (
     -- ligado). cnj_normalizado é 1:1 por design (FOR-159), mas usa array_agg + [1] em vez de
     -- max() por segurança/consistência com o resto desta lateral (defesa em profundidade, sem
     -- assumir a garantia de unicidade).
-    (array_agg(d.origem_cnjs ORDER BY d.ficha_crawled_at DESC NULLS LAST))[1][1] AS origem_cnj
+    --
+    -- BUG REAL EM PRODUÇÃO (corrigido): array_agg sobre uma coluna que já é ARRAY
+    -- (origem_cnjs text[]) lança "cannot accumulate null arrays" assim que UMA linha tiver
+    -- origem_cnjs NULL — e a maioria dos DEPRE tem linha em djen_depre (ficha crawleada) mas
+    -- SEM origem_cnjs preenchido, o caso mais comum, não o raro. Isso derrubou a grade inteira
+    -- de /admin/leads (0 leads carregados). Diferente de bool_or/max/sum, que toleram NULL
+    -- normalmente — array_agg sobre array não tolera. Fix: FILTER descarta as linhas com
+    -- origem_cnjs NULL ANTES de agregar (array_agg de um conjunto vazio dá NULL, sem erro).
+    (array_agg(d.origem_cnjs ORDER BY d.ficha_crawled_at DESC NULLS LAST)
+      FILTER (WHERE d.origem_cnjs IS NOT NULL))[1][1] AS origem_cnj
   FROM public.djen_depre d
   WHERE d.cnj_normalizado = regexp_replace(p.processo, '\D', '', 'g')
 ) dj ON true
