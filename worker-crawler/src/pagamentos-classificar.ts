@@ -10,6 +10,18 @@
 //  - Rodapé "Data da Consulta" aparece nos DOIS casos: só prova que a busca terminou, não discrimina.
 // Regra: encontrado = linha da grade; nao_consta = URL de resultado + TXTNENHUM visível
 // (server-side E inline) + grade vazia + rodapé; qualquer outra coisa = falha (default seguro).
+//
+// FOR-184c (achado em produção, DEPRE 0436868-90.2025.8.26.0500 — ver fixture
+// resultado-sem-pagamento-sem-gxstate.html, capturada ao vivo em 30/09/2026): pelo menos uma
+// variante da página de resultado NÃO serializa a chave `TXTNENHUM_Visible` no GXState (o
+// GXState dela tem `vNENHUM:true` em vez disso — nome de variável diferente, não vale a pena
+// acoplar nisso especificamente). Confirmado por screenshot real: a mensagem "Não foram
+// encontrados..." estava visivelmente renderizada, sem `display:none`, grade vazia, rodapé
+// presente — um "não consta" inequívoco que o parser rejeitava como "falha" por depender
+// SÓ da chave ausente. Quando a chave simplesmente não existe (nem "0" nem "1" — ausente),
+// usa o único sinal que resta: o style inline do próprio elemento `#TXTNENHUM` (ausência de
+// `display:none` = mensagem de fato visível no DOM). Quando a chave EXISTE, continua
+// confiando só nela (comportamento anterior intocado — é o sinal mais forte quando disponível).
 import { load } from "cheerio";
 
 export type ResultadoConsulta = "encontrado" | "nao_consta" | "falha";
@@ -53,7 +65,22 @@ export function classificarHtml(html: string, url: string): Classificacao {
   if (msg.length === 0) return falha("mensagem TXTNENHUM ausente e grade vazia");
   const gx = gxTxtNenhumVisible(html);
   const inlineOculto = /display\s*:\s*none/i.test(msg.attr("style") ?? "");
-  if (gx !== "1") return falha(`mensagem "não encontrados" não visível (TXTNENHUM_Visible=${gx ?? "ausente"}) e grade vazia`);
+
+  // FOR-184c: sem a chave no GXState (variante de página que não a serializa — ver comentário
+  // no topo do arquivo), o style inline é o único sinal disponível.
+  if (gx === null) {
+    if (inlineOculto) {
+      return falha('mensagem "não encontrados" presente mas com display:none, sem TXTNENHUM_Visible pra confirmar (grade vazia)');
+    }
+    return {
+      resultado: "nao_consta",
+      situacao: null,
+      dataConsultaPortal,
+      motivo: 'mensagem "Não foram encontrados" visível via style inline (TXTNENHUM_Visible ausente nesta variante de página), grade vazia, rodapé presente',
+    };
+  }
+
+  if (gx !== "1") return falha(`mensagem "não encontrados" não visível (TXTNENHUM_Visible=${gx}) e grade vazia`);
   if (inlineOculto) return falha("sinais divergentes: TXTNENHUM_Visible=1 mas a mensagem está com display:none");
 
   return {
