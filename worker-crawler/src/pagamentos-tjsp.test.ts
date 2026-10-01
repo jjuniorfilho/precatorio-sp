@@ -10,6 +10,9 @@ const URL_OK = "https://www.tjsp.jus.br/cac/scp/pesquisainternetnumanoep.aspx?ab
 const fx = (n: string) => readFileSync(new URL(`./__fixtures__/pagamentos/${n}`, import.meta.url), "utf-8");
 const SEM = fx("resultado-sem-pagamento.html");
 const COM = fx("resultado-com-pagamento.html");
+// FOR-184c: variante REAL de página (capturada em 30/09/2026, DEPRE 0436868-90.2025.8.26.0500)
+// cujo GXState não serializa `TXTNENHUM_Visible` — ver pagamentos-classificar.ts.
+const SEM_GXSTATE = fx("resultado-sem-pagamento-sem-gxstate.html");
 
 test("sem pagamento: portal respondeu 'não consta' (mensagem visível, grade vazia, rodapé)", () => {
   const r = classificarHtml(SEM, URL_OK);
@@ -39,9 +42,29 @@ test("falha: TXTNENHUM_Visible=0 sem linha na grade (página inesperada)", () =>
   assert.equal(classificarHtml(html, URL_OK).resultado, "falha");
 });
 
-test("falha: sem o estado GeneXus TXTNENHUM_Visible", () => {
+// FOR-184c: antes, QUALQUER ausência de TXTNENHUM_Visible virava "falha" direto — mesmo com a
+// mensagem genuinamente visível no DOM (sem display:none). Achado em produção: pelo menos uma
+// variante real de página do TJSP nunca serializa essa chave. Agora o fallback é o style
+// inline do próprio elemento — "nao_consta" quando ele mostra a mensagem de verdade.
+test("nao_consta: sem o estado GeneXus TXTNENHUM_Visible, mas a mensagem está visível via style inline (fallback)", () => {
   const html = SEM.replace(/TXTNENHUM_Visible/g, "OUTRA_Visible");
+  const r = classificarHtml(html, URL_OK);
+  assert.equal(r.resultado, "nao_consta");
+  assert.match(r.motivo, /TXTNENHUM_Visible ausente/);
+});
+
+test("falha: sem o estado GeneXus E a mensagem com display:none (nenhum sinal confiável sobra)", () => {
+  const semGx = SEM.replace(/TXTNENHUM_Visible/g, "OUTRA_Visible");
+  const html = semGx.replace(/style="(font-family[^"]*)" id="TXTNENHUM"/, 'style="display:none;$1" id="TXTNENHUM"');
+  assert.notEqual(html, semGx, "o replace deve ter alterado o fixture");
   assert.equal(classificarHtml(html, URL_OK).resultado, "falha");
+});
+
+test("nao_consta: fixture REAL de produção sem TXTNENHUM_Visible no GXState (DEPRE 0436868-90.2025.8.26.0500)", () => {
+  const r = classificarHtml(SEM_GXSTATE, URL_OK);
+  assert.equal(r.resultado, "nao_consta");
+  assert.equal(r.situacao, null);
+  assert.equal(r.dataConsultaPortal, "30/09/2026 21:52:20");
 });
 
 test("falha: sinais divergentes (server-side visível, mas display:none inline)", () => {
