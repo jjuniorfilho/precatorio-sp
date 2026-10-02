@@ -4,7 +4,7 @@ import { createHash } from "node:crypto";
 import WebSocketImpl from "ws";
 import { config } from "./config.js";
 import { normNome } from "./comunica.js";
-import type { ProcessoTree, QueueJob } from "./types.js";
+import type { ProcessoPrincipalInfo, ProcessoTree, QueueJob } from "./types.js";
 import type { OrigemInfo } from "./parse.js";
 
 // Node < 22 não tem WebSocket nativo (supabase realtime exige). Fornece o `ws`.
@@ -31,7 +31,9 @@ export async function ensureAuth(): Promise<void> {
   console.log(`autenticado como admin (${config.adminEmail})`);
 }
 
-const cnjNorm = (cnj: string | null) => (cnj ? cnj.replace(/\D/g, "") : null);
+// FOR-195 — exportado pro script de backfill (backfill-legado-cumprimento-principal.ts)
+// reusar a mesma normalização ao reportar/logar, em vez de duplicar a regex.
+export const cnjNorm = (cnj: string | null) => (cnj ? cnj.replace(/\D/g, "") : null);
 const md5 = (s: string) => createHash("md5").update(s).digest("hex");
 
 /** DJEN-first: lê os advogados já estruturados na ingestão p/ os CNJs dados.
@@ -201,6 +203,54 @@ async function buscarIncidentesLegadoDoProcesso(processoId: string): Promise<Map
 async function reconcileLegadoIncidente(legadoIds: string[], processoCodigoReal: string): Promise<void> {
   if (!config.legadoReconcile || !legadoIds.length) return;
   await reconcileLegadoRows("incidentes", legadoIds, processoCodigoReal, "merge_legado_incidente");
+}
+
+// ---- FOR-195: ação principal real acima do cumprimento (legado) -----------
+/** Usado pelo script one-off `backfill-legado-cumprimento-principal.ts`, um candidato por vez
+ * (concorrência=1 — aprovado pelo humano, cautela com o e-SAJ/VPS de 1 vCPU).
+ *
+ * `processoAtualId` é o `processos.id` que hoje representa — por engano — a raiz (na verdade é
+ * o CUMPRIMENTO). `principal` é a capa já extraída da ação principal real (via
+ * `fetchProcessoPrincipal`, crawl.ts), que o CALLER confirmou existir buscando o e-SAJ de
+ * verdade.
+ *
+ * O upsert por `processo_codigo` (igual a todo upsert de `processos` em `persistTree`) é seguro
+ * sob concorrência por construção — `processo_codigo` já é `UNIQUE` (migration FOR-69) — então
+ * duas reconciliações diferentes resolvendo pra MESMA ação principal (dois incidentes legado
+ * distintos que sobem pro mesmo processo) nunca duplicam a linha `processos`: a 2ª chamada só
+ * reaproveita o id que a 1ª já criou. Por isso NÃO depende de `cnj_normalizado` ter unique
+ * constraint (que não tem, e não precisa ganhar uma só pra isto).
+ *
+ * Retorna o id do `processos` row do principal (novo ou reaproveitado). */
+export async function reconcilePrincipalReal(
+  processoAtualId: string,
+  principal: ProcessoPrincipalInfo,
+): Promise<string> {
+  const principalId = await upsertReturningId("processos", {
+    processo_codigo: principal.processo_codigo,
+    cnj: principal.cnj,
+    cnj_normalizado: cnjNorm(principal.cnj),
+    foro: principal.foro,
+    classe: principal.classe,
+    assunto: principal.assunto,
+    distribuicao: principal.distribuicao,
+    valor_acao: principal.valor_acao,
+    data_base: principal.data_base,
+    ente_nome: principal.ente_nome,
+    ente_esfera: principal.ente_esfera,
+    flag_sp: principal.flag_sp,
+    status: principal.status,
+    last_crawled_at: new Date().toISOString(),
+  }, "processo_codigo");
+
+  if (principalId !== processoAtualId) {
+    const { error } = await supabase.rpc("merge_legado_cumprimento_para_principal", {
+      p_processo_atual_id: processoAtualId,
+      p_processo_principal_id: principalId,
+    });
+    if (error) throw new Error(`merge_legado_cumprimento_para_principal: ${error.message}`);
+  }
+  return principalId;
 }
 
 // ---- Persistência da árvore -------------------------------------------------

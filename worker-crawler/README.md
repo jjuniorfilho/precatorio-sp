@@ -196,6 +196,39 @@ consumida — um legado nunca é renomeado duas vezes). A RPC
 `LEGADO-`, mas já com `cumprimento_id` preenchido (a equivalência `LEGADO-% ⇔ cumprimento_id IS
 NULL` deixa de valer pra eles).
 
+### Ação principal real acima do cumprimento (FOR-195)
+
+A FOR-178 reconcilia o legado até o nível do **cumprimento** — mas o `processos` row resultante
+tem, por engano, o CNJ do PRÓPRIO CUMPRIMENTO (não da ação principal real um nível acima),
+porque o seed que originou aquela reconciliação foi o próprio CNJ do cumprimento (único dado
+que o import tinha) e o climb via `a.processoPrinc` nunca foi tentado a partir da página do
+PRÓPRIO cumprimento nesse fluxo (`reconcileLegadoCumprimento` só casa por `cnj_normalizado`
+contra uma linha já existente, não dispara crawl novo).
+
+**`fetchProcessoPrincipal`** (`src/crawl.ts`): busca só a página do processo indicado (sem
+climb, sem árvore, sem `persistTree`) e segue `a.processoPrinc` — mesmo parser que
+`normalizeToRoot` usa, mas limitado a 1-2 páginas. `null` = a própria página já é raiz (regra
+espelhada da FOR-196: nada a fazer).
+
+**`reconcilePrincipalReal`** (`src/supabase.ts`): dado o id do `processos` row errado e a capa
+da ação principal real (achada via `fetchProcessoPrincipal`), faz upsert do principal em
+`processos` (mesmo padrão de `upsertReturningId(..., "processo_codigo")` de `persistTree` — já
+é `UNIQUE`, seguro sob concorrência por construção, sem precisar de unique constraint nova em
+`cnj_normalizado`) e chama a RPC nova `merge_legado_cumprimento_para_principal`
+(`sql/2026-10-02_for195_merge_legado_cumprimento_para_principal.sql`, aplicar **antes** do
+deploy): move `cumprimentos`/`incidentes`/`partes` pro principal e converte o antigo "processo"
+numa linha `cumprimentos` de verdade (ele É um cumprimento — só estava um nível alto demais).
+
+**Backfill** (`src/backfill-legado-cumprimento-principal.ts`, `npm run
+backfill-legado-cumprimento-principal`): script one-off, mesma convenção do
+`import-csv-legado.ts` — modo relatório por padrão (`buscarCandidatos`: incidentes `LEGADO-%`
+com `cumprimento_id` já preenchido, dedup por `processo_id`), `--apply` obrigatório pra gravar,
+`--limit=N` pra smoke test, loop **serial** (concorrência=1, sem `runPool` — cautela com o
+e-SAJ/VPS de 1 vCPU pra um backfill pontual, não rede de segurança contra duplicata, que já não
+existe). **Confirme a contagem de candidatos do modo relatório contra o ~24.292 esperado (card
+FOR-195) antes de qualquer `--apply`.** Nunca dispara sozinho — só roda sob comando explícito do
+operador na VPS.
+
 ### Valor pago: 3 resultados + log de consultas (FOR-171)
 
 `POST /valor-pago { processo_depre, origem? }` (`origem`: `manual` (default) | `busca_publica` | `crawler`)

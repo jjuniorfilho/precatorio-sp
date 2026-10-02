@@ -168,3 +168,50 @@ por toda a implementação do backfill de ~24.292 jobs.
 
 **Próximo passo esperado (fora desta sessão)**: humano decide as 3 perguntas (ou aprova as
 recomendações acima) → só então `/engineer:plan` roda com a decisão já tomada.
+
+---
+
+## ✅ Decisões confirmadas pelo humano (2026-10-02, pós freio de mão)
+
+Aprovadas exatamente como recomendado, com um refinamento (item 3) encontrado ao desenhar o
+código de verdade:
+
+1. **RPC nova** `merge_legado_cumprimento_para_principal(p_processo_atual_id, p_processo_principal_id)`
+   — espelha `merge_legado_processo_para_cumprimento` (FOR-178): mesmo padrão de REVOKE
+   PUBLIC/anon + GRANT service_role/authenticated, idempotente (no-op se `p_processo_atual_id`
+   já não existir). Diferença de guarda: não há `LIKE 'LEGADO-%'` possível aqui (o objeto movido
+   é uma linha REAL do e-SAJ, só no nível errado) — a defesa é a mesma das demais `merge_legado_*`
+   (não-anon-callable) + idempotência por ausência de linha.
+
+2. **Função fina nova** `fetchProcessoPrincipal(codigo, foro, session)` em `crawl.ts` — reusa
+   `showByCodigo` (já existe em `esaj.ts`) + `processoPrincLink` (já existe em `parse.ts`).
+   Busca a página do cumprimento, extrai o link; se achou, busca a página do PRINCIPAL também
+   (2ª chamada) e roda `extractCapa`/`extractPartes` nela — só 2 páginas, sem climb, sem árvore,
+   sem `persistTree`.
+
+3. **Enfileiramento — decisão refinada ao ler o código**: **nenhuma fila nova e nenhuma migration
+   de schema.** Ao desenhar a chamada de verdade, a upsert do `processos` row do PRINCIPAL usa
+   `upsertReturningId("processos", row, "processo_codigo")` — a MESMA função e o MESMO
+   `onConflict` que `persistTree` já usa pra todo upsert de `processos` (supabase.ts:214-229).
+   Como `processos.processo_codigo` **já é `UNIQUE`** (migration FOR-69), esse upsert é atômico
+   e seguro sob concorrência **por construção**, sem depender de `cnj_normalizado` (que
+   permanece sem unique constraint, sem necessidade de mudar isso). Ou seja: o receio original
+   da Decisão 3 (duas corridas criando `processos` duplicado) só se aplicaria se a resolução
+   fosse por `cnj_normalizado` — resolvendo por `processo_codigo` (o dado que `processoPrincLink`
+   de fato devolve) o problema desaparece sem precisar do padrão `reconcileLegadoRows`.
+   Concorrência=1 é mantida (aprovada pelo humano) por cautela com o e-SAJ/VPS de 1 vCPU — mesmo
+   racional conservador já usado em `pagamentos-tjsp.ts`/`fila.ts` — não como rede de segurança
+   contra duplicata (que já não existe).
+   **Fila**: em vez de um modo novo em `crawler_queue`/`index.ts` (que arriscaria o dispatch do
+   crawl ao vivo) ou uma tabela de fila dedicada (`claim`/`complete`/`fail` próprios, infra
+   duplicada pra um backfill pontual), o mecanismo escolhido é o **mesmo padrão já estabelecido
+   no repo pra backfills one-off** (`import-csv-legado.ts`, `reclassify-oc.ts`): um script
+   dedicado `worker-crawler/src/backfill-legado-cumprimento-principal.ts`, com `--apply`
+   obrigatório pra gravar (modo relatório por padrão), `--limit=N` pra smoke test, e um loop
+   **serial** (concorrência=1, sem `runPool`) sobre os candidatos — sem tocar em `crawler_queue`
+   nem no loop `claim/crawl/persist` do worker principal. Candidatos: os `processos` rows que
+   hoje representam incidentes legado já reconciliados até o cumprimento (consulta documentada
+   no cabeçalho do próprio script) — a contagem exata (~24.292) deve ser confirmada pelo modo
+   relatório contra a base real antes de qualquer `--apply`, mesma cautela do `import-csv-legado.ts`.
+
+Nenhuma ação de produção foi disparada ao confirmar isto — a implementação segue em `plan.md`.
