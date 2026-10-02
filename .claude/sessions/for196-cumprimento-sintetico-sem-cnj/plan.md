@@ -47,7 +47,25 @@ null mesmo) e 2 rodadas (prova idempotência: nada muda na 2ª, sem duplicar lin
 confirmado: todos os `✔`, nenhum `✘`.
 
 ### Comentários:
-- Migration e fix de código são independentes entre si — ordem de deploy não importa (ao
-  contrário do FOR-178, onde a RPC precisava vir antes do worker).
 - Aplicar a migration em produção fica para o humano, fora do escopo deste PR (igual ao
   padrão dos demais `sql/2026-*_forNNN_*.sql` do repo — preparados, não aplicados pelo agente).
+
+### Revisão pós code-reviewer (pre-pr) — 2 achados MEDIUM corrigidos
+
+- **Migration não atualizava `cnj_normalizado`** (o worker sempre grava os dois juntos,
+  `supabase.ts:240-241`) — corrigido: UPDATE agora seta `cnj` e `cnj_normalizado` juntos.
+- **WHERE original (`cnj is null`) não distinguia sintético de cumprimento "de verdade"
+  sem CNJ reconhecido** (`extractCnj(c.texto)` pode retornar null pro link de um cumprimento
+  real) — corrigido: restringe a `processo_codigo like '%#cumprimento'` (sufixo literal das 2
+  ramificações do bug) e usa `c.processo_id` direto em vez de passar por `incidentes` (evita
+  múltiplas linhas candidatas por cumprimento com vários incidentes, e cobre o caso raro de
+  cumprimento sintético sem nenhum incidente). Também documentado no cabeçalho: aplicar DEPOIS
+  do deploy do worker (senão o upsert do worker antigo reverte o valor a cada recrawl).
+- `sql/sandbox/for196_validate_local.sh` ganhou um 4º cenário (D: cumprimento "de verdade" sem
+  o sufixo, cnj null, deve continuar null) pra travar essa distinção como regressão.
+- Achado LOW (ordem de deploy) documentado no cabeçalho da migration.
+- Achado de código em `crawl.ts`: nenhum — o code-reviewer confirmou via mutation testing que
+  cada teste novo mata exatamente a mutação do seu próprio ramo (restaurar `cnj: null` na linha
+  144 só quebra o teste 1; na linha 153 só quebra o teste 2).
+- `branch-master-docs-checker`: alinhado — nenhum master doc trata `cumprimentos.cnj`/
+  "cumprimento sintético" como decisão proposital; não há doc a atualizar.
