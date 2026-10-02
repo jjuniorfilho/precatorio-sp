@@ -138,7 +138,10 @@ export async function crawlSeed(seed: string, session?: Session): Promise<Proces
   if (directIncidentLinks.length > 0) {
     const incidentes: IncidenteData[] = [];
     for (const l of directIncidentLinks) incidentes.push(await buildIncidente(l.codigo, l.foro || root.foro, l.texto, sess));
-    cumprimentos.push({ processo_codigo: `${root.codigo}#cumprimento`, cnj: null, incidentes });
+    // FOR-196: cumprimento sintético — a execução corre no próprio processo, sem CNJ
+    // de cumprimento separado. Usa o CNJ da própria raiz (capa.cnj), não null — senão
+    // "Cumprimento de Sentença" fica em branco (achado: 347.482 incidentes afetados).
+    cumprimentos.push({ processo_codigo: `${root.codigo}#cumprimento`, cnj: capa.cnj, incidentes });
   }
 
   // raiz sem nada → placeholder no nível raiz (só cálculo homologado, p.ex.)
@@ -146,7 +149,8 @@ export async function crawlSeed(seed: string, session?: Session): Promise<Proces
     const partesRoot = extractPartes(root.$);
     cumprimentos.push({
       processo_codigo: `${root.codigo}#cumprimento`,
-      cnj: null,
+      // FOR-196: idem acima — herda o CNJ da raiz em vez de null.
+      cnj: capa.cnj,
       incidentes: [{
         processo_codigo: `${root.codigo}#placeholder`,
         numero_incidente: null, tipo_previsto: "Indefinido",

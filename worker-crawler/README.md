@@ -25,7 +25,8 @@ SELECT enqueue_crawler_job('1003169-89.2019.8.26.0073', 'manual');
 
 ## Testes
 ```bash
-npm test    # node:test nativo (Node ≥20), sem dependência nova — tsx --test src/*.test.ts
+npm test                  # node:test nativo (Node ≥20), sem dependência nova — tsx --test src/*.test.ts
+npm run test:module-mocks # FOR-196 — precisa de Node ≥22.3 (--experimental-test-module-mocks), ver nota abaixo
 ```
 Cobre só **lógica pura, sem I/O** (`classifyEsfera` em `parse.ts`; `parseCsvLine`,
 `normIncidente`, `parseValorCentavos`, `agruparPorChave`, `separarJaExistemEAInserir`,
@@ -40,6 +41,14 @@ com o Supabase (o próprio `inserirLinha`/`main` do import) **não** tem teste a
 validado manualmente/em produção. `main()` de `import-csv-legado.ts` só
 roda quando o arquivo é executado diretamente (`tsx src/import-csv-legado.ts`), nunca ao ser
 importado pelos testes.
+
+Exceção (FOR-196): `src/crawl-cumprimento-sintetico.test.ts` cobre a **orquestração** de
+`crawlSeed` (as 2 ramificações que criam o cumprimento "sintético") mockando a camada de rede
+inteira (`esaj.js`/`comunica.js`/`supabase.js`) via `mock.module` (node:test nativo). Isso exige
+o flag `--experimental-test-module-mocks`, só em Node ≥22.3 — por isso roda via
+`npm run test:module-mocks` (script dedicado), não no `npm test` default (que seria quebrado em
+Node 20/21, violando o piso de versão deste README). Sob `npm test` normal esses 2 testes se
+auto-detectam e pulam (skip), em vez de falhar.
 
 ## Deploy (VPS)
 Processo gerenciado por **systemd** ou **pm2**. Env mínimo: `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`. Educação com o e-SAJ via `CONCURRENCY`/`DELAY_MS` (conservador por padrão). A `SERVICE_ROLE_KEY` fica **só na VPS**.
