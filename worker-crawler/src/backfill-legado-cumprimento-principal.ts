@@ -74,10 +74,10 @@ export function seedDoCandidato(c: Candidato): string | null {
 
 async function main() {
   const args = process.argv.slice(2);
-  const ARGS_CONHECIDOS = /^(--apply|--dry-run|--limit=\d+)$/;
+  const ARGS_CONHECIDOS = /^(--apply|--dry-run|--limit=\d+|--cnj=.+)$/;
   const desconhecido = args.find((a) => !ARGS_CONHECIDOS.test(a));
   if (desconhecido) {
-    console.error(`argumento não reconhecido: "${desconhecido}". Aceitos: --apply, --limit=<N>.`);
+    console.error(`argumento não reconhecido: "${desconhecido}". Aceitos: --apply, --limit=<N>, --cnj=<CNJ>.`);
     process.exit(1);
   }
 
@@ -88,15 +88,28 @@ async function main() {
     console.error(`--limit inválido: "${limitArg}" (precisa ser inteiro positivo).`);
     process.exit(1);
   }
+  // --cnj=<CNJ>: smoke test de 1 caso específico (por `processos.cnj`), pra validar o mecanismo
+  // ponta-a-ponta (fetch + reconcilePrincipalReal + classifyProcesso) antes de confiar num
+  // --limit=N genérico, cuja ordem de retorno não é garantida.
+  const cnjArg = args.find((a) => a.startsWith("--cnj="))?.slice("--cnj=".length) ?? null;
 
   assertConfig();
   await ensureAuth();
 
   console.log("backfill-legado-cumprimento-principal: consultando candidatos...");
-  const candidatos = await buscarCandidatos();
+  let candidatos = await buscarCandidatos();
   console.log(`  ${candidatos.length} processos candidatos (esperado ~11.202 — confira antes de --apply se divergir muito).`);
   console.log("\namostra:");
   console.log(candidatos.slice(0, 10).map((c) => `    ${c.processoId} · ${c.processoCodigo} · foro=${c.foro}`).join("\n") || "    (nenhum)");
+
+  if (cnjArg) {
+    candidatos = candidatos.filter((c) => c.cnj === cnjArg);
+    console.log(`\n--cnj=${cnjArg}: filtrando aos candidatos com esse cnj -> ${candidatos.length} encontrado(s).`);
+    if (candidatos.length === 0) {
+      console.log("  nenhum candidato com esse cnj (já reconciliado, ou cnj não é LEGADO-% candidato). Nada a fazer.");
+      return;
+    }
+  }
 
   if (!apply) {
     console.log("\nmodo relatório (sem --apply): nada foi gravado, nenhum fetch ao e-SAJ foi feito.");
