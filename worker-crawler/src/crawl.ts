@@ -202,30 +202,49 @@ export async function crawlSeed(seed: string, session?: Session): Promise<Proces
 
 // FOR-195 — busca só a página do processo indicado (sem subir a árvore, sem persistir) e
 // extrai o link de volta pra ação principal (a.processoPrinc), se existir. Usado pelo backfill
-// de legado (`backfill-legado-cumprimento-principal.ts`): os ~24.292 incidentes legado que a
-// FOR-178 já reconciliou até o nível do CUMPRIMENTO têm, hoje, um `processos` row cujo
-// `processo_codigo` É o código e-SAJ do cumprimento (promovido a "raiz" por engano, porque o
-// seed que originou aquela reconciliação foi o próprio CNJ do cumprimento). Esta função busca a
-// página desse código e segue `a.processoPrinc`, exatamente como `normalizeToRoot` faria — mas
-// só 1 (ou 2, se achar) página(s), sem incidentes/cumprimentos/persistTree.
+// de legado (`backfill-legado-cumprimento-principal.ts`): os ~11.202 `processos` legado
+// (`processo_codigo LIKE 'LEGADO-%'`) hoje representam, por engano, o CUMPRIMENTO como se fosse a
+// raiz (promovido a "raiz" porque o seed que originou aquela reconciliação foi o próprio CNJ do
+// cumprimento, não um código e-SAJ real). Esta função busca a página desse processo e segue
+// `a.processoPrinc`, exatamente como `normalizeToRoot` faria — mas só 1 (ou 2, se achar)
+// página(s), sem incidentes/cumprimentos/persistTree.
 //
 // null = a própria página já é raiz (sem `a.processoPrinc`) — regra espelhada na FOR-196: nada
 // a fazer, o processo já está corretamente representado.
+//
+// `seed` aceita tanto um código e-SAJ interno quanto um CNJ (mesma distinção que
+// `normalizeToRoot` faz via `isCnj`) — necessário porque ~98% da população real (candidatos cujo
+// `processos.processo_codigo` ainda é `LEGADO-...`, nunca um código e-SAJ real) só tem o CNJ como
+// ponto de entrada conhecido (achado do code-review FOR-195: a versão original só aceitava
+// código e-SAJ, cobrindo só os ~200 casos já promovidos a código real por outro crawl anterior).
 export async function fetchProcessoPrincipal(
-  codigo: string, foro: string, session: Session,
+  seed: string, foro: string, session: Session,
 ): Promise<ProcessoPrincipalInfo | null> {
-  const $ = load(await showByCodigo(codigo, foro, session));
+  const foroHint = isCnj(seed) ? parseCnj(seed)?.foro ?? foro : foro;
+  let $ = isCnj(seed) ? load(await searchByCnj(seed, session)) : load(await showByCodigo(seed, foroHint, session));
+
+  // Blindagem só necessária no caminho por CNJ (`normalizeToRoot` tem a mesma): a busca por CNJ
+  // pode cair numa lista de resultados em vez da ficha direta — segue o 1º link de processo nesse
+  // caso. `showByCodigo` com um código e-SAJ exato nunca cai em lista, por isso o caminho por
+  // código (seed não-CNJ) segue direto pra `processoPrincLink`, como antes.
+  if (isCnj(seed) && !selfCodigo($)) {
+    const lst = firstProcessoLink($);
+    if (!lst) return null; // CNJ não encontrado no e-SAJ
+    await sleep(config.delayMs);
+    $ = load(await showByCodigo(lst.codigo, lst.foro || foroHint, session));
+  }
+
   const link = processoPrincLink($);
   if (!link) return null;
 
   await sleep(config.delayMs);
-  const $p = load(await showByCodigo(link.codigo, link.foro || foro, session));
+  const $p = load(await showByCodigo(link.codigo, link.foro || foroHint, session));
   const capa = extractCapa($p);
   const { passiva } = extractPartes($p);
 
   return {
     processo_codigo: link.codigo,
-    foro: capa.foro ?? link.foro ?? foro,
+    foro: capa.foro ?? link.foro ?? foroHint,
     cnj: capa.cnj,
     classe: capa.classe,
     assunto: capa.assunto,
