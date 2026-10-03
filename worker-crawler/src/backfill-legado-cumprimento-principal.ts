@@ -48,13 +48,20 @@ export interface Candidato {
 /** Paginado (mesmo idiom de `import-csv-legado.ts`: `.range()` em lotes de 1000 — o REST do
  * Supabase tem teto de página, e a população real (~11.202) ultrapassa o default). Direto em
  * `processos`, sem passar por `incidentes`: ver o comentário de topo do arquivo sobre o bug do
- * proxy anterior. */
+ * proxy anterior.
+ *
+ * `.order("id")` é OBRIGATÓRIO aqui, não cosmético: sem ordenação explícita o Postgres não
+ * garante a mesma ordem física entre 2 execuções de `.range()` na mesma query — confirmado em
+ * produção (achado durante a validação do caso-teste, FOR-195): o mesmo candidato apareceu 2x em
+ * páginas diferentes na mesma rodada. Duplicata é só desperdício (a RPC é idempotente via UPSERT),
+ * mas o inverso — uma linha somida entre 2 páginas por causa da mesma instabilidade — seria pior:
+ * um processo pulado silenciosamente, sem erro nenhum pra acusar. */
 export async function buscarCandidatos(): Promise<Candidato[]> {
   const candidatos: Candidato[] = [];
   for (let from = 0; ; from += 1000) {
     const { data, error } = await supabase
       .from("processos").select("id, processo_codigo, cnj, foro")
-      .like("processo_codigo", "LEGADO-%").range(from, from + 999);
+      .like("processo_codigo", "LEGADO-%").order("id").range(from, from + 999);
     if (error) throw new Error(`buscarCandidatos: ${error.message}`);
     for (const row of (data ?? []) as Array<{ id: string; processo_codigo: string; cnj: string | null; foro: string | null }>) {
       candidatos.push({ processoId: row.id, processoCodigo: row.processo_codigo, cnj: row.cnj, foro: row.foro ?? "" });
@@ -74,10 +81,10 @@ export function seedDoCandidato(c: Candidato): string | null {
 
 async function main() {
   const args = process.argv.slice(2);
-  const ARGS_CONHECIDOS = /^(--apply|--dry-run|--limit=\d+)$/;
+  const ARGS_CONHECIDOS = /^(--apply|--dry-run|--limit=\d+|--cnj=.+)$/;
   const desconhecido = args.find((a) => !ARGS_CONHECIDOS.test(a));
   if (desconhecido) {
-    console.error(`argumento não reconhecido: "${desconhecido}". Aceitos: --apply, --limit=<N>.`);
+    console.error(`argumento não reconhecido: "${desconhecido}". Aceitos: --apply, --limit=<N>, --cnj=<CNJ>.`);
     process.exit(1);
   }
 
@@ -88,15 +95,28 @@ async function main() {
     console.error(`--limit inválido: "${limitArg}" (precisa ser inteiro positivo).`);
     process.exit(1);
   }
+  // --cnj=<CNJ>: smoke test de 1 caso específico (por `processos.cnj`), pra validar o mecanismo
+  // ponta-a-ponta (fetch + reconcilePrincipalReal + classifyProcesso) antes de confiar num
+  // --limit=N genérico, cuja ordem de retorno não é garantida.
+  const cnjArg = args.find((a) => a.startsWith("--cnj="))?.slice("--cnj=".length) ?? null;
 
   assertConfig();
   await ensureAuth();
 
   console.log("backfill-legado-cumprimento-principal: consultando candidatos...");
-  const candidatos = await buscarCandidatos();
+  let candidatos = await buscarCandidatos();
   console.log(`  ${candidatos.length} processos candidatos (esperado ~11.202 — confira antes de --apply se divergir muito).`);
   console.log("\namostra:");
   console.log(candidatos.slice(0, 10).map((c) => `    ${c.processoId} · ${c.processoCodigo} · foro=${c.foro}`).join("\n") || "    (nenhum)");
+
+  if (cnjArg) {
+    candidatos = candidatos.filter((c) => c.cnj === cnjArg);
+    console.log(`\n--cnj=${cnjArg}: filtrando aos candidatos com esse cnj -> ${candidatos.length} encontrado(s).`);
+    if (candidatos.length === 0) {
+      console.log("  nenhum candidato com esse cnj (já reconciliado, ou cnj não é LEGADO-% candidato). Nada a fazer.");
+      return;
+    }
+  }
 
   if (!apply) {
     console.log("\nmodo relatório (sem --apply): nada foi gravado, nenhum fetch ao e-SAJ foi feito.");
