@@ -11,7 +11,7 @@ import {
 } from "./parse.js";
 import { fetchAdvogadosByCnj, normNome } from "./comunica.js";
 import { djenAdvogadosByCnj } from "./supabase.js";
-import type { CumprimentoData, IncidenteData, ProcessoTree } from "./types.js";
+import type { CumprimentoData, IncidenteData, ProcessoPrincipalInfo, ProcessoTree } from "./types.js";
 import { config, sleep } from "./config.js";
 
 const isCumprimento = (texto: string) => /cumprimento|execu[çc][ãa]o de senten/i.test(texto);
@@ -197,6 +197,45 @@ export async function crawlSeed(seed: string, session?: Session): Promise<Proces
     data_base: capa.data_base,
     status: capa.status,
     cumprimentos,
+  };
+}
+
+// FOR-195 — busca só a página do processo indicado (sem subir a árvore, sem persistir) e
+// extrai o link de volta pra ação principal (a.processoPrinc), se existir. Usado pelo backfill
+// de legado (`backfill-legado-cumprimento-principal.ts`): os ~24.292 incidentes legado que a
+// FOR-178 já reconciliou até o nível do CUMPRIMENTO têm, hoje, um `processos` row cujo
+// `processo_codigo` É o código e-SAJ do cumprimento (promovido a "raiz" por engano, porque o
+// seed que originou aquela reconciliação foi o próprio CNJ do cumprimento). Esta função busca a
+// página desse código e segue `a.processoPrinc`, exatamente como `normalizeToRoot` faria — mas
+// só 1 (ou 2, se achar) página(s), sem incidentes/cumprimentos/persistTree.
+//
+// null = a própria página já é raiz (sem `a.processoPrinc`) — regra espelhada na FOR-196: nada
+// a fazer, o processo já está corretamente representado.
+export async function fetchProcessoPrincipal(
+  codigo: string, foro: string, session: Session,
+): Promise<ProcessoPrincipalInfo | null> {
+  const $ = load(await showByCodigo(codigo, foro, session));
+  const link = processoPrincLink($);
+  if (!link) return null;
+
+  await sleep(config.delayMs);
+  const $p = load(await showByCodigo(link.codigo, link.foro || foro, session));
+  const capa = extractCapa($p);
+  const { passiva } = extractPartes($p);
+
+  return {
+    processo_codigo: link.codigo,
+    foro: capa.foro ?? link.foro ?? foro,
+    cnj: capa.cnj,
+    classe: capa.classe,
+    assunto: capa.assunto,
+    distribuicao: capa.distribuicao,
+    valor_acao: capa.valor_acao,
+    data_base: capa.data_base,
+    status: capa.status,
+    ente_nome: passiva?.nome ?? null,
+    ente_esfera: passiva?.ente_esfera ?? null,
+    flag_sp: !!passiva && passiva.ente_esfera !== "Outro",
   };
 }
 

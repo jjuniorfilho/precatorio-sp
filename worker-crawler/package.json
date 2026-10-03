@@ -13,11 +13,12 @@
     "build": "tsc -p tsconfig.json",
     "typecheck": "tsc --noEmit -p tsconfig.json",
     "test": "SUPABASE_URL=http://localhost:54321 SUPABASE_SERVICE_ROLE_KEY=test-only-unit-tests tsx --test src/*.test.ts",
-    "test:module-mocks": "SUPABASE_URL=http://localhost:54321 SUPABASE_SERVICE_ROLE_KEY=test-only-unit-tests tsx --test --experimental-test-module-mocks src/crawl-cumprimento-sintetico.test.ts",
+    "test:module-mocks": "SUPABASE_URL=http://localhost:54321 SUPABASE_SERVICE_ROLE_KEY=test-only-unit-tests tsx --test --experimental-test-module-mocks src/crawl-cumprimento-sintetico.test.ts src/crawl-processo-principal.test.ts",
     "ingest": "tsx src/ingest-djen.ts",
     "ingest-federal": "tsx src/ingest-djen-federal.ts",
     "reclassify-oc": "tsx src/reclassify-oc.ts",
-    "import-csv-legado": "tsx src/import-csv-legado.ts"
+    "import-csv-legado": "tsx src/import-csv-legado.ts",
+    "backfill-legado-cumprimento-principal": "tsx src/backfill-legado-cumprimento-principal.ts"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.45.0",

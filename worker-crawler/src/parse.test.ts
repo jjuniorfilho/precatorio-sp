@@ -2,7 +2,7 @@
 // dependência nova — ver README.md).
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { classifyEsfera, extractOrigemInfo, extractOrigemCnjs, extractPartes, load } from "./parse.js";
+import { classifyEsfera, extractOrigemInfo, extractOrigemCnjs, extractPartes, processoPrincLink, codigoForoFromHref, load } from "./parse.js";
 
 test("classifyEsfera: tokens estaduais originais", () => {
   assert.equal(classifyEsfera("FAZENDA PUBLICA DO ESTADO DE SAO PAULO"), "Estadual");
@@ -136,4 +136,43 @@ test("extractPartes: um único credor continua funcionando (caso comum)", () => 
   const { ativas } = extractPartes($);
   assert.equal(ativas.length, 1);
   assert.equal(ativas[0]!.advogados.length, 1);
+});
+
+// FOR-195 — processoPrincLink/codigoForoFromHref não tinham cobertura (usados dentro de
+// normalizeToRoot desde o início do crawler, e agora também por fetchProcessoPrincipal em
+// crawl.ts). Caso real: página do cumprimento 0018028-13.2022.8.26.0562 linkando de volta pra
+// ação principal 1000594-91.2022.8.26.0562.
+test("codigoForoFromHref: extrai codigo/foro de um href show.do, decodificando %2E etc.", () => {
+  const href = "show.do?processo.codigo=1H0000PRINC&processo.foro=0562";
+  assert.deepEqual(codigoForoFromHref(href), { codigo: "1H0000PRINC", foro: "0562" });
+});
+
+test("codigoForoFromHref: foro ausente vira string vazia (não undefined/null) quando só há codigo", () => {
+  const href = "show.do?processo.codigo=1H0000PRINC";
+  assert.deepEqual(codigoForoFromHref(href), { codigo: "1H0000PRINC", foro: "" });
+});
+
+test("codigoForoFromHref: href undefined/vazio -> null", () => {
+  assert.equal(codigoForoFromHref(undefined), null);
+  assert.equal(codigoForoFromHref(""), null);
+});
+
+test("processoPrincLink: página do cumprimento com a.processoPrinc -> {codigo, foro} da ação principal", () => {
+  const $ = load(`<html><body>
+    <a class="processoPrinc" href="show.do?processo.codigo=1H0000PRINC&amp;processo.foro=0562">1000594-91.2022.8.26.0562</a>
+  </body></html>`);
+  assert.deepEqual(processoPrincLink($), { codigo: "1H0000PRINC", foro: "0562" });
+});
+
+test("processoPrincLink: página sem a.processoPrinc -> null (já é a raiz, mesma regra da FOR-196)", () => {
+  const $ = load(`<html><body><span id="numeroProcesso">1000594-91.2022.8.26.0562</span></body></html>`);
+  assert.equal(processoPrincLink($), null);
+});
+
+test("processoPrincLink: 2+ links a.processoPrinc na página -> usa o PRIMEIRO (mesma convenção de .first() usada pro resto do parser)", () => {
+  const $ = load(`<html><body>
+    <a class="processoPrinc" href="show.do?processo.codigo=1H0000PRINC&amp;processo.foro=0562">principal</a>
+    <a class="processoPrinc" href="show.do?processo.codigo=1H0000OUTRO&amp;processo.foro=0100">outro</a>
+  </body></html>`);
+  assert.deepEqual(processoPrincLink($), { codigo: "1H0000PRINC", foro: "0562" });
 });

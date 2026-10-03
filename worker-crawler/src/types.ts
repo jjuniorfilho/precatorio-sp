@@ -70,3 +70,21 @@ export interface ProcessoTree {
   status: StatusBruto | null;
   cumprimentos: CumprimentoData[];
 }
+
+// FOR-195 — capa da AÇÃO PRINCIPAL REAL achada via fetchProcessoPrincipal (busca de 1 página,
+// sem climb/árvore). Campos suficientes pra upsert direto em `processos` (mesmo shape usado por
+// persistTree pro upsert da raiz), sem precisar da árvore inteira de cumprimentos/incidentes.
+export interface ProcessoPrincipalInfo {
+  processo_codigo: string;
+  foro: string;
+  cnj: string | null;
+  classe: string | null;
+  assunto: string | null;
+  distribuicao: string | null;
+  valor_acao: number | null;
+  data_base: string | null;
+  status: StatusBruto | null;
+  ente_nome: string | null;
+  ente_esfera: Esfera | null;
+  flag_sp: boolean;
+}
