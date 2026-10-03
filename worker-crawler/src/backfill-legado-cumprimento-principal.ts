@@ -48,13 +48,20 @@ export interface Candidato {
 /** Paginado (mesmo idiom de `import-csv-legado.ts`: `.range()` em lotes de 1000 — o REST do
  * Supabase tem teto de página, e a população real (~11.202) ultrapassa o default). Direto em
  * `processos`, sem passar por `incidentes`: ver o comentário de topo do arquivo sobre o bug do
- * proxy anterior. */
+ * proxy anterior.
+ *
+ * `.order("id")` é OBRIGATÓRIO aqui, não cosmético: sem ordenação explícita o Postgres não
+ * garante a mesma ordem física entre 2 execuções de `.range()` na mesma query — confirmado em
+ * produção (achado durante a validação do caso-teste, FOR-195): o mesmo candidato apareceu 2x em
+ * páginas diferentes na mesma rodada. Duplicata é só desperdício (a RPC é idempotente via UPSERT),
+ * mas o inverso — uma linha somida entre 2 páginas por causa da mesma instabilidade — seria pior:
+ * um processo pulado silenciosamente, sem erro nenhum pra acusar. */
 export async function buscarCandidatos(): Promise<Candidato[]> {
   const candidatos: Candidato[] = [];
   for (let from = 0; ; from += 1000) {
     const { data, error } = await supabase
       .from("processos").select("id, processo_codigo, cnj, foro")
-      .like("processo_codigo", "LEGADO-%").range(from, from + 999);
+      .like("processo_codigo", "LEGADO-%").order("id").range(from, from + 999);
     if (error) throw new Error(`buscarCandidatos: ${error.message}`);
     for (const row of (data ?? []) as Array<{ id: string; processo_codigo: string; cnj: string | null; foro: string | null }>) {
       candidatos.push({ processoId: row.id, processoCodigo: row.processo_codigo, cnj: row.cnj, foro: row.foro ?? "" });

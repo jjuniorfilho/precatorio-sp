@@ -14,10 +14,11 @@ import { buscarCandidatos, seedDoCandidato } from "./backfill-legado-cumprimento
 type Row = Record<string, unknown>;
 type Db = Record<string, Row[]>;
 
-// ---- Fake query builder (só o mínimo que este script usa: select/like/range) ------------------
+// ---- Fake query builder (só o mínimo que este script usa: select/like/order/range) -------------
 class FakeQuery implements PromiseLike<{ data: unknown; error: null }> {
   private filtros: Array<(r: Row) => boolean> = [];
   private rangeArgs: [number, number] | null = null;
+  private orderCol: string | null = null;
   constructor(private db: Db, private table: string) {}
   select(_cols?: string) { return this; }
   like(col: string, pattern: string) {
@@ -25,10 +26,16 @@ class FakeQuery implements PromiseLike<{ data: unknown; error: null }> {
     this.filtros.push((r) => typeof r[col] === "string" && re.test(r[col] as string));
     return this;
   }
+  order(col: string) { this.orderCol = col; return this; }
   range(from: number, to: number) { this.rangeArgs = [from, to]; return this; }
   then<A = { data: unknown; error: null }, B = never>(ok?: ((v: { data: unknown; error: null }) => A | PromiseLike<A>) | null, ko?: ((e: unknown) => B | PromiseLike<B>) | null): PromiseLike<A | B> {
     const t = this.db[this.table] ?? [];
     let out = t.filter((r) => this.filtros.every((f) => f(r)));
+    // Simula ORDER BY de verdade: sem isso, .range() em paginação repetida não tem como ser
+    // testado fielmente (a instabilidade real só aparece no Postgres de produção — ver comentário
+    // em buscarCandidatos). Com .order(), a fake ao menos garante que a paginação em si (slice
+    // consecutivo sobre uma ordem FIXA) nem duplica nem pula linhas.
+    if (this.orderCol) out = [...out].sort((a, b) => String(a[this.orderCol!]).localeCompare(String(b[this.orderCol!])));
     if (this.rangeArgs) out = out.slice(this.rangeArgs[0], this.rangeArgs[1] + 1);
     return Promise.resolve().then(() => ({ data: out, error: null as null })).then(ok, ko);
   }
@@ -69,14 +76,18 @@ test("buscarCandidatos: nenhum processo LEGADO- -> lista vazia", async (t) => {
 });
 
 test("buscarCandidatos: pagina em lotes de 1000 via .range() (população real ultrapassa o default do REST)", async (t) => {
-  const processos: Row[] = [];
-  for (let i = 0; i < 1500; i++) {
-    processos.push({ id: `p${i}`, processo_codigo: `LEGADO-x-${String(i).padStart(5, "0")}`, cnj: null, foro: "0562" });
-  }
+  // Ordem de inserção INVERTIDA de propósito (id1499 primeiro, id0 por último) — sem
+  // `.order("id")` na query real, a paginação por `.range()` não tem garantia de ordem estável
+  // entre as 2 chamadas; este teste cobre que a dedupe/completude depende da ordenação explícita,
+  // não da ordem "por acaso" de inserção.
+  const processos: Row[] = Array.from({ length: 1500 }, (_, i) => 1499 - i)
+    .map((i) => ({ id: `p${String(i).padStart(5, "0")}`, processo_codigo: `LEGADO-x-${String(i).padStart(5, "0")}`, cnj: null, foro: "0562" }));
   instala(t, { processos });
 
   const candidatos = await buscarCandidatos();
-  assert.equal(candidatos.length, 1500, "junta as 2 páginas (1000 + 500)");
+  assert.equal(candidatos.length, 1500, "junta as 2 páginas (1000 + 500) sem duplicar nem pular, mesmo com ordem de inserção embaralhada");
+  const ids = new Set(candidatos.map((c) => c.processoId));
+  assert.equal(ids.size, 1500, "nenhum id duplicado entre as páginas");
 });
 
 test("seedDoCandidato: processo_codigo LEGADO- -> usa o cnj como seed (não é um código e-SAJ válido)", () => {
