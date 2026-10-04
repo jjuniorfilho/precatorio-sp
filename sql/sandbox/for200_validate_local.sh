@@ -4,6 +4,11 @@
 # com raia + RPCs de leitura dos gráficos) num Postgres local efêmero, ANTES de pedir aplicação
 # manual no SQL Editor de produção.
 #
+# Atualizado pós-code-review (2 revisões independentes): cobre o guard de exceção do M1 (log
+# nunca derruba o UPDATE real), a reescrita em 1 passada do M2 (fila pendente) e a mudança de
+# fonte do M3 (agregados crawler por TENTATIVA, via crawler_execucoes_log, não mais só falha
+# terminal de crawler_queue), o fix do CHECK test (L3) e a nova RPC coleta_runs_ultima_por_padrao.
+#
 # Requer PostgreSQL 15+ (Homebrew: brew install postgresql@15). Uso:
 #   sql/sandbox/for200_validate_local.sh
 set -euo pipefail
@@ -111,6 +116,19 @@ CREATE TABLE pagamentos_consultas_log (
                        )),
   criado_em            timestamptz NOT NULL DEFAULT now()
 );
+
+-- coleta_runs (FOR-73/FOR-108) — schema mínimo só pra RPC 6 (coleta_runs_ultima_por_padrao).
+CREATE TABLE coleta_runs (
+  id          uuid        PRIMARY KEY DEFAULT gen_random_uuid(),
+  rotina      text        NOT NULL,
+  started_at  timestamptz NOT NULL DEFAULT now(),
+  finished_at timestamptz,
+  status      text        NOT NULL DEFAULT 'running',
+  itens_ok    integer     NOT NULL DEFAULT 0,
+  itens_erro  integer     NOT NULL DEFAULT 0,
+  duracao_ms  integer,
+  detalhe     jsonb
+);
 EOF
 ok "schema PÓS-FOR-198 criado (crawler_queue/pagamentos_consultas_log com erro_categoria)"
 
@@ -152,11 +170,33 @@ psql_ -d sandbox -c "INSERT INTO crawler_queue (id, processo_codigo) VALUES ('44
 psql_ -d sandbox -c "select fail_crawler_job('44444444-4444-4444-4444-444444444444'::uuid, 'algum erro')" >/dev/null
 eq "$(val "select count(*) from crawler_execucoes_log where job_id='44444444-4444-4444-4444-444444444444'")" "0" "fail_crawler_job sem p_raia NÃO loga (compat)"
 
-# CHECK rejeita categoria/resultado fora da lista
-if psql_ -d sandbox -c "select fail_crawler_job('44444444-4444-4444-4444-444444444444'::uuid, 'x', 'categoria_invalida', 1)" >/dev/null 2>&1; then
+# CHECK rejeita categoria/resultado fora da lista — achado de code review (L3): testar via
+# fail_crawler_job não exercita o CHECK da TABELA NOVA (o CHECK de crawler_queue.erro_categoria,
+# já existente desde o FOR-198, dispara primeiro no UPDATE, antes de chegar no INSERT do log).
+# INSERT direto em crawler_execucoes_log exercita o CHECK certo.
+if psql_ -d sandbox -c "INSERT INTO crawler_execucoes_log (job_id, processo_codigo, raia, resultado, erro_categoria, terminal) VALUES ('44444444-4444-4444-4444-444444444444', 'SEED4', 1, 'erro', 'categoria_invalida', true)" >/dev/null 2>&1; then
   falha "CHECK deveria ter rejeitado erro_categoria fora da lista em crawler_execucoes_log"
 fi
-ok "CHECK rejeita erro_categoria fora das 7 categorias em crawler_execucoes_log"
+ok "CHECK rejeita erro_categoria fora das 7 categorias em crawler_execucoes_log (INSERT direto)"
+if psql_ -d sandbox -c "INSERT INTO crawler_execucoes_log (job_id, processo_codigo, raia, resultado, terminal) VALUES ('44444444-4444-4444-4444-444444444444', 'SEED4', 1, 'resultado_invalido', true)" >/dev/null 2>&1; then
+  falha "CHECK deveria ter rejeitado resultado fora de ok/erro em crawler_execucoes_log"
+fi
+ok "CHECK rejeita resultado fora de ok/erro em crawler_execucoes_log"
+
+# ---- M1 (code review): falha na telemetria NUNCA derruba o resultado real do job ----------
+# p_raia=99999 estoura o smallint (-32768..32767) → o INSERT no log falha com
+# numeric_value_out_of_range, capturado pelo BEGIN...EXCEPTION WHEN OTHERS — o UPDATE em
+# crawler_queue (já commitado antes do bloco de log) tem que permanecer intacto, e a RPC não
+# pode propagar erro nenhum pro chamador.
+psql_ -d sandbox -c "INSERT INTO crawler_queue (id, processo_codigo) VALUES ('66666666-6666-6666-6666-666666666666', '0005488-98.2005.8.26.0053')" >/dev/null
+psql_ -d sandbox -c "select complete_crawler_job('66666666-6666-6666-6666-666666666666'::uuid, 99999)" >/dev/null
+eq "$(val "select status from crawler_queue where id='66666666-6666-6666-6666-666666666666'")" "ok" "M1: complete_crawler_job com p_raia inválido (overflow) NÃO derruba o UPDATE real"
+eq "$(val "select count(*) from crawler_execucoes_log where job_id='66666666-6666-6666-6666-666666666666'")" "0" "M1: log não grava quando a telemetria falha (exception engolida), mas não quebra a chamada"
+
+psql_ -d sandbox -c "INSERT INTO crawler_queue (id, processo_codigo) VALUES ('77777777-7777-7777-7777-777777777777', '0007181-24.2022.8.26.0053')" >/dev/null
+psql_ -d sandbox -c "select fail_crawler_job('77777777-7777-7777-7777-777777777777'::uuid, 'erro qualquer', 'timeout', 99999)" >/dev/null
+eq "$(val "select tentativas from crawler_queue where id='77777777-7777-7777-7777-777777777777'")" "1" "M1: fail_crawler_job com p_raia inválido NÃO derruba o UPDATE real (tentativas ainda incrementa)"
+eq "$(val "select count(*) from crawler_execucoes_log where job_id='77777777-7777-7777-7777-777777777777'")" "0" "M1: log não grava quando a telemetria falha, mas fail_crawler_job não propaga erro"
 
 # ---- GRANTs -------------------------------------------------------------------------------
 eq "$(val "select has_function_privilege('service_role', 'complete_crawler_job(uuid,integer)', 'execute')")" "t" "service_role tem EXECUTE em complete_crawler_job"
@@ -165,6 +205,7 @@ eq "$(val "select has_function_privilege('anon', 'complete_crawler_job(uuid,inte
 eq "$(val "select has_function_privilege('authenticated', 'fail_crawler_job(uuid,text,text,integer)', 'execute')")" "t" "authenticated tem EXECUTE na nova assinatura de fail_crawler_job"
 eq "$(val "select has_function_privilege('anon', 'fail_crawler_job(uuid,text,text,integer)', 'execute')")" "f" "anon fica SEM EXECUTE em fail_crawler_job"
 eq "$(val "select has_function_privilege('anon', 'crawler_execucoes_recentes(boolean,integer)', 'execute')")" "t" "anon TEM EXECUTE nas RPCs de leitura (admin roda anônimo)"
+eq "$(val "select has_function_privilege('anon', 'coleta_runs_ultima_por_padrao(text)', 'execute')")" "t" "anon TEM EXECUTE em coleta_runs_ultima_por_padrao"
 eq "$(val "select has_function_privilege('authenticated', 'requeue_failed(text)', 'execute')")" "t" "requeue_failed preserva GRANT (assinatura intocada por esta sessão)"
 
 # ---- RPCs de leitura ------------------------------------------------------------------------
@@ -174,16 +215,39 @@ eq "$(val "select processo_codigo from crawler_execucoes_recentes(true, 10) limi
 
 psql_ -d sandbox -c "INSERT INTO pagamentos_consultas_log (processo_depre, iniciada_em, finalizada_em, origem, resultado, erro_categoria) VALUES ('0073316-98.2023.8.26.0500', now(), now(), 'crawler', 'falha', 'captcha')" >/dev/null
 psql_ -d sandbox -c "INSERT INTO pagamentos_consultas_log (processo_depre, iniciada_em, finalizada_em, origem, resultado) VALUES ('0073316-98.2023.8.26.0500', now(), now(), 'crawler', 'encontrado')" >/dev/null
-eq "$(val "select count(*) from pagamentos_consultas_recentes(10)")" "2" "pagamentos_consultas_recentes retorna as 2 linhas inseridas"
+eq "$(val "select count(*) from pagamentos_consultas_recentes(10)")" "2" "pagamentos_consultas_recentes (origem=crawler) retorna as 2 linhas inseridas"
+psql_ -d sandbox -c "INSERT INTO pagamentos_consultas_log (processo_depre, iniciada_em, finalizada_em, origem, resultado) VALUES ('0073316-98.2023.8.26.0500', now(), now(), 'manual', 'nao_consta')" >/dev/null
+eq "$(val "select count(*) from pagamentos_consultas_recentes(10)")" "2" "pagamentos_consultas_recentes IGNORA origem=manual (achado de code review, não é execução do robô)"
+eq "$(val "select id is not null from pagamentos_consultas_recentes(1)")" "t" "pagamentos_consultas_recentes retorna id (chave estável pro feed, achado L10)"
 
-eq "$(val "select n_ok from crawler_execucoes_por_hora()")" "2" "crawler_execucoes_por_hora: 2 jobs status=ok na última hora (seeds 1 e 2)"
-eq "$(val "select n_erro from crawler_execucoes_por_hora()")" "1" "crawler_execucoes_por_hora: 1 job status=erro na última hora (seed 3, 3ª falha)"
+# crawler_execucoes_por_hora agora lê crawler_execucoes_log POR TENTATIVA (achado M3), não mais
+# status terminal de crawler_queue — seed1/seed4 nunca foram logados (sem p_raia), então só
+# contam: seed2 (1x 'ok'), seed3 (3x 'erro', uma por tentativa, não só a terminal).
+eq "$(val "select n_ok from crawler_execucoes_por_hora() where hora = date_trunc('hour', now())")" "1" "crawler_execucoes_por_hora: 1 execução 'ok' na hora atual (seed2, único completeJob COM raia)"
+eq "$(val "select n_erro from crawler_execucoes_por_hora() where hora = date_trunc('hour', now())")" "3" "crawler_execucoes_por_hora: 3 execuções 'erro' na hora atual (seed3, uma por TENTATIVA — não só a terminal, achado M3)"
+eq "$(val "select count(*) from crawler_execucoes_por_hora()")" "24" "crawler_execucoes_por_hora sempre devolve as 24 horas, mesmo as ociosas (achado LOW 9, generate_series+LEFT JOIN)"
 
+# 2 pendentes reais nesse ponto: seed4 (nunca resolvido) + seed7 (criado no bloco M1 acima,
+# fail_crawler_job com p_raia inválido — tentativas=1 < 3, status continua 'pendente', já que a
+# falha de telemetria não deveria mesmo afetar o resultado real do job).
 PENDENTES_AGORA="$(val "select pendentes from crawler_fila_pendente_tendencia() order by hora desc limit 1")"
-eq "$PENDENTES_AGORA" "1" "crawler_fila_pendente_tendencia (agora): 1 pendente real (seed 4, nunca resolvido)"
+eq "$PENDENTES_AGORA" "2" "crawler_fila_pendente_tendencia (agora): 2 pendentes reais (seed4 + seed7) — reescrita em 1 CTE (M2), mesmo resultado semântico da versão por subquery correlacionada"
+eq "$(val "select count(*) from crawler_fila_pendente_tendencia()")" "24" "crawler_fila_pendente_tendencia continua com 24 pontos"
 
-eq "$(val "select n from erros_por_categoria_24h() where categoria='rate_limit'")" "1" "erros_por_categoria_24h conta o erro terminal de crawler_queue (seed 3)"
-eq "$(val "select n from erros_por_categoria_24h() where categoria='captcha'")" "1" "erros_por_categoria_24h conta a falha de pagamentos_consultas_log"
+# erros_por_categoria_24h: lado crawler agora lê crawler_execucoes_log POR TENTATIVA (achado M3)
+# — seed3 logou 3 tentativas de 'rate_limit' (não só a terminal).
+eq "$(val "select n from erros_por_categoria_24h() where categoria='rate_limit'")" "3" "erros_por_categoria_24h: 3 tentativas de rate_limit no log do crawler (achado M3, antes contava só 1 — a terminal)"
+eq "$(val "select n from erros_por_categoria_24h() where categoria='captcha'")" "1" "erros_por_categoria_24h conta a falha de pagamentos_consultas_log (origem=crawler)"
+
+# ---- RPC 6: última execução por padrão (achado de code review, frontend M2) ----------------
+psql_ -d sandbox -c "INSERT INTO coleta_runs (rotina, started_at, status, itens_ok) VALUES ('caderno_djen_trf1', now() - interval '2 hours', 'sucesso', 10)" >/dev/null
+psql_ -d sandbox -c "INSERT INTO coleta_runs (rotina, started_at, status, itens_ok) VALUES ('caderno_djen_trf3', now() - interval '1 hour', 'sucesso', 5)" >/dev/null
+psql_ -d sandbox -c "INSERT INTO coleta_runs (rotina, started_at, status, itens_ok) VALUES ('ingest_oab', now() - interval '30 days', 'sucesso', 50)" >/dev/null
+for i in $(seq 1 60); do
+  psql_ -d sandbox -c "INSERT INTO coleta_runs (rotina, started_at, status) VALUES ('refresh_ativos', now() - interval '${i} hours', 'sucesso')" >/dev/null
+done
+eq "$(val "select rotina from coleta_runs_ultima_por_padrao('caderno_djen_%')")" "caderno_djen_trf3" "coleta_runs_ultima_por_padrao pega a mais recente entre os tribunais (trf3, 1h atrás > trf1, 2h atrás)"
+eq "$(val "select rotina from coleta_runs_ultima_por_padrao('ingest_oab%')")" "ingest_oab" "coleta_runs_ultima_por_padrao ACHA a execução de ingest_oab mesmo com 60 linhas mais recentes de OUTRA rotina no meio (achado M2: filtro client-side numa janela de 50 perderia isso)"
 
 # ---- retenção por tempo (3 dias) -------------------------------------------------------
 psql_ -d sandbox -c "update crawler_execucoes_log set criado_em = now() - interval '10 days' where job_id='22222222-2222-2222-2222-222222222222'" >/dev/null

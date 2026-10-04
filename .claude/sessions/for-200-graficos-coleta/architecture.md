@@ -359,3 +359,34 @@ de snapshot periódico — é uma escolha de MECANISMO (evita infra nova), não 
 dados (seria substituível por uma RPC diferente sem tocar a tabela de log), então não aciona o
 freio de mão de "nova decisão arquitetural" — mas é reportada por transparência, como o FOR-198
 reportou sua extensão de escopo.
+
+---
+
+## Addendum — ajustes pós-code-review (2026-10-04, 2 revisões independentes)
+
+Achados MEDIUM aplicados antes do PR (nenhuma decisão de arquitetura nova — todos dentro do
+desenho já aprovado acima):
+
+- **M1**: `complete_crawler_job`/`fail_crawler_job` rodavam o INSERT+DELETE de log na MESMA
+  transação implícita da UPDATE em `crawler_queue` — uma falha na telemetria (deadlock no
+  DELETE concorrente entre raias, overflow de `raia` no smallint) desfazia a UPDATE inteira e
+  fazia `index.ts` tratar um job bem-sucedido como falho. Fix: `BEGIN...EXCEPTION WHEN OTHERS`
+  isola o log numa subtransação.
+- **M2**: `crawler_fila_pendente_tendencia` fazia 24 subqueries correlacionadas não-sargáveis
+  (OR entre `status` e `updated_at`) sobre `crawler_queue` inteira — mesma classe de risco de
+  57014 já documentada no projeto (FOR-189/194). Fix: reescrita em 1 CTE + 2 índices parciais
+  novos cobrindo os dois ramos do OR.
+- **M3**: `crawler_execucoes_por_hora`/`erros_por_categoria_24h` contavam só falha TERMINAL em
+  `crawler_queue` do lado crawler, divergindo do feed (por tentativa) e do lado pagamentos (por
+  tentativa). Fix: as duas agora leem `crawler_execucoes_log` do lado crawler — por tentativa,
+  consistente com o resto da tela; `crawler_fila_pendente_tendencia` continua em `crawler_queue`
+  (profundidade de fila é sobre o estado atual, não dá pra derivar do log de tentativas).
+- **L3**: teste do sandbox pro CHECK de `erro_categoria` exercitava o CHECK errado (o de
+  `crawler_queue`, não o da tabela nova). Fix: INSERT direto em `crawler_execucoes_log`.
+- Frontend M2/M6: nova RPC `coleta_runs_ultima_por_padrao` (substitui filtro client-side por
+  prefixo numa janela capada que podia nunca incluir uma rotina rara como `ingest_oab`); filtro
+  `origem='crawler'` em `pagamentos_consultas_recentes` (consultas manuais/busca pública não são
+  execução do robô). Frontend L10: feeds retornam `id` (chave estável pro React).
+
+Todos revalidados em `sql/sandbox/for200_validate_local.sh` (inclui cenários novos pro guard de
+exceção do M1 e pros valores corrigidos do M2/M3) — suite completa OK.

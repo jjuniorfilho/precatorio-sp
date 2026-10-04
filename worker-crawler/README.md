@@ -5,6 +5,8 @@ Worker externo (roda na VPS) que consome a fila `crawler_queue` (FOR-73) e popul
 ## Fluxo (loop)
 `claim_crawler_jobs(N)` → para cada job: **normaliza à raiz** (`a.processoPrinc`) → desce cumprimentos→incidentes → extrai capa/partes/advogados-OAB/valor/data-base/numero_depre/andamentos → **persiste** (upsert + andamentos idempotentes) → `classify_processo` → `complete_crawler_job` (ou `fail_crawler_job` com retry/backoff).
 
+`complete_crawler_job`/`fail_crawler_job` recebem a **raia** (`lane + 1`, 1-based) do `runPool` e, com ela, logam 1 linha em `crawler_execucoes_log` (FOR-200, append-only — timestamp, raia, resultado, erro_categoria, flag `terminal`) — fonte dos feeds "ao vivo" e dos agregados de `/admin/coleta/graficos`. Falha na escrita desse log nunca derruba o resultado real do job (guard `BEGIN...EXCEPTION` nas duas RPCs).
+
 ## Contrato da fila (seed)
 - `crawler_queue.processo_codigo` é usado como **seed**. **Recomendado: CNJ** (número unificado `NNNNNNN-DD.AAAA.8.26.FFFF`) — o worker resolve via `search.do` (NUMPROC) e sobe à raiz.
 - Se o seed for um código interno e-SAJ, o worker tenta `show.do` direto (precisa do foro; derivado do CNJ quando disponível).
