@@ -5,6 +5,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { classificarHtml } from "./pagamentos-classificar.js";
 import { PassosCollector, ConsultaPagamentoErro } from "./pagamentos-passos.js";
+import { classificarErro } from "./erro-categoria.js";
 
 const URL_OK = "https://www.tjsp.jus.br/cac/scp/pesquisainternetnumanoep.aspx?abc";
 const fx = (n: string) => readFileSync(new URL(`./__fixtures__/pagamentos/${n}`, import.meta.url), "utf-8");
@@ -84,8 +85,9 @@ test("PassosCollector: registra horário/etapa e a etapa do erro", () => {
   assert.equal(p.passos.length, 2);
   assert.match(p.passos[0]!.at, /^\d{4}-\d{2}-\d{2}T/);
   assert.equal(p.etapaDoErro(), "busca");
-  const e = new ConsultaPagamentoErro("x", "busca", p);
+  const e = new ConsultaPagamentoErro("x", "busca", p, "outro");
   assert.equal(e.etapa, "busca");
+  assert.equal(e.categoria, "outro");
 });
 
 // ---- consultarEPersistirPagamentos (com dependências injetadas) ----
@@ -97,15 +99,15 @@ const consultaBase = (resultado: ConsultaPagamento["resultado"]): ConsultaPagame
   consultadoEm: new Date().toISOString(), dataConsultaPortal: null, tentativas: 1,
 });
 function fakeDeps(over: Partial<DepsPersistencia> & { resultado?: ConsultaPagamento["resultado"]; erro?: Error }) {
-  const chamadas = { marcar: 0, upsert: 0, registrar: [] as Array<{ resultado: string; origem: string; etapaFalha: string | null }> };
+  const chamadas = { marcar: 0, upsert: 0, registrar: [] as Array<{ resultado: string; origem: string; etapaFalha: string | null; categoriaFalha: string | null }> };
   const deps: DepsPersistencia = {
     consultar: async () => {
-      if (over.erro) throw new ConsultaPagamentoErro(over.erro.message, "busca", new PassosCollector());
+      if (over.erro) throw new ConsultaPagamentoErro(over.erro.message, "busca", new PassosCollector(), classificarErro(over.erro));
       return consultaBase(over.resultado ?? "encontrado");
     },
     upsert: async () => { chamadas.upsert++; },
     marcar: async () => { chamadas.marcar++; },
-    registrar: async (r) => { chamadas.registrar.push({ resultado: r.resultado, origem: r.origem, etapaFalha: r.etapaFalha }); },
+    registrar: async (r) => { chamadas.registrar.push({ resultado: r.resultado, origem: r.origem, etapaFalha: r.etapaFalha, categoriaFalha: r.categoriaFalha }); },
     ...(over.upsert && { upsert: over.upsert }), ...(over.marcar && { marcar: over.marcar }), ...(over.registrar && { registrar: over.registrar }),
   };
   return { deps, chamadas };
@@ -116,7 +118,7 @@ test("nao_consta marca consultado e loga", async () => {
   const r = await consultarEPersistirPagamentos(DEPRE, { origem: "crawler" }, deps);
   assert.equal(r.resultado, "nao_consta");
   assert.equal(chamadas.marcar, 1);
-  assert.deepEqual(chamadas.registrar, [{ resultado: "nao_consta", origem: "crawler", etapaFalha: null }]);
+  assert.deepEqual(chamadas.registrar, [{ resultado: "nao_consta", origem: "crawler", etapaFalha: null, categoriaFalha: null }]);
 });
 
 test("encontrado marca consultado", async () => {
@@ -126,12 +128,12 @@ test("encontrado marca consultado", async () => {
   assert.equal(chamadas.registrar[0]!.origem, "manual");
 });
 
-test("falha NUNCA marca consultado, relança e loga a etapa", async () => {
+test("falha NUNCA marca consultado, relança, loga a etapa E a categoria (FOR-198)", async () => {
   const { deps, chamadas } = fakeDeps({ erro: new Error("timeout") });
   await assert.rejects(() => consultarEPersistirPagamentos(DEPRE, {}, deps), /timeout/);
   assert.equal(chamadas.marcar, 0);
   assert.equal(chamadas.upsert, 0);
-  assert.deepEqual(chamadas.registrar, [{ resultado: "falha", origem: "manual", etapaFalha: "busca" }]);
+  assert.deepEqual(chamadas.registrar, [{ resultado: "falha", origem: "manual", etapaFalha: "busca", categoriaFalha: "timeout" }]);
 });
 
 test("erro ao gravar o log NÃO derruba a consulta (best-effort)", async () => {
@@ -146,6 +148,9 @@ test("falha ao persistir vira falha na etapa persistir (sem vazar mensagem crua 
   await assert.rejects(() => consultarEPersistirPagamentos(DEPRE, {}, deps), (e: Error) => !/SEGREDO/.test(e.message));
   assert.equal(chamadas.registrar[0]!.resultado, "falha");
   assert.equal(chamadas.registrar[0]!.etapaFalha, "persistir");
+  // FOR-198: falha de persistência é "outro" — bug interno de gravação, não uma das 6
+  // categorias externas (captcha/timeout/rate_limit/site_indisponivel/bloqueio/cnj).
+  assert.equal(chamadas.registrar[0]!.categoriaFalha, "outro");
 });
 
 test("origemValida", () => {
@@ -309,7 +314,7 @@ test("progresso: registrar do progresso lançando + consulta falhando → relan�
   deps.progresso = fabrica({ registrar: async () => { throw new Error("rpc de progresso fora do ar"); } });
   await assert.rejects(() => consultarEPersistirPagamentos(DEPRE, { origem: "manual" }, deps), /timeout do portal/);
   assert.equal(chamadas.marcar, 0);
-  assert.deepEqual(chamadas.registrar, [{ resultado: "falha", origem: "manual", etapaFalha: "busca" }]);
+  assert.deepEqual(chamadas.registrar, [{ resultado: "falha", origem: "manual", etapaFalha: "busca", categoriaFalha: "timeout" }]);
 });
 
 test("progresso: falhar() que LANÇA também não derruba a consulta nem troca o erro", async () => {

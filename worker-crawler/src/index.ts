@@ -4,6 +4,7 @@ import { getSession, getRequisitorioSession, isDepre, type Session } from "./esa
 import { crawlSeed, crawlRequisitorio } from "./crawl.js";
 import { supabase, ensureAuth, claimJobs, completeJob, failJob, classifyProcesso, persistTree, persistRequisitorio, enqueueJob, resetOrfaosCrawlerQueue, parkAsEproc, vincularNumeroDepreReverso } from "./supabase.js";
 import { startHttpServer } from "./http-server.js";
+import { classificarErro } from "./erro-categoria.js";
 import type { QueueJob } from "./types.js";
 
 async function rotinaHabilitada(): Promise<boolean> {
@@ -117,6 +118,10 @@ const MAX_TENTATIVAS_FILA = 3;
  * de propósito: .0500 é outro sistema (Consulta de Requisitórios), não faz sentido parcar em
  * eproc_pendentes. */
 const buscaNuncaSaiuDoSeed = (err: unknown) => /^Error: busca não retornou página de detalhe para seed=/.test(String(err));
+/** Espelha buscaNuncaSaiuDoSeed, só que pro erro equivalente de crawlRequisitorio (crawl.ts) —
+ * usado só pra classificar (FOR-198); requisitórios nunca entram no parkAsEproc abaixo
+ * (isDepre fica de fora de propósito, igual já era). */
+const requisitorioNaoRetornouDetalhe = (err: unknown) => /^Error: requisitório não retornou página de detalhe para seed=/.test(String(err));
 
 async function processBatch(jobs: QueueJob[]): Promise<{ ok: number; erro: number }> {
   let ok = 0, erro = 0;
@@ -162,15 +167,27 @@ async function processBatch(jobs: QueueJob[]): Promise<{ ok: number; erro: numbe
       if (pareceSessaoMorta(err)) {
         if (isDepre(job.processo_codigo)) lanes[lane]!.req = null; else lanes[lane]!.esaj = null;
       }
-      await failJob(job.id, String(err)).catch(() => {});
+
+      // FOR-198: classifica NA HORA do erro (decisão #1), com o mesmo contexto que já
+      // existia pro diagnóstico abaixo — não duplica heurística nova. `semFichaNoESaj` é o
+      // caso ambíguo documentado em crawl.ts (manutenção/bloqueio/CNJ-ausente indistinguíveis
+      // numa tentativa isolada); `ultimaTentativa` é o único sinal extra que o pipeline já
+      // tinha pra ir além de "incerto" — é a MESMA condição que já disparava parkAsEproc.
+      const ultimaTentativa = job.tentativas + 1 >= MAX_TENTATIVAS_FILA;
+      const semFichaNoESaj = isDepre(job.processo_codigo) ? requisitorioNaoRetornouDetalhe(err) : buscaNuncaSaiuDoSeed(err);
+      const categoria = classificarErro(err, {
+        conteudoInesperado: semFichaNoESaj,
+        naoEncontrado: !isDepre(job.processo_codigo) && ultimaTentativa && semFichaNoESaj,
+      });
+      await failJob(job.id, String(err), categoria).catch(() => {});
       erro++;
-      console.error(`[fail] job=${job.id} seed=${job.processo_codigo}:`, err);
+      console.error(`[fail] job=${job.id} seed=${job.processo_codigo} categoria=${categoria}:`, err);
 
       // Diagnóstico 2026-09: última tentativa + busca nunca resolveu o seed → o e-SAJ
       // provavelmente nunca teve esse CNJ (bug de roteamento na ingestão, ver
       // sistemaFromLink em ingest-djen.ts). Reclassifica pra eproc_pendentes em vez de
       // deixar morto em "erro" — não gera mais retry pra algo que nunca vai resolver.
-      if (!isDepre(job.processo_codigo) && job.tentativas + 1 >= MAX_TENTATIVAS_FILA && buscaNuncaSaiuDoSeed(err)) {
+      if (!isDepre(job.processo_codigo) && ultimaTentativa && buscaNuncaSaiuDoSeed(err)) {
         await parkAsEproc(job.processo_codigo).catch(() => {});
         console.log(`[reclassify] seed=${job.processo_codigo} esgotou tentativas sem ficha no e-SAJ → eproc_pendentes`);
       }

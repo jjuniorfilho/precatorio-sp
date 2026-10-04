@@ -1,6 +1,7 @@
 // FOR-171 — Coletor de passos da consulta ao portal TJSP "Pagamentos Precatórios".
 // Alimenta o log "Consultas ao TJSP" do admin: cada passo tem horário, status e etapa, de modo
 // que uma falha mostre em que etapa parou. Sem dependências (puro, testável).
+import type { ErroCategoria } from "./erro-categoria.js";
 
 export type PassoStatus = "ok" | "erro" | "info";
 
@@ -80,12 +81,14 @@ export class PassosCollector {
   }
 }
 
-/** Erro de consulta com a etapa em que parou (o http-server devolve `etapa` ao admin). */
+/** Erro de consulta com a etapa em que parou (o http-server devolve `etapa` ao admin) e a
+ * categoria classificada (FOR-198, decisão #1: classificada no worker, na hora do erro). */
 export class ConsultaPagamentoErro extends Error {
   constructor(
     message: string,
     readonly etapa: Etapa,
     readonly passos: PassosCollector,
+    readonly categoria: ErroCategoria,
   ) {
     super(message);
     this.name = "ConsultaPagamentoErro";

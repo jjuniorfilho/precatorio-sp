@@ -26,6 +26,7 @@ import { upsertPagamentos, marcarPagamentosConsultado, registrarConsultaPagament
 import { criarReporter, type ProgressoReporter } from "./pagamentos-progresso.js";
 import { classificarHtml, type ResultadoConsulta } from "./pagamentos-classificar.js";
 import { PassosCollector, ConsultaPagamentoErro, type Etapa, type Passo } from "./pagamentos-passos.js";
+import { classificarErro, type ErroCategoria } from "./erro-categoria.js";
 
 export { classificarHtml } from "./pagamentos-classificar.js";
 export type { ResultadoConsulta } from "./pagamentos-classificar.js";
@@ -139,13 +140,21 @@ export async function consultarEPersistirPagamentos(
       // Mensagem crua do banco só no console (o log é lido pelo admin anônimo via RPC).
       console.error(`[pagamentos] persistência falhou (${processoDepre}):`, e);
       passos.passo("persistir", "erro", "falha ao gravar o resultado no banco");
-      throw new ConsultaPagamentoErro("persistência falhou (falha ao gravar o resultado no banco)", "persistir", passos);
+      // "outro": bug interno de gravação no banco, não uma das 6 categorias externas
+      // (captcha/timeout/rate_limit/site_indisponivel/bloqueio_suspeito/cnj_nao_encontrado).
+      throw new ConsultaPagamentoErro("persistência falhou (falha ao gravar o resultado no banco)", "persistir", passos, "outro");
     }
   } catch (e) {
     erro = e;
   }
 
   const etapaFalha = erro ? (erro instanceof ConsultaPagamentoErro ? erro.etapa : "desconhecida") : null;
+  // FOR-198: espelha etapaFalha — erros não-ConsultaPagamentoErro (ex.: o próprio
+  // deps.consultar lançando algo fora do padrão) ainda passam por classificarErro, sem opts
+  // (sem contexto extra disponível aqui fora do catch-all de consultarInterno).
+  const categoriaFalha: ErroCategoria | null = erro
+    ? erro instanceof ConsultaPagamentoErro ? erro.categoria : classificarErro(erro)
+    : null;
 
   // FOR-173: estado final ANTES do log e drenado (com teto), para nenhum passo atrasado sobrescrevê-lo.
   if (reporter) {
@@ -173,6 +182,7 @@ export async function consultarEPersistirPagamentos(
     dataConsultaPortal: consulta?.dataConsultaPortal ?? null,
     erro: erro ? String(erro instanceof Error ? erro.message : erro) : null,
     etapaFalha,
+    categoriaFalha,
     passos: passos.passos as Passo[],
   }).catch((e) => console.error(`[pagamentos] log da consulta não gravado (${processoDepre}):`, e));
 
@@ -256,10 +266,17 @@ async function consultarInterno(
     };
   } catch (e) {
     if (e instanceof ConsultaPagamentoErro) throw e;
+    const msg = e instanceof Error ? e.message : String(e);
     if (!passos.passos.some((p) => p.etapa === etapa && p.status === "erro")) {
-      passos.passo(etapa, "erro", e instanceof Error ? e.message : String(e));
+      passos.passo(etapa, "erro", msg);
     }
-    throw new ConsultaPagamentoErro(e instanceof Error ? e.message : String(e), etapa, passos);
+    // FOR-198: ponto único de classificação deste fluxo — qualquer Error não-ConsultaPagamentoErro
+    // passa por aqui. "conteudoInesperado": o portal respondeu (200 OK) mas sem o conteúdo
+    // esperado — as 2 mensagens ambíguas conhecidas (decisão #2: heurística, exposta com aviso
+    // de incerteza, nunca escondida em "outro"). Demais categorias (captcha/timeout/
+    // site_indisponivel/rate_limit) vêm do fallback por regex em classificarErro.
+    const conteudoInesperado = /não encontrado no menu|portal não reconhecida/i.test(msg);
+    throw new ConsultaPagamentoErro(msg, etapa, passos, classificarErro(e, { conteudoInesperado }));
   } finally {
     await browser?.close().catch(() => {});
   }
