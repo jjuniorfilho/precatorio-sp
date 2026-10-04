@@ -31,8 +31,6 @@ import { classificarErro, type ErroCategoria } from "./erro-categoria.js";
 export { classificarHtml } from "./pagamentos-classificar.js";
 export type { ResultadoConsulta } from "./pagamentos-classificar.js";
 export { PassosCollector, ConsultaPagamentoErro } from "./pagamentos-passos.js";
-export { classificarErro } from "./erro-categoria.js";
-export type { ErroCategoria } from "./erro-categoria.js";
 
 const execFileAsync = promisify(execFile);
 const BASE = "https://www.tjsp.jus.br/cac/scp";

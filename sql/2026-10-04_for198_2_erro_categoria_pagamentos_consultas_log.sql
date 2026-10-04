@@ -1,17 +1,15 @@
 -- FOR-198 (2 de 2) — mesma categorização, aplicada a pagamentos_consultas_log (2º painel do
--- protótipo da issue, "Consultas ao TJSP"). A decisão de arquitetura #3 da issue cita
--- literalmente só crawler_queue; esta migration é a extensão MECÂNICA do mesmo padrão (coluna
--- nullable + parâmetro novo com DEFAULT NULL em RPC já existente, nenhuma estrutura nova) à
--- 2ª tabela que a própria issue já lista (pagamentos-tjsp.ts) e que o protótipo já mostra como
--- painel — não é uma decisão de arquitetura nova. Reportada explicitamente no PR/handback;
--- fácil de reverter isoladamente (é um arquivo de migration à parte) se o humano preferir não
--- aplicá-la agora.
+-- protótipo da issue, "Consultas ao TJSP" — extensão do mesmo padrão da migration 1/2 à 2ª
+-- tabela que a issue já lista via pagamentos-tjsp.ts; detalhe de escopo no PR).
 --
 -- Mesmo racional de nullable (não 'outro' como default) e TEXT+CHECK do arquivo 1/2 — ver
 -- comentário lá. DROP FUNCTION + CREATE pelo mesmo motivo (assinatura muda de 12 p/ 13 params).
 --
 -- Valide em sandbox local ANTES de aplicar (sql/sandbox/for198_validate_local.sh).
--- Aplicar DEPOIS do arquivo 1/2 (independentes entre si, mas mantém a numeração). Re-executável.
+-- Aplicar no SQL Editor ANTES de deployar/reiniciar o worker (mesmo motivo da migration 1/2:
+-- o código novo já manda `p_categoria`, e sem a função aceitar o parâmetro a RPC falha e o log
+-- da consulta simplesmente não é gravado — best-effort, erro só no console). Independente da
+-- 1/2, mas mantém a numeração. Re-executável.
 
 ALTER TABLE public.pagamentos_consultas_log ADD COLUMN IF NOT EXISTS erro_categoria text;
 

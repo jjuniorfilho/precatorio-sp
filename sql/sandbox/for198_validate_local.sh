@@ -62,6 +62,23 @@ BEGIN
 END; $$;
 GRANT EXECUTE ON FUNCTION fail_crawler_job(UUID, TEXT) TO service_role;
 
+CREATE OR REPLACE FUNCTION requeue_failed(p_origem TEXT DEFAULT NULL)
+RETURNS INT LANGUAGE plpgsql SECURITY DEFINER SET search_path = public AS $$
+DECLARE n INT;
+BEGIN
+  UPDATE crawler_queue cq
+     SET status='pendente', scheduled_at=NOW(), erro=NULL, tentativas=0, updated_at=NOW()
+   WHERE cq.status='erro'
+     AND (p_origem IS NULL OR cq.origem = p_origem)
+     AND NOT EXISTS (
+       SELECT 1 FROM crawler_queue o
+        WHERE o.processo_codigo = cq.processo_codigo AND o.status IN ('pendente','processando')
+     );
+  GET DIAGNOSTICS n = ROW_COUNT;
+  RETURN n;
+END; $$;
+GRANT EXECUTE ON FUNCTION requeue_failed(TEXT) TO service_role, authenticated;
+
 CREATE TABLE pagamentos_consultas_log (
   id                   uuid        PRIMARY KEY DEFAULT gen_random_uuid(),
   processo_depre       text        NOT NULL,
@@ -137,7 +154,17 @@ fi
 ok "CHECK rejeita erro_categoria fora das 7 categorias"
 
 eq "$(val "select has_function_privilege('service_role', 'fail_crawler_job(uuid,text,text)', 'execute')")" "t" "service_role preserva EXECUTE após DROP+CREATE"
-eq "$(val "select has_function_privilege('anon', 'fail_crawler_job(uuid,text,text)', 'execute')")" "f" "anon NÃO tem EXECUTE (mesma restrição de antes)"
+eq "$(val "select has_function_privilege('authenticated', 'fail_crawler_job(uuid,text,text)', 'execute')")" "t" "authenticated GANHA EXECUTE explícito (achado de code review: worker roda como authenticated em produção — Opção B — e a assinatura antiga nunca tinha REVOKE FROM PUBLIC; sem este GRANT aqui, o REVOKE ALL abaixo fecharia esse acesso de verdade)"
+eq "$(val "select has_function_privilege('anon', 'fail_crawler_job(uuid,text,text)', 'execute')")" "f" "anon fecha EXECUTE (ENDURECE vs. antes — a assinatura antiga vazava EXECUTE pra anon via PUBLIC/default privileges do schema public; isso é uma melhoria de segurança colateral, não 'a mesma restrição de antes')"
+
+# requeue_failed precisa zerar erro_categoria junto com erro/tentativas (senão um job
+# reprocessado com sucesso fica com a categoria de uma falha antiga)
+psql_ -d sandbox -c "INSERT INTO crawler_queue (id, processo_codigo, status, tentativas) VALUES ('33333333-3333-3333-3333-333333333333', 'SEED3', 'erro', 3)" >/dev/null
+psql_ -d sandbox -c "update crawler_queue set erro_categoria='timeout' where id='33333333-3333-3333-3333-333333333333'" >/dev/null
+psql_ -d sandbox -c "select requeue_failed()" >/dev/null
+eq "$(val "select erro_categoria from crawler_queue where id='33333333-3333-3333-3333-333333333333'")" "" "requeue_failed zera erro_categoria junto com erro/tentativas"
+eq "$(val "select status from crawler_queue where id='33333333-3333-3333-3333-333333333333'")" "pendente" "requeue_failed continua voltando pra pendente (comportamento antigo intocado)"
+eq "$(val "select has_function_privilege('authenticated', 'requeue_failed(text)', 'execute')")" "t" "requeue_failed preserva GRANT a authenticated (CREATE OR REPLACE, assinatura não mudou)"
 
 # ---- pagamentos_consultas_log / registrar_consulta_pagamento -----------------------------
 psql_ -d sandbox -c "select registrar_consulta_pagamento('0088499-12.2023.8.26.0500', now(), now(), 'crawler', 'falha', 2, null, null, null, 'captcha não resolvido após 4 tentativas', 'busca', '[]'::jsonb, 'captcha')" >/dev/null

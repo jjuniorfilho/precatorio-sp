@@ -70,7 +70,7 @@ documento               TEXT CHECK (documento IS NULL OR documento ~ '^\d{11}(\d
 - **Invariantes do avulso garantidas pelo banco:** `leads_avulso_sem_consent_check` (`origem='avulso'` ⇒ `lgpd_consent = false`) e `leads_avulso_um_depre_check` (`origem='avulso'` ⇒ `processo_depre` não nulo e sem vírgula).
 
 ### Tabelas do valor pago (portal TJSP "Pagamentos Precatórios")
-- `pagamentos_consultas_log` (FOR-171): histórico das consultas (últimas 20 por processo; passos, resultado, etapa da falha). Escrita por RPC `registrar_consulta_pagamento`; leitura admin por `listar_consultas_pagamento`.
+- `pagamentos_consultas_log` (FOR-171): histórico das consultas (últimas 20 por processo; passos, resultado, etapa da falha). Escrita por RPC `registrar_consulta_pagamento`; leitura admin por `listar_consultas_pagamento`. `erro_categoria` (FOR-198, migration pendente de aplicação): `text` nullable, categoria do erro classificada no worker (ver `worker-crawler/src/erro-categoria.ts`).
 - `pagamentos_consultas_progresso` (FOR-173): **progresso efêmero** da consulta em andamento — uma linha por `processo_depre` (`estado` na_fila|em_andamento|concluida|falha, `etapa` em andamento, `tentativa`/`max_tentativas`, `iniciada_em`, `atualizado_em`). Só o disparo `manual` grava. Escrita pelo worker (RPC `registrar_progresso_consulta_pagamento`); leitura só `service_role` (RPC `obter_progresso_consulta_pagamento`). Sem PII. Limpeza preguiçosa de 7 dias.
 
 ### Tabela: `tokens`

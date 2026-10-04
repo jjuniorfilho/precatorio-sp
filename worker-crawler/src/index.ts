@@ -172,7 +172,7 @@ async function processBatch(jobs: QueueJob[]): Promise<{ ok: number; erro: numbe
       // existia pro diagnóstico abaixo — não duplica heurística nova. `semFichaNoESaj` é o
       // caso ambíguo documentado em crawl.ts (manutenção/bloqueio/CNJ-ausente indistinguíveis
       // numa tentativa isolada); `ultimaTentativa` é o único sinal extra que o pipeline já
-      // tinha pra ir alem de "incerto" — é a MESMA condição que já disparava parkAsEproc.
+      // tinha pra ir além de "incerto" — é a MESMA condição que já disparava parkAsEproc.
       const ultimaTentativa = job.tentativas + 1 >= MAX_TENTATIVAS_FILA;
       const semFichaNoESaj = isDepre(job.processo_codigo) ? requisitorioNaoRetornouDetalhe(err) : buscaNuncaSaiuDoSeed(err);
       const categoria = classificarErro(err, {

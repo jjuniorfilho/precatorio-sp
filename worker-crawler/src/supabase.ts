@@ -63,8 +63,12 @@ export async function completeJob(id: string): Promise<void> {
   const { error } = await supabase.rpc("complete_crawler_job", { p_id: id });
   if (error) throw new Error(`complete_crawler_job: ${error.message}`);
 }
-/** FOR-198: `categoria` é opcional (migration aditiva — `fail_crawler_job` aceita `p_categoria`
- * com DEFAULT NULL; chamadores antigos continuam válidos). */
+/** FOR-198: `categoria` é opcional NO CHAMADOR (chamadores antigos continuam válidos — a RPC
+ * tem `p_categoria DEFAULT NULL`). NÃO é opcional quanto à migration: a RPC *precisa* já ter
+ * sido migrada pra aceitar esse parâmetro — se o worker novo subir antes da migration
+ * (sql/2026-10-04_for198_1_...sql) ser aplicada, o PostgREST não resolve a função (parâmetro
+ * desconhecido) e esta chamada falha por completo, não "ignora" o categoria. Aplicar a
+ * migration ANTES de deployar este código. */
 export async function failJob(id: string, erro: string, categoria?: ErroCategoria | null): Promise<void> {
   const { error } = await supabase.rpc("fail_crawler_job", {
     p_id: id,
@@ -504,8 +508,10 @@ export interface RegistroConsultaPagamento {
   dataConsultaPortal: string | null;
   erro: string | null;
   etapaFalha: string | null;
-  /** FOR-198: categoria classificada no worker (null quando não há erro, ou quando a migration
-   * ainda não foi aplicada no banco em uso — ver p_categoria DEFAULT NULL na RPC). */
+  /** FOR-198: categoria classificada no worker; null só quando não há erro. A RPC já precisa
+   * aceitar `p_categoria` (migration sql/2026-10-04_for198_2_...sql aplicada) — se não aceitar,
+   * a chamada falha por completo (best-effort: erro só no console, log da consulta não é
+   * gravado), não grava null silenciosamente. */
   categoriaFalha: ErroCategoria | null;
   passos: unknown[];
 }

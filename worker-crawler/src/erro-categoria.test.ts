@@ -36,8 +36,13 @@ test("timeout: AbortSignal.timeout do undici (esaj.ts fetchHtml, timeout de requ
   assert.equal(classificarErro(err), "timeout");
 });
 
-test("site_indisponivel: browser/contexto fechado (crash documentado — VPS com pouca memória)", () => {
+test("outro (NÃO site_indisponivel): browser/contexto fechado é crash LOCAL (VPS com pouca memória), não o TJSP fora do ar", () => {
   const err = new Error("Target page, context or browser has been closed");
+  assert.equal(classificarErro(err), "outro");
+});
+
+test("site_indisponivel: ETIMEDOUT em err.cause (padrão típico do undici — mensagem de topo só 'fetch failed')", () => {
+  const err = new Error("fetch failed", { cause: new Error("connect ETIMEDOUT 200.144.1.1:443") });
   assert.equal(classificarErro(err), "site_indisponivel");
 });
 
@@ -83,4 +88,28 @@ test("aceita valor não-Error (ex.: string lançada) sem lançar", () => {
 test("ERRO_CATEGORIAS lista as 7 categorias, sem duplicatas", () => {
   assert.equal(ERRO_CATEGORIAS.length, 7);
   assert.equal(new Set(ERRO_CATEGORIAS).size, 7);
+});
+
+// Prioridade documentada no comentário de classificarErro quando a MESMA mensagem casa com
+// mais de uma regex: rate_limit > captcha > timeout > site_indisponivel. Sem mensagem real
+// conhecida que colida assim, mas a ordem é parte do contrato da função — testa com mensagens
+// sintéticas que deliberadamente casam com 2 padrões de cada vez.
+test("prioridade: rate_limit vence captcha quando a mensagem casa com os dois padrões", () => {
+  const err = new Error("captcha :: HTTP 429");
+  assert.equal(classificarErro(err), "rate_limit");
+});
+
+test("prioridade: rate_limit vence timeout quando a mensagem casa com os dois padrões", () => {
+  const err = new Error("timeout :: HTTP 503");
+  assert.equal(classificarErro(err), "rate_limit");
+});
+
+test("prioridade: captcha vence timeout quando a mensagem casa com os dois padrões", () => {
+  const err = new Error("captcha não resolvido — timeout aguardando resposta");
+  assert.equal(classificarErro(err), "captcha");
+});
+
+test("prioridade: timeout vence site_indisponivel quando a mensagem casa com os dois padrões", () => {
+  const err = new Error("timeout: connect ECONNREFUSED 127.0.0.1:443");
+  assert.equal(classificarErro(err), "timeout");
 });

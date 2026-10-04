@@ -46,10 +46,15 @@ const CAPTCHA_RE = /captcha/i;
 /** Cobre tanto o `DOMException`/`TimeoutError` do `AbortSignal.timeout` (undici/esaj.ts) quanto
  * os timeouts do Playwright ("Timeout 25000ms exceeded", "page.waitForURL: Timeout ..."). */
 const TIMEOUT_RE = /timeout|timed out/i;
-/** Site/rede/browser indisponível — nunca chegou a responder (distinto de "respondeu 200 com
- * conteúdo errado", que é `conteudoInesperado`/bloqueio_suspeito). "Target page/context/browser
- * has been closed" é o crash documentado em pagamentos-tjsp.ts (VPS com pouca memória). */
-const SITE_INDISPONIVEL_RE = /ECONNREFUSED|ECONNRESET|ENOTFOUND|EAI_AGAIN|net::ERR_|ERR_CONNECTION|Target (page|context|browser).*closed/i;
+/** Site/rede indisponível — a conexão nunca chegou a se completar (distinto de "respondeu 200
+ * com conteúdo errado", que é `conteudoInesperado`/bloqueio_suspeito). Cobre também o que o
+ * undici costuma embrulhar em `cause` quando a conexão cai no meio ("other side closed",
+ * `fetch failed`) e `ETIMEDOUT` (timeout de conexão TCP — distinto do `TIMEOUT_RE` acima, que é
+ * timeout de REQUISIÇÃO já em andamento). NÃO cobre "Target page/context/browser has been
+ * closed" de propósito — é o Chromium LOCAL crashando (VPS com pouca memória, documentado em
+ * pagamentos-tjsp.ts), não o TJSP fora do ar; rotular isso como site_indisponivel inflaria essa
+ * categoria com um problema de infra própria. Cai em "outro", honestamente. */
+const SITE_INDISPONIVEL_RE = /ECONNREFUSED|ECONNRESET|ENOTFOUND|EAI_AGAIN|ETIMEDOUT|net::ERR_|ERR_CONNECTION|other side closed|fetch failed/i;
 
 /** Classifica um erro de consulta numa `ErroCategoria`. Pura — sem I/O, testável com qualquer
  * `Error`/string. Prioridade: `naoEncontrado` > `conteudoInesperado` > regex na mensagem
@@ -59,7 +64,11 @@ export function classificarErro(erro: unknown, opts: ClassificarErroOpts = {}): 
   if (opts.naoEncontrado) return "cnj_nao_encontrado";
   if (opts.conteudoInesperado) return "bloqueio_suspeito";
 
-  const msg = String(erro instanceof Error ? erro.message : erro);
+  // undici (fetch/esaj.ts) costuma embrulhar o erro de rede real em `cause` (ex.: a mensagem
+  // de topo é só "fetch failed", e ECONNRESET/ETIMEDOUT vivem em err.cause.code/message) — inclui
+  // os dois na mesma string testada, em vez de só a mensagem de topo.
+  const causa = erro instanceof Error && erro.cause !== undefined ? ` ${String(erro.cause)}` : "";
+  const msg = String(erro instanceof Error ? erro.message : erro) + causa;
   if (RATE_LIMIT_RE.test(msg)) return "rate_limit";
   if (CAPTCHA_RE.test(msg)) return "captcha";
   if (TIMEOUT_RE.test(msg)) return "timeout";

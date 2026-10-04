@@ -274,6 +274,30 @@ Para o admin mostrar uma barra de progresso **real**, a consulta manual publica 
 
 Validação dos SQLs em Postgres real, sem tocar em produção: `sql/sandbox/for173_validate_local.sh` (requer `brew install postgresql@15`).
 
+### Categoria do erro (FOR-198)
+
+Erros de consulta (e-SAJ cpopg e Pagamentos TJSP) são classificados em `src/erro-categoria.ts`
+(`classificarErro`, puro) **no worker, na hora do erro** — nunca depois, via regex sobre a
+mensagem já truncada/persistida. 7 categorias: `captcha` | `timeout` | `rate_limit` |
+`site_indisponivel` | `bloqueio_suspeito` | `cnj_nao_encontrado` | `outro`.
+
+- **`bloqueio_suspeito` é heurística, não fato** — a página respondeu 200 OK sem o conteúdo
+  esperado, indistinguível entre manutenção do TJSP, bloqueio de IP, e CNJ que nunca existiu
+  naquele sistema. Sempre exposta, nunca escondida dentro de `outro`.
+- **`cnj_nao_encontrado`** só é usado quando o mesmo erro ambíguo persiste até a ÚLTIMA
+  tentativa da fila (`crawler_queue`) — a mesma condição que já reclassifica o job pra
+  `eproc_pendentes`. Antes disso, fica `bloqueio_suspeito`.
+- Persistida (não só função em memória) em `crawler_queue.erro_categoria` (via `fail_crawler_job`)
+  e `pagamentos_consultas_log.erro_categoria` (via `registrar_consulta_pagamento`) — ambas
+  colunas `text` nullable com `CHECK` (NULL = nunca classificado; `outro` = classificado, sem
+  categoria específica — são coisas diferentes de propósito).
+- SQL (aplicar **ANTES** de deployar/reiniciar o worker — o código novo já manda
+  `p_categoria` em toda chamada, e sem a migration a RPC falha por completo, best-effort e
+  silenciosamente): `sql/2026-10-04_for198_1_erro_categoria_crawler_queue.sql`,
+  `sql/2026-10-04_for198_2_erro_categoria_pagamentos_consultas_log.sql`.
+- Validação em Postgres local, sem tocar em produção: `sql/sandbox/for198_validate_local.sh`.
+- Sem UI própria ainda (exibição por categoria no `/admin/coleta` é a issue FOR-197).
+
 SQL (aplicar em ordem no SQL Editor do banco do worker): `sql/2026-09-28_for173_1_leads_avulso.sql`,
 `_2_view_leads_processos_origem.sql`, `_3_tabela_progresso.sql`, `_4_rpcs_progresso.sql`; **depois** deploy do worker
 (`git pull`, `npm install`, `pm2 restart` do processo do worker). Inspecionar:
