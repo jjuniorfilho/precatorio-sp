@@ -6,6 +6,7 @@ import { config } from "./config.js";
 import { normNome } from "./comunica.js";
 import type { ProcessoPrincipalInfo, ProcessoTree, QueueJob } from "./types.js";
 import type { OrigemInfo } from "./parse.js";
+import type { ErroCategoria } from "./erro-categoria.js";
 
 // Node < 22 não tem WebSocket nativo (supabase realtime exige). Fornece o `ws`.
 if (!(globalThis as { WebSocket?: unknown }).WebSocket) {
@@ -62,8 +63,14 @@ export async function completeJob(id: string): Promise<void> {
   const { error } = await supabase.rpc("complete_crawler_job", { p_id: id });
   if (error) throw new Error(`complete_crawler_job: ${error.message}`);
 }
-export async function failJob(id: string, erro: string): Promise<void> {
-  const { error } = await supabase.rpc("fail_crawler_job", { p_id: id, p_erro: erro.slice(0, 2000) });
+/** FOR-198: `categoria` é opcional (migration aditiva — `fail_crawler_job` aceita `p_categoria`
+ * com DEFAULT NULL; chamadores antigos continuam válidos). */
+export async function failJob(id: string, erro: string, categoria?: ErroCategoria | null): Promise<void> {
+  const { error } = await supabase.rpc("fail_crawler_job", {
+    p_id: id,
+    p_erro: erro.slice(0, 2000),
+    p_categoria: categoria ?? null,
+  });
   if (error) throw new Error(`fail_crawler_job: ${error.message}`);
 }
 /** FOR-107: reseta jobs "processando" órfãos (claimed_at > p_limiteMinutos atrás) pra
@@ -497,6 +504,9 @@ export interface RegistroConsultaPagamento {
   dataConsultaPortal: string | null;
   erro: string | null;
   etapaFalha: string | null;
+  /** FOR-198: categoria classificada no worker (null quando não há erro, ou quando a migration
+   * ainda não foi aplicada no banco em uso — ver p_categoria DEFAULT NULL na RPC). */
+  categoriaFalha: ErroCategoria | null;
   passos: unknown[];
 }
 
@@ -516,6 +526,7 @@ export async function registrarConsultaPagamento(r: RegistroConsultaPagamento): 
     p_erro: r.erro,
     p_etapa_falha: r.etapaFalha,
     p_passos: r.passos,
+    p_categoria: r.categoriaFalha,
   });
   if (error) throw new Error(`registrarConsultaPagamento: ${error.message}`);
 }
