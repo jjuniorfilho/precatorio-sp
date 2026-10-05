@@ -161,7 +161,7 @@ async function processBatch(jobs: QueueJob[]): Promise<{ ok: number; erro: numbe
           }
         }
       })(), config.jobTimeoutMs);
-      await completeJob(job.id);
+      await completeJob(job.id, lane + 1); // FOR-200: raia 1-based só pra leitura humana no admin
       ok++;
     } catch (err) {
       if (pareceSessaoMorta(err)) {
@@ -179,7 +179,7 @@ async function processBatch(jobs: QueueJob[]): Promise<{ ok: number; erro: numbe
         conteudoInesperado: semFichaNoESaj,
         naoEncontrado: !isDepre(job.processo_codigo) && ultimaTentativa && semFichaNoESaj,
       });
-      await failJob(job.id, String(err), categoria).catch(() => {});
+      await failJob(job.id, String(err), categoria, lane + 1).catch(() => {}); // FOR-200: raia
       erro++;
       console.error(`[fail] job=${job.id} seed=${job.processo_codigo} categoria=${categoria}:`, err);
 

@@ -59,8 +59,14 @@ export async function claimJobs(limit: number): Promise<QueueJob[]> {
   if (error) throw new Error(`claim_crawler_jobs: ${error.message}`);
   return (data ?? []) as QueueJob[];
 }
-export async function completeJob(id: string): Promise<void> {
-  const { error } = await supabase.rpc("complete_crawler_job", { p_id: id });
+/** FOR-200: `raia` é opcional NO CHAMADOR (`p_raia DEFAULT NULL` na RPC — chamador sem raia
+ * continua funcionando, só não loga em `crawler_execucoes_log`). NÃO é opcional quanto à
+ * migration: a RPC *precisa* já ter sido migrada pra aceitar esse parâmetro — mesmo risco do
+ * `categoria` no FOR-198 (PGRST202 se o worker novo subir antes da migration
+ * sql/2026-10-04_for200_2_...sql ser aplicada). Aplicar a migration ANTES de deployar este
+ * código. `raia` é 1-based (lane 0-based do `runPool` + 1), só pra leitura humana no admin. */
+export async function completeJob(id: string, raia?: number): Promise<void> {
+  const { error } = await supabase.rpc("complete_crawler_job", { p_id: id, p_raia: raia ?? null });
   if (error) throw new Error(`complete_crawler_job: ${error.message}`);
 }
 /** FOR-198: `categoria` é opcional NO CHAMADOR (chamadores antigos continuam válidos — a RPC
@@ -68,12 +74,14 @@ export async function completeJob(id: string): Promise<void> {
  * sido migrada pra aceitar esse parâmetro — se o worker novo subir antes da migration
  * (sql/2026-10-04_for198_1_...sql) ser aplicada, o PostgREST não resolve a função (parâmetro
  * desconhecido) e esta chamada falha por completo, não "ignora" o categoria. Aplicar a
- * migration ANTES de deployar este código. */
-export async function failJob(id: string, erro: string, categoria?: ErroCategoria | null): Promise<void> {
+ * migration ANTES de deployar este código.
+ * FOR-200: `raia` segue o mesmo contrato opcional documentado em `completeJob` acima. */
+export async function failJob(id: string, erro: string, categoria?: ErroCategoria | null, raia?: number): Promise<void> {
   const { error } = await supabase.rpc("fail_crawler_job", {
     p_id: id,
     p_erro: erro.slice(0, 2000),
     p_categoria: categoria ?? null,
+    p_raia: raia ?? null,
   });
   if (error) throw new Error(`fail_crawler_job: ${error.message}`);
 }
