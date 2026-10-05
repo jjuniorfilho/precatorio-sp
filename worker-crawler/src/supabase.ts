@@ -409,6 +409,15 @@ export async function persistRequisitorio(tree: ProcessoTree, origemInfo: Origem
     arquivo_url: a.arquivo_url,
   }));
 
+  // FOR-159 corrigiu o parser pra ler "Petições diversas" (onde mora "Comunicado de Acordo
+  // de Requisitório"), mas só calculava acordo_homologado via UPDATE manual rodado uma vez
+  // no SQL Editor (2026-09-13) — persistRequisitorio nunca escrevia essa coluna, então todo
+  // crawl desde então deixava acordo_homologado null de novo (achado em produção: 7.447
+  // registros com o jsonb completo mas o campo nunca calculado). Calcula aqui, toda vez,
+  // mesmo padrão ILIKE do backfill original — sem isso o buraco reabre a cada recrawl.
+  const acordoHomologado = andamentos.some((a) =>
+    /Comunicado de Acordo de Requisit/i.test(a.descricao ?? ""));
+
   // origem_incidentes só guarda as entradas com sufixo "/NNNN" (numeroIncidente) — são
   // essas que permitem vincular_numero_depre_reverso() achar o incidente certo depois que
   // o CNJ de origem for crawleado (ver index.ts). Entradas sem sufixo (ex.: "Outros
@@ -433,6 +442,7 @@ export async function persistRequisitorio(tree: ProcessoTree, origemInfo: Origem
     origem_cnjs: origemInfo.length ? origemInfo.map((o) => o.cnj) : null,
     origem_incidentes: origemComIncidente.length ? origemComIncidente : null,
     andamentos,
+    acordo_homologado: acordoHomologado,
     ficha_crawled_at: new Date().toISOString(),
   };
 
