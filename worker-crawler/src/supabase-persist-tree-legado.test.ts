@@ -45,8 +45,9 @@ function arvore(cumprimentoCnj = CNJ_CUMP, raizCnj = CNJ_RAIZ): ProcessoTree {
   return {
     processo_codigo: "1H0000RAIZ", cnj: raizCnj, foro: null, classe: null, assunto: null,
     distribuicao: null, valor_acao: null, data_base: null, status: "ativo",
+    andamentos: [],
     cumprimentos: [{
-      processo_codigo: "1H0000CUMP", cnj: cumprimentoCnj,
+      processo_codigo: "1H0000CUMP", cnj: cumprimentoCnj, andamentos: [],
       incidentes: [{
         processo_codigo: "1H0000INC1", numero_incidente: "00001", tipo_previsto: "Precatorio",
         numero_depre: DEPRE, cnj: DEPRE, status: "ativo", tramitacao_prioritaria: false,
@@ -283,8 +284,8 @@ test("FOR-178: 2 cumprimentos — legado pendurado no B, incidente real do mesmo
   const chamadas = instala(t, db);
 
   await persistTree(arvoreCom([
-    { processo_codigo: "1H0000CUMPA", cnj: CNJ_OUTRO_CUMP, incidentes: [incidente("1H0000INC1", DEPRE)] },
-    { processo_codigo: "1H0000CUMP", cnj: CNJ_CUMP, incidentes: [] },
+    { processo_codigo: "1H0000CUMPA", cnj: CNJ_OUTRO_CUMP, incidentes: [incidente("1H0000INC1", DEPRE)], andamentos: [] },
+    { processo_codigo: "1H0000CUMP", cnj: CNJ_CUMP, incidentes: [], andamentos: [] },
   ]));
 
   const incs = db.incidentes!.filter((r) => r.numero_depre === DEPRE);
@@ -357,7 +358,7 @@ test("FOR-178: 2 incidentes crawleados com o mesmo DEPRE — o legado é consumi
   instala(t, db);
 
   await persistTree(arvoreCom([
-    { processo_codigo: "1H0000CUMP", cnj: CNJ_CUMP, incidentes: [incidente("1H0000INC1", DEPRE), incidente("1H0000INC2", DEPRE)] },
+    { processo_codigo: "1H0000CUMP", cnj: CNJ_CUMP, incidentes: [incidente("1H0000INC1", DEPRE), incidente("1H0000INC2", DEPRE)], andamentos: [] },
   ]));
 
   const inc1 = db.incidentes!.find((r) => r.processo_codigo === "1H0000INC1")!;

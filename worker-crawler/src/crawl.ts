@@ -108,6 +108,12 @@ export async function crawlSeed(seed: string, session?: Session): Promise<Proces
   for (const c of cumpLinks) {
     await sleep(config.delayMs);
     const $c = load(await showByCodigo(c.codigo, c.foro || root.foro, sess));
+    // FOR-201: extrai SEMPRE os andamentos da própria página do cumprimento — $c já é
+    // buscada de qualquer forma (zero custo de rede extra), só não era parseada pra
+    // andamentos quando existia incidente-filho real. Sem isso, as movimentações do
+    // cumprimento (ex. cessão de crédito que só aparece aqui, não no incidente-filho)
+    // eram descartadas em memória, nunca persistidas em lugar nenhum.
+    const andamentosCumprimento = extractAndamentos($c);
     const leafLinks = incidenteLinks($c).filter((l) => !isCumprimento(l.texto));
     const incidentes: IncidenteData[] = [];
     for (const l of leafLinks) incidentes.push(await buildIncidente(l.codigo, l.foro || root.foro, l.texto, sess));
@@ -127,11 +133,14 @@ export async function crawlSeed(seed: string, session?: Session): Promise<Proces
         data_base: capaC.data_base,
         partes_ativas: partesC.ativas,
         parte_passiva: partesC.passiva,
-        andamentos: extractAndamentos($c),
+        andamentos: andamentosCumprimento,
       });
     }
     // CNJ do cumprimento vem no texto do link (a folha não traz #numeroProcesso).
-    cumprimentos.push({ processo_codigo: c.codigo, cnj: extractCnj(c.texto), incidentes });
+    cumprimentos.push({
+      processo_codigo: c.codigo, cnj: extractCnj(c.texto), incidentes,
+      andamentos: andamentosCumprimento,
+    });
   }
 
   // incidentes pendurados direto na raiz (sem cumprimento) → cumprimento sintético
@@ -141,7 +150,9 @@ export async function crawlSeed(seed: string, session?: Session): Promise<Proces
     // FOR-196: cumprimento sintético — a execução corre no próprio processo, sem CNJ
     // de cumprimento separado. Usa o CNJ da própria raiz (capa.cnj), não null — senão
     // "Cumprimento de Sentença" fica em branco (achado: 347.482 incidentes afetados).
-    cumprimentos.push({ processo_codigo: `${root.codigo}#cumprimento`, cnj: capa.cnj, incidentes });
+    // FOR-201: sem andamentos próprios aqui (não é uma página distinta da raiz) — os
+    // andamentos da raiz já são capturados 1x em tree.andamentos, no retorno abaixo.
+    cumprimentos.push({ processo_codigo: `${root.codigo}#cumprimento`, cnj: capa.cnj, incidentes, andamentos: [] });
   }
 
   // raiz sem nada → placeholder no nível raiz (só cálculo homologado, p.ex.)
@@ -151,6 +162,8 @@ export async function crawlSeed(seed: string, session?: Session): Promise<Proces
       processo_codigo: `${root.codigo}#cumprimento`,
       // FOR-196: idem acima — herda o CNJ da raiz em vez de null.
       cnj: capa.cnj,
+      // FOR-201: idem — sem página própria, os andamentos da raiz vão em tree.andamentos.
+      andamentos: [],
       incidentes: [{
         processo_codigo: `${root.codigo}#placeholder`,
         numero_incidente: null, tipo_previsto: "Indefinido",
@@ -197,6 +210,9 @@ export async function crawlSeed(seed: string, session?: Session): Promise<Proces
     data_base: capa.data_base,
     status: capa.status,
     cumprimentos,
+    // FOR-201: andamentos da própria página raiz — root.$ já está em memória
+    // (normalizeToRoot), zero custo de rede extra pra capturar isso.
+    andamentos: extractAndamentos(root.$),
   };
 }
 
@@ -336,7 +352,11 @@ export async function crawlRequisitorio(seed: string, session?: Session): Promis
     valor_acao: capa.valor_acao,
     data_base: capa.data_base,
     status: capa.status,
-    cumprimentos: [{ processo_codigo: `${codigo}#requisitorio`, cnj: null, incidentes: [incidente] }],
+    // FOR-201: persistRequisitorio não lê tree.andamentos nem o andamentos deste
+    // cumprimento sintético — a ficha .0500 já grava os próprios em
+    // djen_depre.andamentos separadamente (variável `andamentos` acima).
+    cumprimentos: [{ processo_codigo: `${codigo}#requisitorio`, cnj: null, incidentes: [incidente], andamentos: [] }],
+    andamentos: [],
   };
   return {
     tree,

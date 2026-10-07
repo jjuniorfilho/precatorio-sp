@@ -56,6 +56,10 @@ export interface CumprimentoData {
   processo_codigo: string;
   cnj: string | null;
   incidentes: IncidenteData[];        // pode conter 1 placeholder 'Indefinido' (Opção A)
+  // FOR-201: andamentos da PRÓPRIA página do cumprimento — [] quando a página não é
+  // uma ficha própria (cumprimento sintético, ver crawl.ts), nunca null (null é só o
+  // estado "nunca persistido" da coluna no banco, antes do 1º crawl com este campo).
+  andamentos: Andamento[];
 }
 
 export interface ProcessoTree {
@@ -69,6 +73,9 @@ export interface ProcessoTree {
   data_base: string | null;
   status: StatusBruto | null;
   cumprimentos: CumprimentoData[];
+  // FOR-201: andamentos da PRÓPRIA página do processo raiz. [] em crawlRequisitorio
+  // (não tem página de processo raiz — persistRequisitorio nem lê este campo).
+  andamentos: Andamento[];
 }
 
 // FOR-195 — capa da AÇÃO PRINCIPAL REAL achada via fetchProcessoPrincipal (busca de 1 página,
