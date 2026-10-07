@@ -294,6 +294,9 @@ export async function persistTree(tree: ProcessoTree): Promise<string> {
     ente_esfera: enteSP?.ente_esfera ?? null,
     flag_sp: !!enteSP && enteSP.ente_esfera !== "Outro",
     status: tree.status,
+    // FOR-201: andamentos da própria página raiz — complementar a incidentes/djen_depre,
+    // não os substitui. Sempre array (nunca null) quando persistido por aqui.
+    andamentos: tree.andamentos,
     last_crawled_at: new Date().toISOString(),
   }, "processo_codigo");
 
@@ -308,6 +311,9 @@ export async function persistTree(tree: ProcessoTree): Promise<string> {
       processo_codigo: c.processo_codigo,
       cnj: c.cnj,
       cnj_normalizado: cnjNorm(c.cnj),
+      // FOR-201: andamentos da própria página do cumprimento (ver crawl.ts) — [] nos
+      // cumprimentos sintéticos (sem página própria distinta da raiz).
+      andamentos: c.andamentos,
     }, "processo_codigo");
     await reconcileLegadoCumprimento(cnjNorm(c.cnj), processoId, cumprimentoId);
     cumprimentoIds.push(cumprimentoId);
