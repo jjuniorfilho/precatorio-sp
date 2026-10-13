@@ -16,10 +16,20 @@ import { config, sleep, assertConfig } from "./config.js";
 
 const PAGE = 500;
 
+async function rotinaHabilitada(sb: any): Promise<boolean> {
+  const { data } = await sb.from("coleta_config").select("enabled").eq("rotina", "refresh").maybeSingle();
+  return data ? (data as { enabled: boolean }).enabled : true; // default ligado
+}
+
 async function main() {
   assertConfig();
   await ensureAuth();
   const sb = supabase as any;
+
+  if (!(await rotinaHabilitada(sb))) {
+    console.log("[paused] refresh desabilitado em coleta_config");
+    return;
+  }
 
   console.log("refresh-ativos: varrendo incidentes com fase >= calculo + status ativo...");
   const { data: run } = await sb.from("coleta_runs").insert({ rotina: "refresh_ativos", status: "running" }).select("id").single();
