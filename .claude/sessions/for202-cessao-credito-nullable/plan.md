@@ -261,9 +261,15 @@ FOR-203 criada: mesma ambiguidade nos outros 6 flags + propagação pra
 `fase`/`macrofase`/`elegivel` + duplicação de código entre `classify_processo`/
 `classify_incidentes`. Não implementado — só registrado pra decisão futura.
 
-### PR + merge [Não Iniciada ⏳]
+### PR + merge [Em Progresso ⏰]
 
-`/engineer:pre-pr` → `/engineer:pr` → Gate 3 (merge manual).
+- Backend: PR #45 (`jjuniorfilho/precatorio-sp`) — https://github.com/jjuniorfilho/precatorio-sp/pull/45
+- Frontend: PR #87 (`sp-precat-rios-simples-c2fc47c1`) — https://github.com/jjuniorfilho/sp-precat-rios-simples-c2fc47c1/pull/87
+- FOR-202 → In Review no Linear (flipou pra In Progress sozinho 2x via integração
+  Linear-GitHub ao linkar os PRs — mesmo padrão já documentado em memória de sessões
+  anteriores; corrigido manualmente de volta pra In Review nas 2 vezes).
+- Falta: checar comentários do code review automatizado (bot), Gate 3 (merge manual
+  pelo usuário).
 
 ### Comentários:
 -
