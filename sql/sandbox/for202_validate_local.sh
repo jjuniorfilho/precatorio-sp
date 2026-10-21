@@ -178,5 +178,54 @@ eq "$(val "select macrofase from incidentes where processo_codigo='I1'")" "preca
 eq "$(val "select cessao_credito from incidentes where processo_codigo='I1'")" "f" \
   "I1 agora TEM andamento (acabou de ganhar um) -> false, não mais NULL (comportamento correto, não é mais 'nunca verificado')"
 
+# ---- Gaps adicionais: as outras 2 fontes produzindo TRUE (até aqui só I2 testava TRUE,
+# e só via jsonb de cumprimento) + cumprimento_id NULL + broadcast do jsonb do PROCESSO
+# raiz pra TODOS os incidentes dele (não só pro que "deveria" ser afetado). -----------
+# I5: andamento DIRETO na tabela `andamentos` do próprio incidente (fonte 1), batendo
+#   regra de cessão -> true. cumprimento_id NULL (incidente sem cumprimento associado).
+# I6: mesmo processo (P1), também sem cumprimento (cumprimento_id NULL) e SEM nenhum
+#   andamento em lugar nenhum -> NULL. Confirma que cumprimento_id NULL não quebra o
+#   JOIN (INNER) com cumprimentos nem falsifica tem_andamento.
+# I7/I8: processo NOVO (P3) cujo jsonb de andamentos (fonte 3) bate regra de cessão.
+#   Nem I7 nem I8 têm cumprimento ou andamento próprio — o jsonb do PROCESSO raiz é
+#   compartilhado/"broadcast" pra TODOS os incidentes dele (herdado do FOR-201, CROSS
+#   JOIN LATERAL sem filtro por incidente). Isso importa pro FOR-202 porque é exatamente
+#   essa fonte que decide NULL vs false — sem este teste, ninguém tinha confirmado que
+#   os DOIS incidentes do mesmo processo viram true juntos.
+psql_ -d sandbox <<'EOF'
+INSERT INTO incidentes (id, processo_id, cumprimento_id, processo_codigo, numero_depre, tipo_previsto) VALUES
+  ('00000000-0000-0000-0000-00000000a005', '00000000-0000-0000-0000-000000000001', NULL, 'I5', NULL, 'Indefinido'),
+  ('00000000-0000-0000-0000-00000000a006', '00000000-0000-0000-0000-000000000001', NULL, 'I6', NULL, 'Indefinido');
+
+INSERT INTO andamentos (incidente_id, data, descricao, hash) VALUES
+  ('00000000-0000-0000-0000-00000000a005', '2024-05-01', 'Decisão - Homologada a Cessão de Crédito nos autos', 'h2');
+
+INSERT INTO processos (id, processo_codigo) VALUES
+  ('00000000-0000-0000-0000-000000000003', 'P3');
+UPDATE processos SET andamentos =
+  '[{"data":"2024-06-01","descricao":"DEPRE - Informação de Cessão de Crédito homologada","arquivo_url":null}]'::jsonb
+ WHERE id = '00000000-0000-0000-0000-000000000003';
+
+INSERT INTO incidentes (id, processo_id, cumprimento_id, processo_codigo, numero_depre, tipo_previsto) VALUES
+  ('00000000-0000-0000-0000-00000000a007', '00000000-0000-0000-0000-000000000003', NULL, 'I7', NULL, 'Indefinido'),
+  ('00000000-0000-0000-0000-00000000a008', '00000000-0000-0000-0000-000000000003', NULL, 'I8', NULL, 'Indefinido');
+EOF
+ok "fixture adicional: I5 andamento direto / I6 sem cumprimento e sem nada / I7+I8 sob P3 com jsonb do processo raiz"
+
+psql_ -d sandbox -c "select classify_processo('00000000-0000-0000-0000-000000000001')" >/dev/null
+psql_ -d sandbox -c "select classify_processo('00000000-0000-0000-0000-000000000003')" >/dev/null
+
+eq "$(val "select cessao_credito from incidentes where processo_codigo='I5'")" "t" \
+  "I5: andamento DIRETO na tabela andamentos do próprio incidente bate regra de cessão -> true (fonte 1 nunca tinha sido testada produzindo true)"
+
+eq "$(val "select cessao_credito is null from incidentes where processo_codigo='I6'")" "t" \
+  "I6: sem cumprimento (cumprimento_id NULL) e sem nenhum andamento -> NULL (cumprimento_id NULL não quebra o JOIN)"
+
+eq "$(val "select cessao_credito from incidentes where processo_codigo='I7'")" "t" \
+  "I7: andamento só no jsonb do PROCESSO raiz (fonte 3) bate regra de cessão -> true"
+
+eq "$(val "select cessao_credito from incidentes where processo_codigo='I8'")" "t" \
+  "I8: mesmo processo de I7 (P3), incidente diferente, sem nenhum andamento próprio -> também true (jsonb do processo raiz é broadcast pra todos os incidentes dele, comportamento herdado do FOR-201 que decide NULL vs false aqui)"
+
 echo
 echo "FOR-202 sandbox: TODOS OS CENÁRIOS OK"

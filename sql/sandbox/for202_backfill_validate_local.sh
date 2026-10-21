@@ -122,5 +122,64 @@ psql_ -d sandbox -c "select for202_backfill_cessao_credito_tick()" >/dev/null
 eq "$(val "select cessao_credito is null from incidentes where processo_codigo='IA'")" "t" \
   "retomada manual (ativo=true de novo): IA volta a virar NULL"
 
+# ---- Gap: guard contra jsonb de cumprimento (fonte 2) e jsonb de processo raiz (fonte 3)
+# nunca tinha sido exercitado — só IB (andamento na tabela `andamentos`, fonte 1) testava
+# a função tick NÃO corrigir uma linha com andamento. Processo/cumprimento NOVOS e
+# isolados de P1/C1 pra não contaminar os guards já testados acima (C1 é compartilhado
+# por IA/IB/IC/IE; mexer nele retestaria tudo de novo com outro resultado).
+psql_ -d sandbox <<'EOF'
+INSERT INTO processos (id, processo_codigo, andamentos) VALUES
+  ('00000000-0000-0000-0000-000000000002', 'P2',
+   '[{"data":"2024-01-01","descricao":"Audiência de conciliação designada","arquivo_url":null}]'::jsonb);
+INSERT INTO cumprimentos (id, processo_id, processo_codigo, andamentos) VALUES
+  ('00000000-0000-0000-0000-00000000c002', '00000000-0000-0000-0000-000000000002', 'C2',
+   '[{"data":"2024-02-01","descricao":"Conclusos para despacho","arquivo_url":null}]'::jsonb),
+  ('00000000-0000-0000-0000-00000000c003', '00000000-0000-0000-0000-000000000002', 'C3', NULL);
+INSERT INTO incidentes (id, processo_id, cumprimento_id, processo_codigo, cessao_credito) VALUES
+  ('00000000-0000-0000-0000-00000000a006', '00000000-0000-0000-0000-000000000002', '00000000-0000-0000-0000-00000000c002', 'IF', false),
+  ('00000000-0000-0000-0000-00000000a007', '00000000-0000-0000-0000-000000000002', '00000000-0000-0000-0000-00000000c003', 'IG', false);
+EOF
+ok "fixture adicional: IF (cumprimento C2 com jsonb não-vazio) / IG (cumprimento C3 sem jsonb, mas PROCESSO P2 com jsonb não-vazio)"
+
+psql_ -d sandbox -c "update for202_backfill_cessao_credito_estado set ativo = true, cursor_atual = null" >/dev/null
+psql_ -d sandbox -c "select for202_backfill_cessao_credito_tick()" >/dev/null
+
+eq "$(val "select cessao_credito from incidentes where processo_codigo='IF'")" "f" \
+  "IF: cumprimento tem jsonb de andamentos não-vazio (fonte 2) -> guard bloqueia, NÃO vira NULL (continua false)"
+eq "$(val "select cessao_credito from incidentes where processo_codigo='IG'")" "f" \
+  "IG: cumprimento próprio sem jsonb, mas o PROCESSO raiz (P2) tem jsonb não-vazio (fonte 3) -> guard também bloqueia, NÃO vira NULL"
+
+# ---- Gap: paginação multi-tick de verdade (lote CHEIO de 3000 -> cursor avança -> tick
+# seguinte retoma e completa). Até aqui todo teste usava <5 linhas, então o lote nunca
+# vinha "cheio" (sempre autodesligava no 1º tick) — o código do cursor/LIMIT 3000 nunca
+# tinha sido exercitado de fato. Estado limpo (TRUNCATE) pra isolar de UUIDs já
+# "ultrapassados" pelo cursor nos cenários acima (ids anteriores são aleatórios — se não
+# isolar, a contagem de corrigidos por tick fica não-determinística).
+psql_ -d sandbox <<'EOF'
+TRUNCATE incidentes, andamentos, cumprimentos, processos CASCADE;
+DELETE FROM for202_backfill_cessao_credito_estado;
+INSERT INTO for202_backfill_cessao_credito_estado (id) VALUES (true);
+
+INSERT INTO incidentes (processo_codigo, cessao_credito)
+SELECT 'BULK-' || gs, false FROM generate_series(1, 3005) gs;
+EOF
+ok "fixture de paginação: 3005 incidentes elegíveis (sem processo/cumprimento/andamento), estado resetado"
+
+psql_ -d sandbox -c "select for202_backfill_cessao_credito_tick()" >/dev/null
+eq "$(val "select total_corrigidos from for202_backfill_cessao_credito_estado")" "3000" \
+  "1º tick da paginação: lote CHEIO (3000), todos corrigidos (nenhum tinha andamento)"
+eq "$(val "select ativo from for202_backfill_cessao_credito_estado")" "t" \
+  "1º tick: lote veio exatamente 3000 (cheio) -> ativo continua true, ainda tem mais pra processar"
+eq "$(val "select cursor_atual is not null from for202_backfill_cessao_credito_estado")" "t" \
+  "1º tick: cursor avançou (não é mais NULL)"
+
+psql_ -d sandbox -c "select for202_backfill_cessao_credito_tick()" >/dev/null
+eq "$(val "select total_corrigidos from for202_backfill_cessao_credito_estado")" "3005" \
+  "2º tick: completa os 5 restantes (3000+5=3005, nenhum ficou de fora pela paginação)"
+eq "$(val "select ativo from for202_backfill_cessao_credito_estado")" "f" \
+  "2º tick: lote veio incompleto (5 < 3000) -> autodesligou, confirma fim do backfill"
+eq "$(val "select count(*) from incidentes where cessao_credito = false")" "0" \
+  "paginação completa: nenhum incidente elegível ficou pra trás entre os dois ticks"
+
 echo
 echo "FOR-202 backfill sandbox: TODOS OS CENÁRIOS OK"
