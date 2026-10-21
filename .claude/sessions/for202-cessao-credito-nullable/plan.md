@@ -211,7 +211,7 @@ no FOR-201, harness bloqueia como "Production Deploy") — usuário aplicou via 
 - Commit + push feitos; branch `feat/for202-cessao-credito-nullable` no remoto de
   `sp-precat-rios-simples` (repo frontend).
 
-## FASE 6 — Fechamento [Em Progresso ⏰]
+## FASE 6 — Fechamento [Completada ✅]
 
 ### Confirmar em produção [Completada ✅ — feito na Fase 4]
 
@@ -261,15 +261,21 @@ FOR-203 criada: mesma ambiguidade nos outros 6 flags + propagação pra
 `fase`/`macrofase`/`elegivel` + duplicação de código entre `classify_processo`/
 `classify_incidentes`. Não implementado — só registrado pra decisão futura.
 
-### PR + merge [Em Progresso ⏰]
+### PR + merge [Completada ✅]
 
-- Backend: PR #45 (`jjuniorfilho/precatorio-sp`) — https://github.com/jjuniorfilho/precatorio-sp/pull/45
-- Frontend: PR #87 (`sp-precat-rios-simples-c2fc47c1`) — https://github.com/jjuniorfilho/sp-precat-rios-simples-c2fc47c1/pull/87
-- FOR-202 → In Review no Linear (flipou pra In Progress sozinho 2x via integração
-  Linear-GitHub ao linkar os PRs — mesmo padrão já documentado em memória de sessões
-  anteriores; corrigido manualmente de volta pra In Review nas 2 vezes).
-- Falta: checar comentários do code review automatizado (bot), Gate 3 (merge manual
-  pelo usuário).
+- Backend: PR #45 (`jjuniorfilho/precatorio-sp`) — mergeado 2026-10-21 13:24 UTC.
+- Frontend: PR #87 (`sp-precat-rios-simples-c2fc47c1`) — mergeado 2026-10-21 13:25 UTC.
+- FOR-202 → Done no Linear.
+- Usuário aplicou o fix urgente (`sql/2026-10-21_for202_fix_backfill_revoke_e_corrida.sql`)
+  em produção DEPOIS do merge dos PRs — confirmado: grants fechados (0), anon sem
+  EXECUTE na função tick, função com `FOR UPDATE SKIP LOCKED` presente.
+- Checagem de dano da corrida (2 amostras de 5.000 — por `id` e por `updated_at desc`,
+  a mais sensível a pegar vítimas recentes): **0 vítimas encontradas** em ambas. A
+  janela de exposição real (entre aplicar o backfill original e aplicar o fix) não
+  parece ter produzido nenhum falso-NULL detectável.
+- 206.075 incidentes ainda `cessao_credito IS NULL` no momento do fechamento — backfill
+  continua rodando sozinho via cron, caindo gradualmente (não precisa de acompanhamento
+  ativo).
 
 ### Comentários:
 -
