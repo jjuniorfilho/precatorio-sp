@@ -211,19 +211,19 @@ no FOR-201, harness bloqueia como "Production Deploy") — usuário aplicou via 
 - Commit + push feitos; branch `feat/for202-cessao-credito-nullable` no remoto de
   `sp-precat-rios-simples` (repo frontend).
 
-## FASE 6 — Fechamento [Não Iniciada ⏳]
+## FASE 6 — Fechamento [Em Progresso ⏰]
 
-### Confirmar em produção [Não Iniciada ⏳]
+### Confirmar em produção [Completada ✅ — feito na Fase 4]
 
-Query de smoke test: contagem de `cessao_credito is null` vs `true` vs `false` —
-confere com o esperado (backfill completo, nenhum `false` sem andamento).
+Smoke test (soma sim/nao/nao_verificado = baseline) e estado do backfill já conferidos
+e documentados na Fase 4. Backfill ainda não terminou (roda sozinho via cron, sem
+necessidade de acompanhamento ativo).
 
-### Issue de follow-up [Não Iniciada ⏳]
+### Issue de follow-up [Completada ✅]
 
-Criar no Linear: mesma ambiguidade nos outros 6 flags + propagação pra
+FOR-203 criada: mesma ambiguidade nos outros 6 flags + propagação pra
 `fase`/`macrofase`/`elegivel` + duplicação de código entre `classify_processo`/
-`classify_incidentes` (achados do revisor especialista, registrados em
-architecture.md). Não implementar agora — só registrar.
+`classify_incidentes`. Não implementado — só registrado pra decisão futura.
 
 ### PR + merge [Não Iniciada ⏳]
 
