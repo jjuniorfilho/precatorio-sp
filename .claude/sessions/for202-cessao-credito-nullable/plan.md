@@ -2,12 +2,12 @@
 
 Se você está trabalhando nesta feature, certifique-se de atualizar este arquivo plan.md conforme progride.
 
-## FASE 1 — Schema + fix em classify_processo/classify_incidentes [Não Iniciada ⏳]
+## FASE 1 — Schema + fix em classify_processo/classify_incidentes [Completada ✅]
 
 Escrever e validar localmente a migration que torna `incidentes.cessao_credito`
 nullable e corrige o `COALESCE` que apagava o `NULL` genuíno.
 
-### Escrever `sql/2026-10-21_for202_cessao_credito_nullable.sql` [Não Iniciada ⏳]
+### Escrever `sql/2026-10-21_for202_cessao_credito_nullable.sql` [Completada ✅]
 
 - `ALTER TABLE incidentes ALTER COLUMN cessao_credito DROP NOT NULL, ALTER COLUMN
   cessao_credito DROP DEFAULT;` — precedido de `SET lock_timeout = '3s';
@@ -23,7 +23,7 @@ nullable e corrige o `COALESCE` que apagava o `NULL` genuíno.
     `macrofase`, `elegivel`, `ano_oc`, `next_crawl_at`) ficam **byte-a-byte iguais**
     ao que está em produção hoje — zero mudança além do `cessao_credito`.
 
-### Escrever `sql/sandbox/for202_validate_local.sh` [Não Iniciada ⏳]
+### Escrever `sql/sandbox/for202_validate_local.sh` [Completada ✅]
 
 Molde: `sql/sandbox/for201_validate_local.sh`. Cenários mínimos:
 1. Incidente sem nenhum andamento em nenhuma fonte → `cessao_credito IS NULL`.
@@ -36,13 +36,23 @@ Molde: `sql/sandbox/for201_validate_local.sh`. Cenários mínimos:
 5. Regressão: um incidente com `oficio_expedido` batendo via andamento próprio
    continua funcionando igual (os outros flags não mudaram).
 
-### Rodar a validação local [Não Iniciada ⏳]
+### Rodar a validação local [Completada ✅]
 
-`sql/sandbox/for202_validate_local.sh` — todas as asserções precisam passar antes de
-avançar pra Fase 2.
+`sql/sandbox/for202_validate_local.sh` — 14 asserções, todas passaram.
 
 ### Comentários:
--
+- Caso sutil validado explicitamente (cenário I3): incidente com andamento real que não
+  bate NENHUMA regra de `classificacao_regras` precisa virar `false` (verificado,
+  negativo), não `NULL`. A lógica `tem_andamento = bool_or(ta.incidente_id IS NOT NULL)`
+  cobre isso corretamente porque conta a PRESENÇA do andamento na origem (`ta`), não se
+  ele bateu alguma regra (`r`).
+- Caso I4 (andamento só no nível do PROCESSO raiz, não no cumprimento nem no incidente)
+  também confirmado: conta como verificado. Reforça que o fix do FOR-201 (3 fontes) e o
+  fix do FOR-202 (nullable) são complementares — um sem o outro deixaria falso-negativo
+  ou falso "nunca verificado" dependendo da combinação.
+- Definição base das funções confirmada idêntica à de produção via `pg_get_functiondef`
+  antes de escrever a migration (não confiar no arquivo mais recente do repo — hábito já
+  estabelecido desde o achado do drift de `ano_oc`/`calcular_oc` no FOR-201).
 
 ## FASE 2 — Backfill de correção [Não Iniciada ⏳]
 
