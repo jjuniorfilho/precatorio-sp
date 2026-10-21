@@ -2,6 +2,8 @@
 
 > Backend em Supabase (schema de `leads` e das tabelas do valor pago já conferido no banco real; `tokens`, `funnel_events` e `lead_status_history` abaixo seguem no formato original do MVP, sem diagnóstico do DDL vivo). Este documento define as convenções que devem ser
 > seguidas na criação do schema, funções e integrações.
+>
+> **Lacuna conhecida:** as seções de schema abaixo cobrem só o domínio do MVP original (leads/tokens/funnel/valor pago). O domínio pós-MVP do épico FOR-68 (`incidentes`, `djen_depre`, `precatorios_cumprimentos`, `classify_processo`/`classify_incidentes` e todo o pipeline de classificação) é hoje a maior parte da lógica de negócio do produto e **não está documentado aqui** — só existe nos comentários das migrations em `sql/` e nos docs de sessão em `.claude/sessions/`. A seção "Convenções de engenharia" abaixo nasceu nesse domínio mas é genérica; o schema propriamente dito ainda precisa de um levantamento dedicado.
 
 ---
 
@@ -165,6 +167,67 @@ CREATE POLICY "admin_read_funnel"
 | Índices | `idx_{tabela}_{coluna}`; únicos (parciais ou não): `uq_{tabela}_{descrição}` | `idx_leads_status_crm`, `uq_leads_avulso_processo_depre` |
 | Policies | string descritiva | `"leads_admin_only"`, `"anon_insert_leads"` |
 | Funções Supabase | snake_case | `get_funnel_stats()` |
+
+---
+
+## Convenções de engenharia (migrations, backfill, dados) — observadas entre sessões
+
+> Estas convenções nasceram no domínio pós-MVP (`incidentes`, `djen_depre`,
+> `classify_processo`/`classify_incidentes` — épico FOR-68), que **não** está
+> documentado nas seções de schema acima. Elas são genéricas e valem para
+> qualquer tabela/função do projeto, mas os exemplos concretos (DDL completo,
+> RPCs, lógica de classificação) só existem nos arquivos de migration em `sql/`
+> — ver especialmente `sql/2026-10-21_for202_*.sql` e `sql/2026-10-01_for189_*.sql`.
+
+### Migrations SQL numeradas por data + captura ao vivo da definição anterior
+- Nome do arquivo: `sql/AAAA-MM-DD_for<NNN>[sufixo]_descricao.sql` — data da
+  sessão em que foi escrita (não da feature), um arquivo por etapa lógica
+  quando a mudança tem mais de uma (ex.: `for202_cessao_credito_nullable.sql`,
+  depois `for202_backfill_cessao_credito.sql`, depois `for202_rpcs_cessao_credito_enum.sql`).
+- Antes de reescrever uma função/RPC existente, capturar a definição **atual
+  em produção** via `pg_get_functiondef('nome_funcao'::regproc)` no SQL Editor
+  — nunca confiar no arquivo `.sql` mais recente do repo como base de partida.
+  Já houve drift confirmado entre repo e produção (FOR-201); desde então é
+  hábito do projeto desconfiar do arquivo e reconferir contra o banco real.
+- Ao mudar a assinatura de uma função (tipo/nome/ordem de parâmetro), fazer
+  `DROP FUNCTION` explícito com a assinatura antiga **antes** do
+  `CREATE OR REPLACE` — o Postgres não substitui uma função por assinatura
+  incompatível silenciosamente; deixar as duas convivendo gera overload ambíguo.
+- Validar a migration localmente antes de pedir aplicação ao humano: rodar
+  num Postgres descartável (há `postgresql@15` via Homebrew na máquina) via
+  script em `sql/sandbox/*.sh` que recria o schema mínimo necessário, aplica a
+  migration e roda asserts. A aplicação real é sempre manual, pelo humano, no
+  SQL Editor do Supabase (sem CLI de migration automática neste projeto).
+
+### Backfill de correção em massa: função "tick" + pg_cron, não loop manual
+- Padrão usado em `numero_depre` (jobid 17) e `cessao_credito` (FOR-202, jobid
+  18): uma função `SECURITY DEFINER` processa um lote fixo por chamada, com
+  cursor persistido numa tabela de estado, lock de advisory (nunca sobrepõe
+  execução concorrente) e autodesligamento quando o lote retornado é menor
+  que o solicitado (sinal de que acabou).
+- `pg_cron` chama a função a cada minuto; nunca um loop/`DO` block único no
+  SQL Editor — evita travar a sessão por horas (e arriscar timeout do
+  cliente), é resumível se o cron pausar/a sessão cair, e deixa o progresso
+  observável sem precisar manter uma sessão aberta.
+- O recálculo é sempre feito "ao vivo" dentro do tick, contra o estado atual
+  das fontes — nunca contra uma lista pré-materializada de uma medição
+  anterior. Isso evita condição de corrida com o crawler de produção
+  classificando a mesma linha em paralelo.
+- Pausa/retomada manual via `UPDATE <tabela_estado> SET ativo = false/true`.
+
+### Nullable tri-state como convenção de dados do projeto
+- Quando um booleano representa o **resultado de uma verificação** (não um
+  fato intrínseco do registro), `NULL` significa "nunca verificado" e
+  `true`/`false` significam "verificado de verdade, com esse resultado".
+  Nunca usar `false` como valor-padrão para "ainda não sei" — isso fica
+  indistinguível de "verificado e é false". Esse erro já causou bug em
+  produção (`classify_processo` fazia `COALESCE(resultado, false)`, apagando
+  a distinção entre as duas situações).
+- Precedentes: `djen_depre.acordo_homologado` (FOR-159/160),
+  `incidentes.cessao_credito` (FOR-202). Ao adicionar um novo flag
+  "verificável" num `classify_*`, seguir o mesmo padrão: coluna nullable, sem
+  `DEFAULT`, e deixar o `NULL` subir naturalmente do cálculo (sem `COALESCE`
+  para booleano) quando não há dado suficiente pra decidir.
 
 ---
 
