@@ -54,33 +54,51 @@ Molde: `sql/sandbox/for201_validate_local.sh`. Cenários mínimos:
   antes de escrever a migration (não confiar no arquivo mais recente do repo — hábito já
   estabelecido desde o achado do drift de `ano_oc`/`calcular_oc` no FOR-201).
 
-## FASE 2 — Backfill de correção [Não Iniciada ⏳]
+## FASE 2 — Backfill de correção [Completada ✅]
 
 Corrigir os ~200.800 incidentes que hoje são `false` mas nunca foram verificados.
 
-### Escrever `sql/2026-10-21_for202_backfill_cessao_credito.sql` [Não Iniciada ⏳]
+### Escrever `sql/2026-10-21_for202_backfill_cessao_credito.sql` [Completada ✅]
 
-- Cursor por `id` (não `OFFSET` — recomendação do especialista, evita pular/duplicar
-  linhas sob escrita concorrente do crawler).
-- Lotes de 2.000-5.000 linhas por iteração (`DO` block em loop, ou script chamado
-  repetidamente — decidir no momento, documentar escolha no cabeçalho do arquivo).
-- Cada `UPDATE` do lote recalcula "sem andamento em nenhuma fonte" **ao vivo**, dentro
-  do próprio statement — nunca contra uma lista pré-materializada (evita sobrescrever
-  com `NULL` um incidente que o crawler classificou de verdade entre a medição e a
-  escrita).
-- Guard: só atualiza linhas onde `cessao_credito = false` (nunca toca em `true`, nem
-  reprocessa linhas já `NULL`).
-- Pequena pausa entre lotes (`pg_sleep` ou nova invocação) pra não competir I/O com o
-  crawler de produção — mesmo cuidado que a medição por amostra desta sessão já exigiu.
+Desenho final: função "tick" (`for202_backfill_cessao_credito_tick()`) chamada a cada
+minuto via `pg_cron` — mesmo padrão já em produção pro backfill de `numero_depre`
+(jobid 17, `backfill_numero_depre_tick`), não um `DO` block em loop único nem um script
+chamado manualmente. Motivo: resumível, observável (`coleta_runs` + tabela de estado),
+pausável sem derrubar nada, e já é o padrão mental de quem for operar depois.
 
-### Medir antes de rodar em produção [Não Iniciada ⏳]
+- Cursor por `id` via tabela de estado `for202_backfill_cessao_credito_estado`.
+- Lotes de 3.000 (`LIMIT 3000`).
+- `NOT EXISTS` nas 3 fontes dentro do próprio `UPDATE` — recálculo ao vivo, não lista
+  pré-materializada.
+- Guard `cessao_credito = false` — nunca toca em `true` nem `NULL` já setado.
+- `ativo = (tamanho_lote = 3000)` — autodesliga quando o lote vem incompleto (acabou).
+- Pacing: o próprio intervalo do cron (1/min) já serve de pausa — sem `pg_sleep`
+  adicional necessário.
+- Controle manual: `UPDATE for202_backfill_cessao_credito_estado SET ativo = false/true`.
 
-Reconfirmar o tamanho real (a estimativa de ~200.800 foi por amostra — medir o valor
-exato é inviável em 1 query, ver nota em context.md; considerar medir por fatias/cursor
-em vez de 1 contagem global).
+### Medir antes de rodar em produção [Completada ✅ — já feito antes desta sub-sessão de fleet]
+
+Estimativa por amostra (`TABLESAMPLE SYSTEM(5)`) já registrada em context.md: ~200.800
+de 871.127. Medir o valor exato continua inviável numa query só (mesmo achado de I/O);
+o progresso real vai ser observável incrementalmente via
+`for202_backfill_cessao_credito_estado.total_corrigidos` conforme o cron roda — não
+precisa de uma contagem global prévia mais precisa que a amostra.
 
 ### Comentários:
--
+- Validação local (10 asserções, `sql/sandbox/for202_backfill_validate_local.sh`) usa um
+  shim de `cron.schedule` (função stub no schema `cron`) em vez de editar o arquivo real
+  — garante que o arquivo aplicado em produção é EXATAMENTE o testado, sem cópia
+  mutilada por `sed`.
+- Testado explicitamente: nunca toca em `cessao_credito = true` nem em linhas já `NULL`
+  (simulando um `classify_processo` concorrente que já classificou antes do tick rodar).
+- Segurança de concorrência quanto ao crawler escrevendo em paralelo: por construção, o
+  `NOT EXISTS` roda DENTRO do mesmo `UPDATE` (não é um `SELECT` separado seguido de
+  `UPDATE` por lista fixa) — o mecanismo de `EvalPlanQual` do Postgres sob READ COMMITTED
+  já impede o backfill de sobrescrever uma linha que outra transação concorrente acabou
+  de comitar com um valor diferente pro guard (`cessao_credito = false`). Não simulei
+  concorrência real (2 processos psql simultâneos) no sandbox — a garantia é por
+  construção da query, não por teste empírico de corrida; se algum dia isso virar
+  suspeito de bug, vale um teste de concorrência real antes de mexer na lógica.
 
 ## FASE 3 — RPCs com filtro em 3 estados [Não Iniciada ⏳]
 
