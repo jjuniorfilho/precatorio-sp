@@ -219,6 +219,42 @@ Smoke test (soma sim/nao/nao_verificado = baseline) e estado do backfill já con
 e documentados na Fase 4. Backfill ainda não terminou (roda sozinho via cron, sem
 necessidade de acompanhamento ativo).
 
+### Pre-PR: 2 achados críticos do code-reviewer, corrigidos [Completada ✅]
+
+Rodei os 4 agentes de pre-PR (`branch-master-docs-checker`, `code-reviewer`,
+`documentation-writer`, `test-planner-branch`) em paralelo sobre a branch. 2 achados
+reais, já em produção, corrigidos nesta sessão antes de abrir o PR:
+
+1. **Exposição de privilégios ativa**: `for202_backfill_cessao_credito_estado` e a
+   função tick foram criadas sem REVOKE/RLS — desvio da convenção já estabelecida no
+   repo (for171/for174b/for200). `anon`/`authenticated` tinham acesso total.
+2. **Condição de corrida real, reproduzida empiricamente pelo revisor**: o `NOT EXISTS`
+   do UPDATE original rodava no mesmo statement que o guard `cessao_credito=false` — sob
+   conflito de lock (EvalPlanQual), o guard via dado fresco mas o `NOT EXISTS` continuava
+   no snapshot velho. Uma linha já verificada como `false` podia virar `NULL` por engano
+   se o crawler inserisse um andamento bem na janela do tick.
+
+Fix: `sql/2026-10-21_for202_fix_backfill_revoke_e_corrida.sql` — REVOKE/RLS +
+`FOR UPDATE SKIP LOCKED` em 2 statements separados (linha disputada pelo crawler é
+pulada, não corrompida). Bug de implementação achado ao validar (`max(uuid)` não existe
+no Postgres) corrigido no processo.
+
+Validado com 2 scripts novos: `for202_fix_regressao_validate_local.sh` (12 asserções —
+fix não quebra nada do comportamento já validado) e `for202_fix_race_validate_local.sh`
+(2 sessões psql concorrentes DE VERDADE, não só lógica sequencial — reproduz o bug no
+padrão antigo, confirma o fechamento no padrão novo).
+
+**Ainda precisa aplicar em produção** (handoff humano, mesma restrição de sempre) —
+URGENTE pela parte 1 (exposição ativa).
+
+`branch-master-docs-checker`: nada bloqueante (projeto não tem ADR formal pra citar).
+`documentation-writer`: formalizou as 3 convenções técnicas usadas (migration
+numerada+captura ao vivo, backfill tick+cron, nullable tri-state) em
+`docs/technical-context/briefing/backend-conventions.md`.
+`test-planner-branch`: achou 2 gaps reais de cobertura nos scripts da Fase 1/2 (fontes
+de andamento nunca testadas em combinação, paginação multi-tick nunca exercitada) —
+corrigidos, 30→44 asserções nos scripts originais.
+
 ### Issue de follow-up [Completada ✅]
 
 FOR-203 criada: mesma ambiguidade nos outros 6 flags + propagação pra
