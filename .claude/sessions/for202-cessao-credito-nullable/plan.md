@@ -147,30 +147,37 @@ precisa de um schema mais amplo: `partes`, `djen_depre`, `precatorios`,
   original (trabalho do FOR-195) — preservada na reescrita, confirmada contra a captura
   ao vivo de produção antes de escrever o arquivo.
 
-## FASE 4 — Aplicar em produção (handoff humano) [Em Progresso ⏰ — usuário aplicando via Lovable]
+## FASE 4 — Aplicar em produção (handoff humano) [Completada ✅]
 
 O agente não tem permissão pra aplicar DDL/funções em produção diretamente (achado
-no FOR-201, harness bloqueia como "Production Deploy") — esta fase é SQL Editor,
-executado pelo humano, na ordem:
-
-1. `sql/2026-10-21_for202_cessao_credito_nullable.sql` (schema + fix na função).
-2. Confirmar com 1 `classify_processo(id)` manual que não dá erro.
-3. `sql/2026-10-21_for202_backfill_cessao_credito.sql` (rodar, acompanhar progresso).
-4. `sql/2026-10-21_for202_rpcs_cessao_credito_enum.sql` (RPCs).
+no FOR-201, harness bloqueia como "Production Deploy") — usuário aplicou via Lovable
+(SQL Editor), na ordem: schema+fix, backfill, RPCs.
 
 ### Comentários:
--
+- Verificado em produção após aplicação: `incidentes.cessao_credito` nullable (`YES`),
+  `classify_processo` com `tem_andamento` presente, cron `backfill-cessao-credito`
+  criado (jobid 18, ativo).
+- Confirmado só 1 overload de `buscar_processos_incidente`/`contar_processos_incidente`
+  (sem risco de PGRST203) — `_where_processo_incidente` tem 3 overloads históricos
+  (16/18/21 params, de migrations anteriores ao FOR-160), mas não é exposta via
+  PostgREST, então não ambiguiza nada pra fora.
+- Smoke test do bug corrigido: `contar_processos_incidente('sim')` +
+  `('nao')` + `('nao_verificado')` = 718.285 + 15.920 + 2.640 = 736.845, bate exatamente
+  com o baseline (`count(*) where flag_sp`) — todo incidente cai em exatamente 1 balde,
+  confirma que o filtro deixou de ser no-op.
+- Backfill rodando sozinho via cron desde a aplicação: 4 lotes, 2.918 corrigidos nos
+  primeiros minutos, `ativo=true` (continua).
 
-## FASE 5 — Frontend [Não Iniciada ⏳]
+## FASE 5 — Frontend [Completada ✅]
 
-### `frontend/src/lib/api/processos.ts` [Não Iniciada ⏳]
+### `frontend/src/lib/api/processos.ts` [Completada ✅]
 
 - `cessaoCredito?: boolean | null` → `cessaoCredito?: "sim" | "nao" | "nao_verificado"
   | null`.
 - `cessao_credito: boolean` (tipo da linha de resultado) → `boolean | null`.
 - `p_cessao_credito: f.cessaoCredito ?? null` — sem mudança na expressão, só no tipo.
 
-### `frontend/src/routes/admin.processo-incidente.tsx` [Não Iniciada ⏳]
+### `frontend/src/routes/admin.processo-incidente.tsx` [Completada ✅]
 
 - `CESSAO_CREDITO_OPTIONS`: adicionar `["nao_verificado", "Não verificado"]` (igual
   `ACORDO_HOMOLOGADO_OPTIONS`).
@@ -186,15 +193,23 @@ executado pelo humano, na ordem:
   `r.cessao_credito == null ? "Não verificado" : r.cessao_credito ? "Sim" : "Não"`
   (mesmo padrão da linha de `acordo_homologado` logo abaixo, já existente).
 
-### Testes [Não Iniciada ⏳]
+### Testes [Completada ✅]
 
 - `admin.processo-incidente.for160.test.ts`, `admin.processo-incidente.oneof.for160.test.ts`,
-  `processos.for160.test.ts`: atualizar asserções que assumem `cessao_credito`
-  2-estado.
-- Rodar suíte completa do frontend antes de abrir PR.
+  `processos.for160.test.ts`: asserções atualizadas pro novo enum, + describe novo pra
+  `CessaoCreditoBadge` (mirror de `AcordoHomologadoBadge`).
+- Suíte completa: 364/364 passam. Typecheck limpo (`tsc --noEmit`).
 
 ### Comentários:
--
+- Branch criada em `origin/jjuniorfilho/precatorio-sp` (base correta do repo frontend,
+  não a branch que estava checked out na hora — `content/for-acordo-prazo-atualizado`,
+  trabalho de outra pessoa/sessão, não tocado).
+- `resultado-fase.tsx`/`admin.leads.tsx`/`novo-lead-avulso-dialog.tsx` não precisaram de
+  mudança — já tratavam `cessao_credito` como tri-state desde o FOR-161 (decisão
+  deliberada de code review anterior, só "adiantada" porque a coluna nunca mandava
+  `null` de verdade até agora).
+- Commit + push feitos; branch `feat/for202-cessao-credito-nullable` no remoto de
+  `sp-precat-rios-simples` (repo frontend).
 
 ## FASE 6 — Fechamento [Não Iniciada ⏳]
 
