@@ -147,7 +147,7 @@ precisa de um schema mais amplo: `partes`, `djen_depre`, `precatorios`,
   original (trabalho do FOR-195) — preservada na reescrita, confirmada contra a captura
   ao vivo de produção antes de escrever o arquivo.
 
-## FASE 4 — Aplicar em produção (handoff humano) [Não Iniciada ⏳]
+## FASE 4 — Aplicar em produção (handoff humano) [Em Progresso ⏰ — usuário aplicando via Lovable]
 
 O agente não tem permissão pra aplicar DDL/funções em produção diretamente (achado
 no FOR-201, harness bloqueia como "Production Deploy") — esta fase é SQL Editor,
