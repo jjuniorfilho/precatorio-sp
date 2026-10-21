@@ -100,9 +100,9 @@ precisa de uma contagem global prévia mais precisa que a amostra.
   construção da query, não por teste empírico de corrida; se algum dia isso virar
   suspeito de bug, vale um teste de concorrência real antes de mexer na lógica.
 
-## FASE 3 — RPCs com filtro em 3 estados [Não Iniciada ⏳]
+## FASE 3 — RPCs com filtro em 3 estados [Completada ✅]
 
-### Escrever `sql/2026-10-21_for202_rpcs_cessao_credito_enum.sql` [Não Iniciada ⏳]
+### Escrever `sql/2026-10-21_for202_rpcs_cessao_credito_enum.sql` [Completada ✅]
 
 Base: captura ao vivo de produção (via `pg_get_functiondef`, não o arquivo mais
 recente do repo — já documentado drift entre os dois, ver context.md).
@@ -129,14 +129,23 @@ recente do repo — já documentado drift entre os dois, ver context.md).
   cessao_credito boolean, ...)`).
 - `GRANT EXECUTE` pras 3, pra `anon, authenticated` (mesmo padrão do FOR-160).
 
-### Validar localmente [Não Iniciada ⏳]
+### Validar localmente [Completada ✅]
 
-Adicionar cenários de `p_cessao_credito='sim'/'nao'/'nao_verificado'` no mesmo
-`for202_validate_local.sh` da Fase 1 — confirmar que o filtro de fato restringe
-(cobre o bug do no-op achado nesta sessão).
+Script próprio (`sql/sandbox/for202_rpcs_validate_local.sh`, não o mesmo do Fase 1 —
+precisa de um schema mais amplo: `partes`, `djen_depre`, `precatorios`,
+`precatorios_pagamentos`, `crawler_queue`, todas referenciadas nas subqueries de
+`buscar_processos_incidente`). 6 asserções, todas passaram.
 
 ### Comentários:
--
+- Prova direta do bug achado em produção: a fixture (1 incidente `true`, 1 `false`, 1
+  `NULL`) confirma que `p_cessao_credito := 'sim'` filtra corretamente pro 1 `true` —
+  com a função ANTIGA (sem o bloco de filtro), isso teria retornado os 3.
+- Confirmado também que valor fora do enum (`'lixo'`) é no-op silencioso, mesmo espírito
+  defensivo do resto da função (não dá erro, só não filtra) — igual o `acordo_homologado`
+  já se comporta.
+- `buscar_processos_incidente` ganhou uma coluna (`processo_cnj`) depois do FOR-160
+  original (trabalho do FOR-195) — preservada na reescrita, confirmada contra a captura
+  ao vivo de produção antes de escrever o arquivo.
 
 ## FASE 4 — Aplicar em produção (handoff humano) [Não Iniciada ⏳]
 
