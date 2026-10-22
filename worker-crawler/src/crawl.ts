@@ -2,16 +2,17 @@
 // e-SAJ é GET sem captcha; #tabelaTodasMovimentacoes já vem no HTML.
 import {
   getSession, searchByCnj, showByCodigo, isCnj, parseCnj, type Session,
-  getRequisitorioSession, searchRequisitorioByCnj, reqReferer,
+  getRequisitorioSession, searchRequisitorioByCnj, reqReferer, carregarMovimentacoesAjax,
 } from "./esaj.js";
 import {
-  load, extractCapa, extractPartes, extractAndamentos, extractDepre, extractCnj,
+  load, extractCapa, extractPartes, extractAndamentos, extractPeticoesDiversas, extractMovimentacoesAjax,
+  movimentacoesViaAjax, extractDepre, extractCnj,
   incidenteLinks, processoPrincLink, firstProcessoLink, tipoFromTexto, extractOrigemInfo,
   type OrigemInfo,
 } from "./parse.js";
 import { fetchAdvogadosByCnj, normNome } from "./comunica.js";
 import { djenAdvogadosByCnj } from "./supabase.js";
-import type { CumprimentoData, IncidenteData, ProcessoPrincipalInfo, ProcessoTree } from "./types.js";
+import type { Andamento, CumprimentoData, IncidenteData, ProcessoPrincipalInfo, ProcessoTree } from "./types.js";
 import { config, sleep } from "./config.js";
 
 const isCumprimento = (texto: string) => /cumprimento|execu[çc][ãa]o de senten/i.test(texto);
@@ -274,6 +275,34 @@ export async function fetchProcessoPrincipal(
   };
 }
 
+const MAX_PAGINAS_MOVIMENTACOES = 500; // trava de segurança contra cursor em loop
+
+/** Todas as movimentações de uma ficha .0500. Layout antigo: já vêm no HTML. Layout atual: o HTML
+ * traz só o botão "Exibir movimentações" (ou a 1ª página + cursor) e o resto sai de
+ * `carregarMovimentacoesAjax.do` — pagina por cursor até acabar. Falha de rede propaga (o job vai p/
+ * retry): gravar uma lista truncada como se fosse completa é exatamente o bug que isto corrige. */
+async function coletarMovimentacoes($: ReturnType<typeof load>, codigo: string, sess: Session): Promise<Andamento[]> {
+  const inline = extractAndamentos($);
+  if (!movimentacoesViaAjax($)) return inline;
+
+  const out: Andamento[] = [...inline];
+  // Botão (nenhuma página inline) → começa pela 1ª página; senão continua do cursor inline.
+  let cursor: string | null = $("#cursorMovimentacoesPaginado").attr("value")?.trim() || null;
+  const comecaDoZero = inline.length === 0 && !cursor;
+  const vistos = new Set<string>();
+  for (let i = 0; i < MAX_PAGINAS_MOVIMENTACOES; i++) {
+    if (!comecaDoZero && !cursor) break;
+    if (i > 0 || comecaDoZero) await sleep(config.delayMs);
+    const html = await carregarMovimentacoesAjax(codigo, sess, reqReferer(), i === 0 && comecaDoZero ? undefined : cursor ?? undefined);
+    const pag = extractMovimentacoesAjax(html);
+    out.push(...pag.andamentos);
+    if (!pag.cursor || vistos.has(pag.cursor)) break;
+    vistos.add(pag.cursor);
+    cursor = pag.cursor;
+  }
+  return out;
+}
+
 export interface RequisitorioResult {
   tree: ProcessoTree;
   origem: string[]; // CNJs do(s) processo(s) de origem → enfileirar p/ o cpopg
@@ -311,7 +340,9 @@ export async function crawlRequisitorio(seed: string, session?: Session): Promis
   }
 
   const { ativas, passiva } = extractPartes($);
-  const andamentos = extractAndamentos($);
+  // Movimentação completa (paginada via AJAX no layout atual) + "Petições diversas" (tabela
+  // separada, ex.: "Comunicado de Acordo de Requisitório").
+  const andamentos = [...(await coletarMovimentacoes($, codigo, sess)), ...extractPeticoesDiversas($)];
   const cnj = capa.cnj ?? (isCnj(seed) ? seed : null);
   const origemInfo = extractOrigemInfo($);
   const origem = origemInfo.map((o) => o.cnj);

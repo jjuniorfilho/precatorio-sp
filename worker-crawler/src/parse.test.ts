@@ -2,7 +2,7 @@
 // dependência nova — ver README.md).
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { classifyEsfera, extractOrigemInfo, extractOrigemCnjs, extractPartes, processoPrincLink, codigoForoFromHref, load } from "./parse.js";
+import { classifyEsfera, extractOrigemInfo, extractOrigemCnjs, extractPartes, temAcordoHomologado, extractAndamentos, extractPeticoesDiversas, extractMovimentacoesAjax, movimentacoesViaAjax, processoPrincLink, codigoForoFromHref, load } from "./parse.js";
 
 test("classifyEsfera: tokens estaduais originais", () => {
   assert.equal(classifyEsfera("FAZENDA PUBLICA DO ESTADO DE SAO PAULO"), "Estadual");
@@ -175,4 +175,91 @@ test("processoPrincLink: 2+ links a.processoPrinc na página -> usa o PRIMEIRO (
     <a class="processoPrinc" href="show.do?processo.codigo=1H0000OUTRO&amp;processo.foro=0100">outro</a>
   </body></html>`);
   assert.deepEqual(processoPrincLink($), { codigo: "1H0000PRINC", foro: "0562" });
+});
+
+// Regra de acordo homologado: frase de homologação do juiz na ficha do .0500, não o
+// comunicado de acordo (petição). Textos reais do 7009845-09.2011.8.26.0500.
+const and = (descricao: string) => ({ data: null, descricao, arquivo_url: null });
+
+test("temAcordoHomologado: decisão publicável com 'Homologo o acordo'", () => {
+  assert.equal(temAcordoHomologado([and("DEPRE Decisão Publicável Processo de Origem: 0414235-79.1999.8.26.0053 Vistos. Páginas 972/1011: Homologo o acordo, celebrado entre as partes, nos seguintes termos: Beneficiário: Asthor")]), true);
+  assert.equal(temAcordoHomologado([and("Remetido ao DJE Relação: 2152/2026 Teor do ato: Vistos. Homologo o acordo, celebrado entre as partes. Homologo o acordo, celebrado")]), true);
+  assert.equal(temAcordoHomologado([and("Vistos. Homologo os acordos celebrados entre as partes.")]), true);
+});
+
+test("temAcordoHomologado: comunicado de acordo (petição) NÃO prova homologação", () => {
+  assert.equal(temAcordoHomologado([and("Comunicado de Acordo de Requisitório")]), false);
+});
+
+test("temAcordoHomologado: boilerplate de pagamento ('texto de acordo celebrado') não conta", () => {
+  assert.equal(temAcordoHomologado([and("mesmo que tenham sido informados por ocasião do ofício requisitório ou do texto de acordo celebrado, é obrigatório que novamente")]), false);
+  assert.equal(temAcordoHomologado([and("Ofício - Cart.Dig. Acordo - Juízo - DEPRE1")]), false);
+});
+
+test("temAcordoHomologado: negações e acordo de compensação ficam de fora", () => {
+  assert.equal(temAcordoHomologado([and("Vistos. Não homologo o acordo, subscrito pelo Dr. Fulano.")]), false);
+  assert.equal(temAcordoHomologado([and("Vistos. Deixo de homologar o acordo celebrado entre as partes.")]), false);
+  assert.equal(temAcordoHomologado([and("Vistos. Homologo os acordos de compensação celebrados entre as partes.")]), false);
+  assert.equal(temAcordoHomologado([]), false);
+});
+
+// Layout atual da ficha do .0500: movimentações paginadas por cursor (carregarMovimentacoesAjax.do).
+// Marcação das linhas copiada de uma ficha real; textos encurtados/anonimizados.
+const linha = (data: string, titulo: string, teor = "", cls = "fundoClaro") => `
+  <tr class="${cls} containerMovimentacao"><td class="dataMovimentacao" width="120">${data}</td><td width="20"></td>
+  <td class="descricaoMovimentacao"><a class="linkMovVincProc" href="#liberarAutoPorSenha">${titulo}</a><br><span style="font-style: italic;">${teor}</span></td></tr>`;
+
+test("extractAndamentos: lê 1ª página + outras páginas do layout paginado; ignora a linha de cursor", () => {
+  const $ = load(`<table><tbody id="tabelaPrimeiraPaginaMovimentacoes">${linha("13/10/2026", "Petição Juntada")}</tbody>
+    <tbody id="tabelaOutrasPaginasMovimentacoes">${linha("14/09/2026", "DEPRE Decisão Publicável", "Vistos. Homologo o acordo, celebrado entre as partes.")}
+    <tr id="trCursorMovimentacoes" data-cursor="abc"><td></td></tr></tbody></table>
+    <input type="hidden" id="cursorMovimentacoesPaginado" value="abc">`);
+  const a = extractAndamentos($);
+  assert.equal(a.length, 2);
+  assert.equal(a[1]!.data, "2026-09-14");
+  assert.match(a[1]!.descricao, /^DEPRE Decisão Publicável Vistos\. Homologo o acordo/);
+  assert.equal(movimentacoesViaAjax($), true);
+  assert.equal(temAcordoHomologado(a), true);
+});
+
+test("movimentacoesViaAjax: página só com o botão 'Exibir movimentações' (HTML inicial do .0500)", () => {
+  const $ = load(`<div id="containerMovimentacoes"><div id="containerExibirMovimentacoes"><button id="btnExibirMovimentacoes">Exibir movimentações</button></div></div>`);
+  assert.deepEqual(extractAndamentos($), []);
+  assert.equal(movimentacoesViaAjax($), true);
+});
+
+test("movimentacoesViaAjax: layout antigo (#tabelaTodasMovimentacoes completa) não pagina", () => {
+  const $ = load(`<table id="tabelaTodasMovimentacoes"><tbody>${linha("01/01/2020", "Documento Juntado")}</tbody></table>`);
+  assert.equal(extractAndamentos($).length, 1);
+  assert.equal(movimentacoesViaAjax($), false);
+});
+
+test("extractMovimentacoesAjax: <tr> soltas (páginas seguintes) + cursor da próxima página", () => {
+  const html = `${linha("10/06/2024", "Remetido ao DJE", "Teor")}${linha("08/06/2024", "Pagamento")}
+    <tr id="trCursorMovimentacoes" data-cursor="PROX" style="display:none"><td></td></tr>`;
+  const r = extractMovimentacoesAjax(html);
+  assert.equal(r.andamentos.length, 2);
+  assert.equal(r.cursor, "PROX");
+});
+
+test("extractMovimentacoesAjax: última página (sem linha de cursor) → cursor null", () => {
+  const r = extractMovimentacoesAjax(linha("19/12/2011", "ENCAMINHADO AO DEPRE 2.1 EM", "Remetente: 1.1"));
+  assert.equal(r.andamentos.length, 1);
+  assert.equal(r.cursor, null);
+});
+
+test("extractMovimentacoesAjax: 1ª página como bloco completo traz o cursor do input oculto", () => {
+  const r = extractMovimentacoesAjax(`<table><tbody id="tabelaPrimeiraPaginaMovimentacoes">${linha("13/10/2026", "X")}</tbody></table>
+    <input type="hidden" id="cursorMovimentacoesPaginado" value="C1">`);
+  assert.equal(r.andamentos.length, 1);
+  assert.equal(r.cursor, "C1");
+});
+
+test("extractPeticoesDiversas: tabela após o <h2> 'Petições diversas'", () => {
+  const $ = load(`<div><h2 class="subtitle tituloDoBloco">Petições diversas</h2></div>
+    <table><tbody><tr><td>31/05/2022</td><td>Comunicado de Acordo de Requisitório <br> </td></tr></tbody></table>`);
+  const p = extractPeticoesDiversas($);
+  assert.equal(p.length, 1);
+  assert.equal(p[0]!.descricao, "Comunicado de Acordo de Requisitório");
+  assert.equal(temAcordoHomologado(p), false);
 });

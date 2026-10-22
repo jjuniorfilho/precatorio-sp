@@ -11,9 +11,10 @@ export interface Session {
   cookie: string;
 }
 
-function baseHeaders(session?: Session, referer?: string | null): Record<string, string> {
+function baseHeaders(session?: Session, referer?: string | null, extra?: Record<string, string>): Record<string, string> {
   return {
     "User-Agent": UA,
+    ...extra,
     "Accept-Language": "pt-BR,pt;q=0.9",
     ...(referer !== null ? { Referer: referer ?? `${config.esajBase}/open.do?servico=190101` } : {}),
     ...(session?.cookie ? { Cookie: session.cookie } : {}),
@@ -21,13 +22,13 @@ function baseHeaders(session?: Session, referer?: string | null): Record<string,
 }
 
 /** GET com timeout + backoff (429/5xx/timeout). Retorna o HTML (texto). */
-export async function fetchHtml(url: string, session?: Session, referer?: string): Promise<string> {
+export async function fetchHtml(url: string, session?: Session, referer?: string, extraHeaders?: Record<string, string>): Promise<string> {
   let lastErr: unknown;
   for (let attempt = 0; attempt <= config.maxHttpRetry; attempt++) {
     try {
       const res = await request(url, {
         method: "GET",
-        headers: baseHeaders(session, referer),
+        headers: baseHeaders(session, referer, extraHeaders),
         signal: AbortSignal.timeout(config.requestTimeoutMs),
         maxRedirections: 5,
       });
@@ -100,6 +101,20 @@ export async function showByCodigo(processoCodigo: string, foro: string, session
     "localPesquisa.cdLocal": foro,
   });
   return fetchHtml(`${config.esajBase}/show.do?${params}`, session, referer);
+}
+
+/** Movimentações do .0500 sob demanda (o HTML da ficha só traz o botão "Exibir movimentações").
+ * Sem `cursor` → 1ª página (bloco completo); com `cursor` → próxima página (keyset, cursor opaco).
+ * Espelha o `$.ajax` de show-26.1.0-10.js (GET `carregarMovimentacoesAjax.do`, XHR). */
+export async function carregarMovimentacoesAjax(
+  processoCodigo: string, session: Session, referer?: string, cursor?: string,
+): Promise<string> {
+  const params = new URLSearchParams({ "processo.codigo": processoCodigo });
+  if (cursor) params.set("cursor", cursor);
+  return fetchHtml(`${config.esajBase}/carregarMovimentacoesAjax.do?${params}`, session, referer, {
+    "X-Requested-With": "XMLHttpRequest",
+    Accept: "text/html, */*; q=0.01",
+  });
 }
 
 // ---- Consulta de Requisitórios (.0500) --------------------------------------
