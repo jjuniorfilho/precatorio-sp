@@ -5,7 +5,7 @@ import WebSocketImpl from "ws";
 import { config } from "./config.js";
 import { normNome } from "./comunica.js";
 import type { ProcessoPrincipalInfo, ProcessoTree, QueueJob } from "./types.js";
-import type { OrigemInfo } from "./parse.js";
+import { temAcordoHomologado, type OrigemInfo } from "./parse.js";
 import type { ErroCategoria } from "./erro-categoria.js";
 
 // Node < 22 não tem WebSocket nativo (supabase realtime exige). Fornece o `ws`.
@@ -415,14 +415,10 @@ export async function persistRequisitorio(tree: ProcessoTree, origemInfo: Origem
     arquivo_url: a.arquivo_url,
   }));
 
-  // FOR-159 corrigiu o parser pra ler "Petições diversas" (onde mora "Comunicado de Acordo
-  // de Requisitório"), mas só calculava acordo_homologado via UPDATE manual rodado uma vez
-  // no SQL Editor (2026-09-13) — persistRequisitorio nunca escrevia essa coluna, então todo
-  // crawl desde então deixava acordo_homologado null de novo (achado em produção: 7.447
-  // registros com o jsonb completo mas o campo nunca calculado). Calcula aqui, toda vez,
-  // mesmo padrão ILIKE do backfill original — sem isso o buraco reabre a cada recrawl.
-  const acordoHomologado = andamentos.some((a) =>
-    /Comunicado de Acordo de Requisit/i.test(a.descricao ?? ""));
+  // Acordo homologado = decisão do juiz na ficha ("Homologo o acordo"), não o comunicado de
+  // acordo (petição). Só prova `true`; sem a frase fica `null` (não verificado) até a ficha
+  // ser lida por inteiro — ver temAcordoHomologado em parse.ts.
+  const acordoHomologado = temAcordoHomologado(andamentos) ? true : null;
 
   // origem_incidentes só guarda as entradas com sufixo "/NNNN" (numeroIncidente) — são
   // essas que permitem vincular_numero_depre_reverso() achar o incidente certo depois que

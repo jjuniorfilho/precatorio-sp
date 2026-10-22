@@ -198,15 +198,91 @@ export function extractPartes($: $): { ativas: ParteAtiva[]; passiva: PartePassi
   return { ativas, passiva };
 }
 
+/**
+ * Regra de "acordo homologado" de um requisitório .0500: existe andamento da própria ficha
+ * (decisão publicável / remetido ao DJE) cujo teor contém a frase de homologação do juiz
+ * — "Homologo o acordo" (ou "os acordos"). Prova a decisão, ao contrário do antigo
+ * "Comunicado de Acordo de Requisitório", que é só uma petição informando que há acordo.
+ *
+ * Fica de fora de propósito: "Não homologo…" (lookbehind), "Deixo de homologar…" (a frase
+ * não bate) e "acordo de compensação" (abatimento de dívida, outro instituto). Mantenha em
+ * sincronia com ACORDO_HOMOLOGADO_REGEX_PG em sql/2026-10-22_for_acordo_homologado_zera_e_reclassifica.sql
+ * (Postgres ARE suporta os mesmos lookahead/lookbehind). Só decide `true`: a ausência da
+ * frase prova "não achei", e só vira `false` quando a ficha foi lida por inteiro.
+ */
+const ACORDO_HOMOLOGADO_RE = /(?<!n[ãa]o\s)homologo\s+os?\s+acordos?\b(?!\s+de\s+compensa)/i;
+
+export function temAcordoHomologado(andamentos: Andamento[]): boolean {
+  return andamentos.some((a) => ACORDO_HOMOLOGADO_RE.test(a.descricao));
+}
+
+/** Linha de movimentação (data + descrição) — mesma marcação nos 3 layouts do e-SAJ. */
+function andamentoDaLinha($tr: ReturnType<$>): Andamento | null {
+  const data = parseDateIso($tr.find("td.dataMovimentacao").text());
+  // <br> separa título e teor; sem trocá-lo por espaço, .text() cola "Publicável"+"Vistos".
+  const cell = $tr.children("td").last().clone();
+  cell.find("br").replaceWith(" ");
+  const descricao = cell.text().replace(/\s+/g, " ").trim();
+  if (!descricao) return null;
+  const arquivo = $tr.find("a.linkMovVincProc").attr("href") ?? null;
+  return { data, descricao, arquivo_url: arquivo };
+}
+
+/** Movimentações presentes NO HTML da ficha. O e-SAJ já serviu essas linhas de dois jeitos:
+ * tabela única `#tabelaTodasMovimentacoes` (layout antigo, completa) e, no layout atual da
+ * Consulta de Requisitórios, `#tabelaPrimeiraPaginaMovimentacoes` + `#tabelaOutrasPaginasMovimentacoes`
+ * (paginação keyset — as páginas seguintes só vêm via `carregarMovimentacoesAjax.do`, ver
+ * extractMovimentacoesAjax). Só linhas com `td.dataMovimentacao` (a linha oculta de cursor não conta). */
 export function extractAndamentos($: $): Andamento[] {
   const out: Andamento[] = [];
-  $("#tabelaTodasMovimentacoes tr").each((_, tr) => {
-    const data = parseDateIso($(tr).find("td.dataMovimentacao").text());
-    const descCell = $(tr).children("td").last();
-    const descricao = descCell.text().replace(/\s+/g, " ").trim();
+  $("#tabelaTodasMovimentacoes tr, #tabelaPrimeiraPaginaMovimentacoes tr, #tabelaOutrasPaginasMovimentacoes tr").each((_, tr) => {
+    if (!$(tr).find("td.dataMovimentacao").length) return;
+    const a = andamentoDaLinha($(tr));
+    if (a) out.push(a);
+  });
+  return out;
+}
+
+/** A ficha do .0500 carrega as movimentações sob demanda: o HTML inicial traz só o botão
+ * "Exibir movimentações" (`#btnExibirMovimentacoes`) e o JS da página chama
+ * `carregarMovimentacoesAjax.do?processo.codigo=…` (1ª página) e depois `…&cursor=…` (demais).
+ * Retorna true quando é preciso buscar via AJAX. */
+export function movimentacoesViaAjax($: $): boolean {
+  return $("#btnExibirMovimentacoes").length > 0 || $("#cursorMovimentacoesPaginado").length > 0;
+}
+
+/** Interpreta a resposta de `carregarMovimentacoesAjax.do`: a 1ª página vem como bloco completo
+ * (tabela + input oculto `#cursorMovimentacoesPaginado`); as seguintes como `<tr>` soltas com uma
+ * linha oculta `#trCursorMovimentacoes[data-cursor]` quando ainda há mais. As `<tr>` soltas são
+ * embrulhadas em <table><tbody> (como o JS da página faz) — senão o parser HTML as descarta. */
+export function extractMovimentacoesAjax(html: string): { andamentos: Andamento[]; cursor: string | null } {
+  const $ = load(/<table[\s>]/i.test(html) ? html : `<table><tbody>${html}</tbody></table>`);
+  const andamentos: Andamento[] = [];
+  $("tr").each((_, tr) => {
+    if (!$(tr).find("td.dataMovimentacao").length) return;
+    const a = andamentoDaLinha($(tr));
+    if (a) andamentos.push(a);
+  });
+  const cursor = ($("#trCursorMovimentacoes").attr("data-cursor") || $("#cursorMovimentacoesPaginado").attr("value") || "").trim();
+  return { andamentos, cursor: cursor || null };
+}
+
+/** Tabela "Petições diversas" da ficha do .0500 (sem id; achada pelo <h2> que a antecede).
+ * Ex.: "Comunicado de Acordo de Requisitório". Fica fora da Movimentação. */
+export function extractPeticoesDiversas($: $): Andamento[] {
+  const out: Andamento[] = [];
+  const heading = $("h2.tituloDoBloco")
+    .filter((_, h) => $(h).text().trim() === "Petições diversas")
+    .first();
+  if (!heading.length) return out;
+  const table = heading.closest("div").nextAll("table").first();
+  table.find("tbody tr").each((_, tr) => {
+    const tds = $(tr).find("td");
+    if (tds.length < 2) return;
+    const data = parseDateIso($(tds[0]).text());
+    const descricao = $(tds[1]).text().replace(/\s+/g, " ").trim();
     if (!descricao) return;
-    const arquivo = $(tr).find("a.linkMovVincProc").attr("href") ?? null;
-    out.push({ data, descricao, arquivo_url: arquivo });
+    out.push({ data, descricao, arquivo_url: null });
   });
   return out;
 }
