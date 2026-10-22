@@ -9,6 +9,10 @@ const UA =
 export interface Session {
   csrf: string | null;
   cookie: string;
+  /** Persiste TODOS os Set-Cookie das respostas (inclui o cookie de afinidade do load balancer,
+   * K-JSESSIONID-*). Só a sessão do requisitório liga isto: sem o cookie de afinidade o e-SAJ
+   * manda a chamada AJAX das movimentações para outro nó do cluster e responde com erro. */
+  mergeCookies?: boolean;
 }
 
 function baseHeaders(session?: Session, referer?: string | null, extra?: Record<string, string>): Record<string, string> {
@@ -35,6 +39,7 @@ export async function fetchHtml(url: string, session?: Session, referer?: string
       if (res.statusCode === 429 || res.statusCode >= 500) {
         throw new Error(`HTTP ${res.statusCode}`);
       }
+      if (session?.mergeCookies) session.cookie = mergeSetCookie(session.cookie, res.headers["set-cookie"]);
       return await res.body.text();
     } catch (err) {
       lastErr = err;
@@ -131,9 +136,11 @@ export async function getRequisitorioSession(): Promise<Session> {
   });
   const html = await res.body.text();
   const csrf = html.match(/name="_csrf"[^>]+value="([^"]+)"/)?.[1] ?? null;
-  const setCookie = ([] as string[]).concat(res.headers["set-cookie"] ?? []).join("; ");
-  const jsession = setCookie.match(/JSESSIONID=([^;]+)/)?.[1];
-  return { csrf, cookie: jsession ? `JSESSIONID=${jsession}` : "" };
+  // A BUSCA segue como antes (só o JSESSIONID — mandar também o cookie de afinidade do form fez a
+  // busca devolver o formulário de novo, de forma intermitente). O cookie de afinidade da FICHA
+  // chega no Set-Cookie do search.do e é guardado por mergeCookies p/ a chamada AJAX seguinte.
+  const jsession = ([] as string[]).concat(res.headers["set-cookie"] ?? []).join("; ").match(/JSESSIONID=([^;]+)/)?.[1];
+  return { csrf, cookie: jsession ? `JSESSIONID=${jsession}` : "", mergeCookies: true };
 }
 
 /** Referer p/ as chamadas autenticadas na consulta de requisitórios. */

@@ -257,6 +257,11 @@ export function movimentacoesViaAjax($: $): boolean {
  * embrulhadas em <table><tbody> (como o JS da página faz) — senão o parser HTML as descarta. */
 export function extractMovimentacoesAjax(html: string): { andamentos: Andamento[]; cursor: string | null } {
   const $ = load(/<table[\s>]/i.test(html) ? html : `<table><tbody>${html}</tbody></table>`);
+  // O e-SAJ responde 200 com esta div quando recusa a chamada (sessão/referer/CSRF); tratar como
+  // "zero movimentações" gravaria a ficha vazia como se estivesse completa — o bug original.
+  if ($(".mensagemErroMovimentacoes").length) {
+    throw new Error(`carregarMovimentacoesAjax: e-SAJ recusou — ${$(".mensagemErroMovimentacoes").text().replace(/\s+/g, " ").trim()}`);
+  }
   const andamentos: Andamento[] = [];
   $("tr").each((_, tr) => {
     if (!$(tr).find("td.dataMovimentacao").length) return;

@@ -263,3 +263,10 @@ test("extractPeticoesDiversas: tabela após o <h2> 'Petições diversas'", () =>
   assert.equal(p[0]!.descricao, "Comunicado de Acordo de Requisitório");
   assert.equal(temAcordoHomologado(p), false);
 });
+
+test("extractMovimentacoesAjax: resposta de erro do e-SAJ (200 + div de erro) lança, não vira lista vazia", () => {
+  assert.throws(
+    () => extractMovimentacoesAjax('<div class="mensagemErroMovimentacoes"> Não foi possível realizar a operação requisitada, tente novamente mais tarde. </div>'),
+    /e-SAJ recusou/,
+  );
+});
