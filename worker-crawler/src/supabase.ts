@@ -5,7 +5,7 @@ import WebSocketImpl from "ws";
 import { config } from "./config.js";
 import { normNome } from "./comunica.js";
 import type { ProcessoPrincipalInfo, ProcessoTree, QueueJob } from "./types.js";
-import { temAcordoHomologado, type OrigemInfo } from "./parse.js";
+import { classificarAcordoHomologado, type OrigemInfo } from "./parse.js";
 import type { ErroCategoria } from "./erro-categoria.js";
 
 // Node < 22 não tem WebSocket nativo (supabase realtime exige). Fornece o `ws`.
@@ -415,10 +415,10 @@ export async function persistRequisitorio(tree: ProcessoTree, origemInfo: Origem
     arquivo_url: a.arquivo_url,
   }));
 
-  // Acordo homologado = decisão do juiz na ficha ("Homologo o acordo"), não o comunicado de
-  // acordo (petição). Só prova `true`; sem a frase fica `null` (não verificado) até a ficha
-  // ser lida por inteiro — ver temAcordoHomologado em parse.ts.
-  const acordoHomologado = temAcordoHomologado(andamentos) ? true : null;
+  // Acordo homologado = decisão do juiz na ficha ("Homologo o acordo"), não o comunicado de acordo
+  // (petição). `true` basta a prova; `false` só se a Movimentação foi lida por inteiro
+  // (leitura_completa) — senão fica `null` (não verificado). Ver temAcordoHomologado em parse.ts.
+  const acordoHomologado = classificarAcordoHomologado(andamentos, inc?.leitura_completa === true);
 
   // origem_incidentes só guarda as entradas com sufixo "/NNNN" (numeroIncidente) — são
   // essas que permitem vincular_numero_depre_reverso() achar o incidente certo depois que

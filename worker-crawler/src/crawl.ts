@@ -342,7 +342,8 @@ export async function crawlRequisitorio(seed: string, session?: Session): Promis
   const { ativas, passiva } = extractPartes($);
   // Movimentação completa (paginada via AJAX no layout atual) + "Petições diversas" (tabela
   // separada, ex.: "Comunicado de Acordo de Requisitório").
-  const andamentos = [...(await coletarMovimentacoes($, codigo, sess)), ...extractPeticoesDiversas($)];
+  const movimentacoes = await coletarMovimentacoes($, codigo, sess);
+  const andamentos = [...movimentacoes, ...extractPeticoesDiversas($)];
   const cnj = capa.cnj ?? (isCnj(seed) ? seed : null);
   const origemInfo = extractOrigemInfo($);
   const origem = origemInfo.map((o) => o.cnj);
@@ -372,6 +373,8 @@ export async function crawlRequisitorio(seed: string, session?: Session): Promis
     partes_ativas: ativas,
     parte_passiva: passiva,
     andamentos,
+    // Toda ficha .0500 tem movimentação; zero linhas = não leu (layout mudou/erro silencioso).
+    leitura_completa: movimentacoes.length > 0,
   };
   const tree: ProcessoTree = {
     processo_codigo: codigo,

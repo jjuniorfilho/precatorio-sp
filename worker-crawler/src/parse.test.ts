@@ -2,7 +2,7 @@
 // dependência nova — ver README.md).
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { classifyEsfera, extractOrigemInfo, extractOrigemCnjs, extractPartes, temAcordoHomologado, extractAndamentos, extractPeticoesDiversas, extractMovimentacoesAjax, movimentacoesViaAjax, processoPrincLink, codigoForoFromHref, load } from "./parse.js";
+import { classifyEsfera, extractOrigemInfo, extractOrigemCnjs, extractPartes, temAcordoHomologado, extractAndamentos, extractPeticoesDiversas, extractMovimentacoesAjax, movimentacoesViaAjax, classificarAcordoHomologado, processoPrincLink, codigoForoFromHref, load } from "./parse.js";
 
 test("classifyEsfera: tokens estaduais originais", () => {
   assert.equal(classifyEsfera("FAZENDA PUBLICA DO ESTADO DE SAO PAULO"), "Estadual");
@@ -269,4 +269,14 @@ test("extractMovimentacoesAjax: resposta de erro do e-SAJ (200 + div de erro) la
     () => extractMovimentacoesAjax('<div class="mensagemErroMovimentacoes"> Não foi possível realizar a operação requisitada, tente novamente mais tarde. </div>'),
     /e-SAJ recusou/,
   );
+});
+
+test("classificarAcordoHomologado: tri-state (true com prova; false só com leitura completa; senão null)", () => {
+  const prova = [and("DEPRE Decisão Publicável Vistos. Homologo o acordo, celebrado entre as partes.")];
+  const semProva = [and("Documento Juntado"), and("Comunicado de Acordo de Requisitório")];
+  assert.equal(classificarAcordoHomologado(prova, true), true);
+  assert.equal(classificarAcordoHomologado(prova, false), true); // prova basta, mesmo sem leitura completa
+  assert.equal(classificarAcordoHomologado(semProva, true), false);
+  assert.equal(classificarAcordoHomologado(semProva, false), null);
+  assert.equal(classificarAcordoHomologado([], false), null);
 });

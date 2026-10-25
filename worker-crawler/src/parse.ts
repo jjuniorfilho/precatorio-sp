@@ -216,6 +216,13 @@ export function temAcordoHomologado(andamentos: Andamento[]): boolean {
   return andamentos.some((a) => ACORDO_HOMOLOGADO_RE.test(a.descricao));
 }
 
+/** Valor de `djen_depre.acordo_homologado` (tri-state): `true` com prova; `false` só se a Movimentação
+ * foi lida por inteiro e a frase não apareceu; `null` (não verificado) quando a leitura não é confiável. */
+export function classificarAcordoHomologado(andamentos: Andamento[], leituraCompleta: boolean): boolean | null {
+  if (temAcordoHomologado(andamentos)) return true;
+  return leituraCompleta ? false : null;
+}
+
 /** Linha de movimentação (data + descrição) — mesma marcação nos 3 layouts do e-SAJ. */
 function andamentoDaLinha($tr: ReturnType<$>): Andamento | null {
   const data = parseDateIso($tr.find("td.dataMovimentacao").text());
