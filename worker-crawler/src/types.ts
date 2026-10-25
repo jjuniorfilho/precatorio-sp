@@ -50,6 +50,9 @@ export interface IncidenteData {
   partes_ativas: ParteAtiva[]; // 1 por credor; ação coletiva pode ter vários no mesmo incidente
   parte_passiva: PartePassiva | null;
   andamentos: Andamento[];
+  /** Só .0500: true quando a Movimentação da ficha foi lida (≥1 linha). É o que autoriza gravar
+   * `acordo_homologado=false`; sem isso a ausência da frase de homologação só prova "não achei". */
+  leitura_completa?: boolean;
 }
 
 export interface CumprimentoData {
