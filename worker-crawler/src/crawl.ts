@@ -6,7 +6,7 @@ import {
 } from "./esaj.js";
 import {
   load, extractCapa, extractPartes, extractAndamentos, extractPeticoesDiversas, extractMovimentacoesAjax,
-  movimentacoesViaAjax, extractDepre, extractCnj,
+  movimentacoesViaAjax, fichaSemConteudo, extractDepre, extractCnj,
   incidenteLinks, processoPrincLink, firstProcessoLink, tipoFromTexto, extractOrigemInfo,
   type OrigemInfo,
 } from "./parse.js";
@@ -334,7 +334,10 @@ export async function crawlRequisitorio(seed: string, session?: Session): Promis
 
   const capa = extractCapa($);
   // Blindagem: não resolveu ficha real → falha p/ re-tentar (não grava lixo).
-  if (codigo === seed && !capa.cnj && !capa.classe && incidenteLinks($).length === 0) {
+  // (a) busca que nunca saiu do seed; (b) página sem conteúdo de ficha (aviso de senha/segredo de
+  // justiça etc. — o código interno vem no JS mesmo assim). Mesmo prefixo de erro: já é classificado
+  // como bloqueio_suspeito (index.ts) e NÃO persiste, preservando o que djen_depre já tem.
+  if ((codigo === seed && !capa.cnj && !capa.classe && incidenteLinks($).length === 0) || fichaSemConteudo($)) {
     const corpo = $("body").text().replace(/\s+/g, " ").trim().slice(0, 200);
     throw new Error(`requisitório não retornou página de detalhe para seed=${seed} :: corpo="${corpo}"`);
   }
