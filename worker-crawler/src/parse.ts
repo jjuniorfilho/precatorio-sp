@@ -258,6 +258,14 @@ export function movimentacoesViaAjax($: $): boolean {
   return $("#btnExibirMovimentacoes").length > 0 || $("#cursorMovimentacoesPaginado").length > 0;
 }
 
+/** A página recebida não tem conteúdo de ficha (sem capa, sem partes, sem nenhuma seção). Acontece
+ * quando o e-SAJ devolve só o aviso "digite a senha do processo" (provável segredo de justiça) ou uma
+ * página intermediária — o código interno ainda aparece no JS, então `selfCodigo` não basta como guard.
+ * Gravar isso sobrescreveria titular/devedora/status/andamentos já existentes com vazio. */
+export function fichaSemConteudo($: $): boolean {
+  return !$("#numeroProcesso").length && !$("#tablePartesPrincipais").length && !$("h2.tituloDoBloco").length;
+}
+
 /** Interpreta a resposta de `carregarMovimentacoesAjax.do`: a 1ª página vem como bloco completo
  * (tabela + input oculto `#cursorMovimentacoesPaginado`); as seguintes como `<tr>` soltas com uma
  * linha oculta `#trCursorMovimentacoes[data-cursor]` quando ainda há mais. As `<tr>` soltas são

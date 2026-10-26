@@ -2,7 +2,7 @@
 // dependência nova — ver README.md).
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { classifyEsfera, extractOrigemInfo, extractOrigemCnjs, extractPartes, temAcordoHomologado, extractAndamentos, extractPeticoesDiversas, extractMovimentacoesAjax, movimentacoesViaAjax, classificarAcordoHomologado, processoPrincLink, codigoForoFromHref, load } from "./parse.js";
+import { classifyEsfera, extractOrigemInfo, extractOrigemCnjs, extractPartes, temAcordoHomologado, extractAndamentos, extractPeticoesDiversas, extractMovimentacoesAjax, movimentacoesViaAjax, classificarAcordoHomologado, fichaSemConteudo, processoPrincLink, codigoForoFromHref, load } from "./parse.js";
 
 test("classifyEsfera: tokens estaduais originais", () => {
   assert.equal(classifyEsfera("FAZENDA PUBLICA DO ESTADO DE SAO PAULO"), "Estadual");
@@ -279,4 +279,15 @@ test("classificarAcordoHomologado: tri-state (true com prova; false só com leit
   assert.equal(classificarAcordoHomologado(semProva, true), false);
   assert.equal(classificarAcordoHomologado(semProva, false), null);
   assert.equal(classificarAcordoHomologado([], false), null);
+});
+
+test("fichaSemConteudo: página só com o aviso de senha (sem capa/partes/seções) é 'sem conteúdo'", () => {
+  const vazia = load(`<div id="popupSenha">Atendendo a resolução 121 do CNJ. digite a senha do processo</div><script>saj.env.queryString='processo.codigo=ABC'</script>`);
+  assert.equal(fichaSemConteudo(vazia), true);
+});
+
+test("fichaSemConteudo: ficha real (capa, partes ou seções) NÃO é 'sem conteúdo'", () => {
+  assert.equal(fichaSemConteudo(load(`<span id="numeroProcesso">7009845-09.2011.8.26.0500</span>`)), false);
+  assert.equal(fichaSemConteudo(load(`<table id="tablePartesPrincipais"></table>`)), false);
+  assert.equal(fichaSemConteudo(load(`<h2 class="subtitle tituloDoBloco">Movimentações</h2>`)), false);
 });
