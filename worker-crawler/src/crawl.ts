@@ -6,7 +6,7 @@ import {
 } from "./esaj.js";
 import {
   load, extractCapa, extractPartes, extractAndamentos, extractPeticoesDiversas, extractMovimentacoesAjax,
-  movimentacoesViaAjax, fichaSemConteudo, extractDepre, extractCnj,
+  movimentacoesViaAjax, fichaSemConteudo, buscaRequisitorioUtil, extractDepre, extractCnj,
   incidenteLinks, processoPrincLink, firstProcessoLink, tipoFromTexto, extractOrigemInfo,
   type OrigemInfo,
 } from "./parse.js";
@@ -275,6 +275,42 @@ export async function fetchProcessoPrincipal(
   };
 }
 
+const MAX_TENTATIVAS_BUSCA = 6;
+
+/** Fila de exclusão mútua das BUSCAS de requisitório. Medido na VPS (2026-10-27, worker parado, IP
+ * em silêncio 10 min): o mesmo CNJ-controle devolve a ficha em 8/10 buscas SEQUENCIAIS, mas só 1/12
+ * quando 6 buscas disparam juntas — o e-SAJ não aguenta buscas simultâneas do mesmo IP (as 6 lanes
+ * do worker se atrapalhavam). Só a busca é serializada; ficha/AJAX das lanes seguem em paralelo. */
+let filaBuscaRequisitorio: Promise<unknown> = Promise.resolve();
+function emFilaDeBusca<T>(fn: () => Promise<T>): Promise<T> {
+  const r = filaBuscaRequisitorio.then(fn, fn);
+  filaBuscaRequisitorio = r.catch(() => {});
+  return r;
+}
+
+/** Busca o .0500 na Consulta de Requisitórios. Medido na VPS (2026-10-26): a busca devolve uma
+ * página-stub (só o aviso "digite a senha do processo", sem capa/partes) em ~50% das tentativas, de
+ * forma ALEATÓRIA por busca (mesmo CNJ abre e falha; boas e "ruins" têm a mesma taxa) — o load balancer
+ * do e-SAJ manda parte das buscas a um nó que não serve a ficha. Mandar o cookie de afinidade
+ * (K-JSESSIONID-*) na BUSCA piora para 0% (trava no nó ruim), e reaproveitar a sessão entre buscas
+ * também gruda a falha. Então: cada tentativa usa uma sessão NOVA (só JSESSIONID) e, vindo o stub,
+ * tenta de novo (até MAX_TENTATIVAS_BUSCA; com 50% por tentativa, falhar todas ≈ 1,6%). O cookie de
+ * afinidade só entra depois, na chamada AJAX das movimentações (Session.mergeCookies), com a ficha
+ * já em mãos. `session` (smoke/testes), quando dada, vale só p/ a 1ª tentativa. */
+async function buscarFichaRequisitorio(seed: string, session?: Session): Promise<{ html: string; sess: Session }> {
+  let ultimo: { html: string; sess: Session } | null = null;
+  for (let i = 0; i < MAX_TENTATIVAS_BUSCA; i++) {
+    if (i > 0) await sleep(config.delayMs);
+    const { html, sess } = await emFilaDeBusca(async () => {
+      const sess = i === 0 && session ? session : await getRequisitorioSession();
+      return { html: await searchRequisitorioByCnj(seed, sess), sess };
+    });
+    ultimo = { html, sess };
+    if (buscaRequisitorioUtil(load(html))) return ultimo;
+  }
+  return ultimo!; // todas vieram stub: o guard de crawlRequisitorio lança com o corpo recebido
+}
+
 const MAX_PAGINAS_MOVIMENTACOES = 500; // trava de segurança contra cursor em loop
 
 /** Todas as movimentações de uma ficha .0500. Layout antigo: já vêm no HTML. Layout atual: o HTML
@@ -315,8 +351,8 @@ export interface RequisitorioResult {
  * já é a raiz). Reusa os parsers; monta uma árvore de 1 incidente (Precatorio) e
  * devolve os CNJs de origem + os campos do precatório p/ reuso em `precatorios`. */
 export async function crawlRequisitorio(seed: string, session?: Session): Promise<RequisitorioResult> {
-  const sess = session ?? (await getRequisitorioSession());
-  let html = await searchRequisitorioByCnj(seed, sess);
+  const { html: html0, sess } = await buscarFichaRequisitorio(seed, session);
+  let html = html0;
   let $ = load(html);
   // Sem ficha direta → segue o 1º link de resultado (lista da busca).
   let self = selfCodigo($);
