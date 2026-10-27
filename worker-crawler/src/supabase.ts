@@ -338,7 +338,9 @@ export async function persistTree(tree: ProcessoTree): Promise<string> {
         processo_codigo: inc.processo_codigo,
         numero_incidente: inc.numero_incidente,
         tipo_previsto: inc.tipo_previsto,
-        numero_depre: inc.numero_depre,
+        // só envia quando a página mostrou o número: o upsert sobrescreve a coluna com null e apagaria
+        // o numero_depre já gravado (backfill por andamentos, vínculo reverso) a cada recrawl.
+        ...(inc.numero_depre ? { numero_depre: inc.numero_depre } : {}),
         cnj: inc.cnj,
         cnj_normalizado: cnjNorm(inc.cnj),
         status: inc.status,

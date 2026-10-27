@@ -368,3 +368,20 @@ test("FOR-178: 2 incidentes crawleados com o mesmo DEPRE — o legado é consumi
   assert.equal(db.incidentes!.length, 2);
   assert.equal(db.incidentes!.filter((r) => String(r.processo_codigo).startsWith("LEGADO-")).length, 0);
 });
+
+test("recrawl cuja página não mostra o numero_depre NÃO apaga o já gravado (backfill por andamentos)", async (t) => {
+  const db = novoDb();
+  const incPcode = "1H0000INC1";
+  instala(t, db);
+
+  await persistTree(arvore());
+  const inc = db.incidentes!.find((r) => r.processo_codigo === incPcode)!;
+  assert.equal(inc.numero_depre, DEPRE);
+
+  const semDepre = arvore();
+  semDepre.cumprimentos[0]!.incidentes[0]!.numero_depre = null;
+  await persistTree(semDepre);
+
+  assert.equal(db.incidentes!.filter((r) => r.processo_codigo === incPcode).length, 1);
+  assert.equal(db.incidentes!.find((r) => r.processo_codigo === incPcode)!.numero_depre, DEPRE, "numero_depre preservado");
+});
