@@ -266,6 +266,12 @@ export function fichaSemConteudo($: $): boolean {
   return !$("#numeroProcesso").length && !$("#tablePartesPrincipais").length && !$("h2.tituloDoBloco").length;
 }
 
+/** A resposta da busca serve para seguir adiante: é uma ficha (tem conteúdo) ou uma lista de resultados
+ * (tem link p/ o processo). Qualquer outra coisa é a página-stub do e-SAJ — ver buscarFichaRequisitorio. */
+export function buscaRequisitorioUtil($: $): boolean {
+  return !fichaSemConteudo($) || firstProcessoLink($) !== null;
+}
+
 /** Interpreta a resposta de `carregarMovimentacoesAjax.do`: a 1ª página vem como bloco completo
  * (tabela + input oculto `#cursorMovimentacoesPaginado`); as seguintes como `<tr>` soltas com uma
  * linha oculta `#trCursorMovimentacoes[data-cursor]` quando ainda há mais. As `<tr>` soltas são

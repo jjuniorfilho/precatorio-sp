@@ -2,7 +2,7 @@
 // dependência nova — ver README.md).
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { classifyEsfera, extractOrigemInfo, extractOrigemCnjs, extractPartes, temAcordoHomologado, extractAndamentos, extractPeticoesDiversas, extractMovimentacoesAjax, movimentacoesViaAjax, classificarAcordoHomologado, fichaSemConteudo, processoPrincLink, codigoForoFromHref, load } from "./parse.js";
+import { classifyEsfera, extractOrigemInfo, extractOrigemCnjs, extractPartes, temAcordoHomologado, extractAndamentos, extractPeticoesDiversas, extractMovimentacoesAjax, movimentacoesViaAjax, classificarAcordoHomologado, fichaSemConteudo, buscaRequisitorioUtil, processoPrincLink, codigoForoFromHref, load } from "./parse.js";
 
 test("classifyEsfera: tokens estaduais originais", () => {
   assert.equal(classifyEsfera("FAZENDA PUBLICA DO ESTADO DE SAO PAULO"), "Estadual");
@@ -290,4 +290,9 @@ test("fichaSemConteudo: ficha real (capa, partes ou seções) NÃO é 'sem conte
   assert.equal(fichaSemConteudo(load(`<span id="numeroProcesso">7009845-09.2011.8.26.0500</span>`)), false);
   assert.equal(fichaSemConteudo(load(`<table id="tablePartesPrincipais"></table>`)), false);
   assert.equal(fichaSemConteudo(load(`<h2 class="subtitle tituloDoBloco">Movimentações</h2>`)), false);
+});
+
+test("buscaRequisitorioUtil: stub (só aviso de senha) NÃO serve; ficha serve", () => {
+  assert.equal(buscaRequisitorioUtil(load(`<div id="popupSenha">digite a senha do processo</div>`)), false);
+  assert.equal(buscaRequisitorioUtil(load(`<span id="numeroProcesso">0314772-49.2020.8.26.0500</span>`)), true);
 });

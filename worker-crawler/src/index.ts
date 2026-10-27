@@ -96,14 +96,6 @@ async function laneEsajSession(lane: number): Promise<Session> {
   }
   return st.esaj;
 }
-async function laneRequisitorioSession(lane: number): Promise<Session> {
-  const st = lanes[lane]!;
-  if (!st.req || Date.now() - st.reqAt > SESSION_MAX_AGE_MS) {
-    st.req = await getRequisitorioSession();
-    st.reqAt = Date.now();
-  }
-  return st.req;
-}
 /** HTTP 429/5xx explícito (ver esaj.ts fetchHtml) é o único sinal confiável de "sessão morta"
  * que temos hoje — "não retornou página de detalhe" fica de fora de propósito: pode ser rota
  * errada (ver djen_link_diag), não necessariamente sessão inválida, então invalidar nesse
@@ -134,7 +126,7 @@ async function processBatch(jobs: QueueJob[]): Promise<{ ok: number; erro: numbe
           // principal — persiste na tabela DEPRE (djen_depre) com ficha + andamentos, e
           // enfileira a(s) ORIGEM(ns). O vínculo com o principal acontece depois: quando
           // a origem é crawleada, um dos seus incidentes referencia este .0500 (numero_depre).
-          const { origem, origemInfo, tree } = await crawlRequisitorio(job.processo_codigo, await laneRequisitorioSession(lane));
+          const { origem, origemInfo, tree } = await crawlRequisitorio(job.processo_codigo); // sessão própria por tentativa (ver buscarFichaRequisitorio)
           await persistRequisitorio(tree, origemInfo);
           // origem do requisitório → cpopg. p_origem deve respeitar crawler_queue_origem_check
           // (valores aceitos: manual/refresh/backfill/caderno_dje). Usa "manual" como a edge.
