@@ -296,3 +296,29 @@ test("buscaRequisitorioUtil: stub (só aviso de senha) NÃO serve; ficha serve",
   assert.equal(buscaRequisitorioUtil(load(`<div id="popupSenha">digite a senha do processo</div>`)), false);
   assert.equal(buscaRequisitorioUtil(load(`<span id="numeroProcesso">0314772-49.2020.8.26.0500</span>`)), true);
 });
+
+// Regressão: representantes legais ("RepreLeg:", ex.: espólio com herdeiros) vinham depois do
+// advogado na mesma célula e eram engolidos pelo nome do advogado (último segmento ia até o fim da célula).
+test("extractPartes: 'RepreLeg:' não vaza para o nome nem a OAB do advogado", () => {
+  const $ = load(`<body><table id="tablePartesPrincipais">
+    <tr><td class="label">Reqte:</td><td>Cia de Saneamento
+    <span>Advogado:</span> Juliany Verneque Paes OAB: 111111/SP
+    <span>RepreLeg:</span> Espólio Elves Dias da Rocha
+    <span>RepreLeg:</span> Giane Dias da Rocha</td></tr>
+    <tr><td class="label">Reqdo:</td><td>MUNICÍPIO DE SÃO PAULO</td></tr>
+  </table></body>`);
+  const { ativas } = extractPartes($);
+  assert.equal(ativas.length, 1);
+  assert.equal(ativas[0]!.advogados.length, 1);
+  assert.equal(ativas[0]!.advogados[0]!.nome, "Juliany Verneque Paes");
+  assert.equal(ativas[0]!.advogados[0]!.oab_normalizada, "111111SP");
+});
+
+test("extractPartes: RepreLeg sem OAB — nome do advogado termina antes do RepreLeg", () => {
+  const $ = load(`<body><table id="tablePartesPrincipais">
+    <tr><td class="label">Reqte:</td><td>Fulano <span>Advogado:</span> Beltrano Silva <span>RepreLeg:</span> Espólio X</td></tr>
+  </table></body>`);
+  const { ativas } = extractPartes($);
+  assert.equal(ativas[0]!.advogados[0]!.nome, "Beltrano Silva");
+  assert.equal(ativas[0]!.advogados[0]!.sem_oab, true);
+});
