@@ -173,7 +173,9 @@ export function extractPartes($: $): { ativas: ParteAtiva[]; passiva: PartePassi
       // não está dentro do span — por isso extraímos do texto completo da célula.
       const advs: Advogado[] = [];
       const cellText = valueCell.text().replace(/ /g, " ");
-      for (const m of cellText.matchAll(/Advogad[oa]:\s*([\s\S]*?)(?=Advogad[oa]:|$)/gi)) {
+      // O segmento de cada advogado para no próximo rótulo: outro "Advogado:" ou "RepreLeg:"
+      // (representante legal — herdeiros/espólio). Sem isso os RepreLeg viram parte do nome do advogado.
+      for (const m of cellText.matchAll(/Advogad[oa]:\s*([\s\S]*?)(?=Advogad[oa]:|Repre\w*\.?\s*Leg\w*:|$)/gi)) {
         const seg = m[1]!.replace(/\s+/g, " ").trim();
         if (!seg) continue;
         const oab = seg.match(/OAB[:\s]*([\dA-Z\/.\- ]+)/i)?.[1]?.trim() ?? null;
