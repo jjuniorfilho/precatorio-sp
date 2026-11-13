@@ -94,9 +94,11 @@ async function buildIncidente(
 
 /** Coleta a árvore inteira a partir de um seed (CNJ recomendado). */
 export async function crawlSeed(seed: string, session?: Session): Promise<ProcessoTree> {
-  const sess = session ?? (await getSession());
-  // Cookie de afinidade do load balancer (K-JSESSIONID-*): sem ele o AJAX das movimentações cai noutro nó e é recusado.
-  sess.mergeCookies = true;
+  // Cookie de afinidade do load balancer (K-JSESSIONID-*): sem ele o AJAX das movimentações cai noutro nó e é
+  // recusado. Vale SÓ dentro deste job: a sessão da raia é compartilhada entre jobs (index.ts), e ligar
+  // mergeCookies nela acumula o cookie de afinidade e gruda as BUSCAS seguintes num nó ruim (medido na VPS em
+  // 13/11: erro de busca foi de ~20% para 92% por lote; ver buscarFichaRequisitorio). Daí a cópia por job.
+  const sess: Session = { ...(session ?? (await getSession())), mergeCookies: true };
   const root = await normalizeToRoot(seed, sess);
   const capa = extractCapa(root.$);
 
