@@ -50,27 +50,43 @@ const incidenteHtml = `<html><body>
   </table>
 </body></html>`;
 
-async function crawlSeedComPaginas(porCodigo: Record<string, string>) {
-  mock.module("./esaj.js", {
-    namedExports: {
-      isCnj, parseCnj,
-      getSession: async () => SESSION,
-      getRequisitorioSession: async () => SESSION,
-      searchRequisitorioByCnj: async () => { throw new Error("não usado neste teste"); },
-      reqReferer: () => "",
-      searchByCnj: async () => porCodigo[ROOT_CODIGO],
-      showByCodigo: async (codigo: string) => porCodigo[codigo] ?? "<html><body></body></html>",
-    },
-  });
-  mock.module("./comunica.js", {
-    namedExports: {
-      normNome: (s: string) => s.trim().toUpperCase(),
-      fetchAdvogadosByCnj: async () => new Map(),
-    },
-  });
-  mock.module("./supabase.js", {
-    namedExports: { djenAdvogadosByCnj: async () => new Map() },
-  });
+// mock.module só pode registrar o mesmo módulo UMA vez por processo: o estado de cada teste vai em
+// variáveis que os mocks leem na hora da chamada.
+let paginasAtuais: Record<string, string> = {};
+let ajaxAtual: Record<string, string> = {};
+let mockado = false;
+
+async function crawlSeedComPaginas(porCodigo: Record<string, string>, ajaxPorCodigo: Record<string, string> = {}) {
+  paginasAtuais = porCodigo;
+  ajaxAtual = ajaxPorCodigo;
+  if (!mockado) {
+    mockado = true;
+    mock.module("./esaj.js", {
+      namedExports: {
+        isCnj, parseCnj,
+        getSession: async () => SESSION,
+        getRequisitorioSession: async () => SESSION,
+        searchRequisitorioByCnj: async () => { throw new Error("não usado neste teste"); },
+        reqReferer: () => "",
+        carregarMovimentacoesAjax: async (codigo: string) => {
+          const html = ajaxAtual[codigo];
+          if (html === undefined) throw new Error("AJAX não usado neste teste (páginas com tabela inline)");
+          return html;
+        },
+        searchByCnj: async () => paginasAtuais[ROOT_CODIGO],
+        showByCodigo: async (codigo: string) => paginasAtuais[codigo] ?? "<html><body></body></html>",
+      },
+    });
+    mock.module("./comunica.js", {
+      namedExports: {
+        normNome: (s: string) => s.trim().toUpperCase(),
+        fetchAdvogadosByCnj: async () => new Map(),
+      },
+    });
+    mock.module("./supabase.js", {
+      namedExports: { djenAdvogadosByCnj: async () => new Map() },
+    });
+  }
   const { crawlSeed } = await import(`./crawl.js?t=${Date.now()}-${Math.random()}`);
   return crawlSeed as (seed: string, session?: Session) => ReturnType<typeof import("./crawl.js").crawlSeed>;
 }
@@ -104,5 +120,47 @@ test(
 
     assert.equal(cump.incidentes[0]!.andamentos.length, 1, "incidente continua com os seus, inalterado");
     assert.equal(cump.incidentes[0]!.andamentos[0]!.descricao, "Expedido ofício requisitório");
+  },
+);
+
+// Layout do e-SAJ desde ~09/09/2026: a ficha do processo comum traz só o botão "Exibir movimentações";
+// as linhas vêm de carregarMovimentacoesAjax. Lia-se só a tabela inline → 0 andamentos em todos os níveis.
+const semTabela = (extra = "") => `<html><body>${extra}<button id="btnExibirMovimentacoes">Exibir movimentações</button></body></html>`;
+
+test(
+  "crawlSeed: layout novo (botão 'Exibir movimentações') lê os andamentos via AJAX na raiz, no cumprimento e no incidente",
+  { skip },
+  async () => {
+    const crawlSeed = await crawlSeedComPaginas(
+      {
+        [ROOT_CODIGO]: semTabela(`<script>saj.env.queryString='processo.codigo=${ROOT_CODIGO}&processo.foro=${FORO}';</script>
+          <span id="numeroProcesso">${SEED}</span>
+          <a class="incidente" href="show.do?processo.codigo=${CUMP_CODIGO}&amp;processo.foro=${FORO}">Cumprimento de Sentença</a>`),
+        [CUMP_CODIGO]: semTabela(`<a class="incidente" href="show.do?processo.codigo=${INC_CODIGO}&amp;processo.foro=${FORO}">Precatório - 00001</a>`),
+        [INC_CODIGO]: semTabela(),
+      },
+      {
+        [ROOT_CODIGO]: `<table>${movimentacao("01/01/2023", "Distribuído")}</table>`,
+        [CUMP_CODIGO]: `<table>${movimentacao("02/02/2023", "Ofício Requisitório - Cessão de Crédito Homologada")}</table>`,
+        [INC_CODIGO]: `<table>${movimentacao("03/03/2023", "Expedição de Ofício Requisitório Deferido")}</table>`,
+      },
+    );
+    const tree = await crawlSeed(SEED, SESSION);
+    const cump = tree.cumprimentos[0]!;
+    assert.deepEqual(tree.andamentos.map((a) => a.descricao), ["Distribuído"]);
+    assert.deepEqual(cump.andamentos.map((a) => a.descricao), ["Ofício Requisitório - Cessão de Crédito Homologada"]);
+    assert.deepEqual(cump.incidentes[0]!.andamentos.map((a) => a.descricao), ["Expedição de Ofício Requisitório Deferido"]);
+  },
+);
+
+test(
+  "crawlSeed: AJAX de movimentações recusado propaga o erro (job vai p/ retry), não grava lista vazia como completa",
+  { skip },
+  async () => {
+    const crawlSeed = await crawlSeedComPaginas(
+      { [ROOT_CODIGO]: semTabela(`<script>saj.env.queryString='processo.codigo=${ROOT_CODIGO}&processo.foro=${FORO}';</script><span id="numeroProcesso">${SEED}</span>`) },
+      { [ROOT_CODIGO]: `<div class="mensagemErroMovimentacoes">Não foi possível realizar a operação requisitada, tente novamente mais tarde.</div>` },
+    );
+    await assert.rejects(() => crawlSeed(SEED, SESSION), /e-SAJ recusou/);
   },
 );

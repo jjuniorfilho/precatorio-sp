@@ -15,6 +15,15 @@ import { djenAdvogadosByCnj } from "./supabase.js";
 import type { Andamento, CumprimentoData, IncidenteData, ProcessoPrincipalInfo, ProcessoTree } from "./types.js";
 import { config, sleep } from "./config.js";
 
+/** Andamentos de uma página do cpopg. Desde ~09/09/2026 o e-SAJ não traz mais a tabela de movimentações
+ * no HTML da ficha do processo comum: só o botão "Exibir movimentações" e o conteúdo sai de
+ * `carregarMovimentacoesAjax.do` (mesmo layout que o .0500 já tinha). Lia-se só o inline → 0 andamentos
+ * e o job voltava "ok" vazio (sem datas de ofício, sem fase). Layout antigo (tabela inline) segue
+ * funcionando. Falha do AJAX propaga: o job vai p/ retry em vez de gravar lista vazia como completa. */
+async function andamentosDaPagina($: ReturnType<typeof load>, codigo: string, sess: Session): Promise<Andamento[]> {
+  return coletarMovimentacoes($, codigo, sess, `${config.esajBase}/show.do`);
+}
+
 const isCumprimento = (texto: string) => /cumprimento|execu[çc][ãa]o de senten/i.test(texto);
 
 /** lê o código interno da própria página. O e-SAJ atual não traz hidden inputs;
@@ -66,7 +75,7 @@ async function buildIncidente(
   const $ = load(await showByCodigo(codigo, foro, session));
   const capa = extractCapa($);
   const { ativas, passiva } = extractPartes($);
-  const andamentos = extractAndamentos($);
+  const andamentos = await andamentosDaPagina($, codigo, session);
   return {
     processo_codigo: codigo,
     numero_incidente: texto.match(/(\d{5})/)?.[1] ?? null,
@@ -86,6 +95,8 @@ async function buildIncidente(
 /** Coleta a árvore inteira a partir de um seed (CNJ recomendado). */
 export async function crawlSeed(seed: string, session?: Session): Promise<ProcessoTree> {
   const sess = session ?? (await getSession());
+  // Cookie de afinidade do load balancer (K-JSESSIONID-*): sem ele o AJAX das movimentações cai noutro nó e é recusado.
+  sess.mergeCookies = true;
   const root = await normalizeToRoot(seed, sess);
   const capa = extractCapa(root.$);
 
@@ -97,6 +108,8 @@ export async function crawlSeed(seed: string, session?: Session): Promise<Proces
     const corpo = root.$("body").text().replace(/\s+/g, " ").trim().slice(0, 200);
     throw new Error(`busca não retornou página de detalhe para seed=${seed} :: corpo="${corpo}"`);
   }
+
+  const andamentosRaiz = await andamentosDaPagina(root.$, root.codigo, sess);
 
   // No nível raiz, os a.incidente costumam ser os Cumprimentos de Sentença.
   const rootLinks = incidenteLinks(root.$);
@@ -114,7 +127,7 @@ export async function crawlSeed(seed: string, session?: Session): Promise<Proces
     // andamentos quando existia incidente-filho real. Sem isso, as movimentações do
     // cumprimento (ex. cessão de crédito que só aparece aqui, não no incidente-filho)
     // eram descartadas em memória, nunca persistidas em lugar nenhum.
-    const andamentosCumprimento = extractAndamentos($c);
+    const andamentosCumprimento = await andamentosDaPagina($c, c.codigo, sess);
     const leafLinks = incidenteLinks($c).filter((l) => !isCumprimento(l.texto));
     const incidentes: IncidenteData[] = [];
     for (const l of leafLinks) incidentes.push(await buildIncidente(l.codigo, l.foro || root.foro, l.texto, sess));
@@ -172,7 +185,7 @@ export async function crawlSeed(seed: string, session?: Session): Promise<Proces
         cnj: capa.cnj, status: capa.status, tramitacao_prioritaria: capa.tramitacao_prioritaria,
         valor_acao: capa.valor_acao, data_base: capa.data_base,
         partes_ativas: partesRoot.ativas, parte_passiva: partesRoot.passiva,
-        andamentos: extractAndamentos(root.$),
+        andamentos: andamentosRaiz,
       }],
     });
   }
@@ -213,7 +226,7 @@ export async function crawlSeed(seed: string, session?: Session): Promise<Proces
     cumprimentos,
     // FOR-201: andamentos da própria página raiz — root.$ já está em memória
     // (normalizeToRoot), zero custo de rede extra pra capturar isso.
-    andamentos: extractAndamentos(root.$),
+    andamentos: andamentosRaiz,
   };
 }
 
@@ -317,7 +330,9 @@ const MAX_PAGINAS_MOVIMENTACOES = 500; // trava de segurança contra cursor em l
  * traz só o botão "Exibir movimentações" (ou a 1ª página + cursor) e o resto sai de
  * `carregarMovimentacoesAjax.do` — pagina por cursor até acabar. Falha de rede propaga (o job vai p/
  * retry): gravar uma lista truncada como se fosse completa é exatamente o bug que isto corrige. */
-async function coletarMovimentacoes($: ReturnType<typeof load>, codigo: string, sess: Session): Promise<Andamento[]> {
+async function coletarMovimentacoes(
+  $: ReturnType<typeof load>, codigo: string, sess: Session, referer: string = reqReferer(),
+): Promise<Andamento[]> {
   const inline = extractAndamentos($);
   if (!movimentacoesViaAjax($)) return inline;
 
@@ -329,7 +344,7 @@ async function coletarMovimentacoes($: ReturnType<typeof load>, codigo: string, 
   for (let i = 0; i < MAX_PAGINAS_MOVIMENTACOES; i++) {
     if (!comecaDoZero && !cursor) break;
     if (i > 0 || comecaDoZero) await sleep(config.delayMs);
-    const html = await carregarMovimentacoesAjax(codigo, sess, reqReferer(), i === 0 && comecaDoZero ? undefined : cursor ?? undefined);
+    const html = await carregarMovimentacoesAjax(codigo, sess, referer, i === 0 && comecaDoZero ? undefined : cursor ?? undefined);
     const pag = extractMovimentacoesAjax(html);
     out.push(...pag.andamentos);
     if (!pag.cursor || vistos.has(pag.cursor)) break;
