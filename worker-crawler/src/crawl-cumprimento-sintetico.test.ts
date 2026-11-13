@@ -57,6 +57,7 @@ async function crawlSeedComRoot(rootHtml: string) {
       getRequisitorioSession: async () => SESSION,
       searchRequisitorioByCnj: async () => { throw new Error("não usado neste teste"); },
       reqReferer: () => "",
+      carregarMovimentacoesAjax: async () => { throw new Error("AJAX não usado neste teste (páginas com tabela inline)"); },
       searchByCnj: async () => rootHtml,
       showByCodigo: async (codigo: string) => (codigo === ROOT_CODIGO ? rootHtml : incidenteHtmlVazio),
     },
