@@ -6,7 +6,7 @@ import {
 } from "./esaj.js";
 import {
   load, extractCapa, extractPartes, extractAndamentos, extractPeticoesDiversas, extractMovimentacoesAjax,
-  movimentacoesViaAjax, fichaSemConteudo, buscaRequisitorioUtil, extractDepre, extractCnj,
+  movimentacoesViaAjax, fichaSemConteudo, buscaRequisitorioUtil, extractDepre, extractDepreAndamentos, extractCnj,
   incidenteLinks, processoPrincLink, firstProcessoLink, tipoFromTexto, extractOrigemInfo,
   type OrigemInfo,
 } from "./parse.js";
@@ -80,7 +80,7 @@ async function buildIncidente(
     processo_codigo: codigo,
     numero_incidente: texto.match(/(\d{5})/)?.[1] ?? null,
     tipo_previsto: tipoFromTexto(texto),
-    numero_depre: extractDepre($("body").text()),
+    numero_depre: extractDepre($("body").text()) ?? extractDepreAndamentos(andamentos),
     cnj: capa.cnj,
     status: capa.status,
     tramitacao_prioritaria: capa.tramitacao_prioritaria,
@@ -141,7 +141,7 @@ export async function crawlSeed(seed: string, session?: Session): Promise<Proces
         processo_codigo: `${c.codigo}#placeholder`,
         numero_incidente: null,
         tipo_previsto: "Indefinido",
-        numero_depre: extractDepre($c("body").text()),
+        numero_depre: extractDepre($c("body").text()) ?? extractDepreAndamentos(andamentosCumprimento),
         cnj: capaC.cnj,
         status: capaC.status,
         tramitacao_prioritaria: capaC.tramitacao_prioritaria,
@@ -183,7 +183,7 @@ export async function crawlSeed(seed: string, session?: Session): Promise<Proces
       incidentes: [{
         processo_codigo: `${root.codigo}#placeholder`,
         numero_incidente: null, tipo_previsto: "Indefinido",
-        numero_depre: extractDepre(root.$("body").text()),
+        numero_depre: extractDepre(root.$("body").text()) ?? extractDepreAndamentos(andamentosRaiz),
         cnj: capa.cnj, status: capa.status, tramitacao_prioritaria: capa.tramitacao_prioritaria,
         valor_acao: capa.valor_acao, data_base: capa.data_base,
         partes_ativas: partesRoot.ativas, parte_passiva: partesRoot.passiva,

@@ -32,6 +32,17 @@ export function parseDateIso(text: string | undefined | null): string | null {
 const DEPRE_RE = /\d{7}-\d{2}\.\d{4}\.8\.26\.0500/;
 export const extractDepre = (text: string): string | null => text.match(DEPRE_RE)?.[0] ?? null;
 
+/** .0500 citado nas descrições dos andamentos do PRÓPRIO incidente ("Processo de requisitório
+ * 0430048-21.2026.8.26.0500 iniciado e encaminhado ao DEPRE"). Desde ~09/09/2026 o e-SAJ serve as
+ * movimentações por AJAX e elas não estão mais no texto da página, então extractDepre(body) não as vê.
+ * Só devolve quando há EXATAMENTE 1 .0500 distinto; com 2+ devolve null (não arrisca vincular o errado —
+ * mesma guarda de sql/2026-10-20_backfill_numero_depre_via_andamentos.sql). */
+export function extractDepreAndamentos(andamentos: ReadonlyArray<{ descricao: string }>): string | null {
+  const distintos = new Set<string>();
+  for (const a of andamentos) for (const m of a.descricao.matchAll(new RegExp(DEPRE_RE.source, "g"))) distintos.add(m[0]);
+  return distintos.size === 1 ? [...distintos][0]! : null;
+}
+
 const CNJ_RE = /\d{7}-\d{2}\.\d{4}\.\d\.\d{2}\.\d{4}/;
 /** Extrai um CNJ de um texto livre (ex.: texto do link do cumprimento). */
 export const extractCnj = (text: string | null | undefined): string | null => (text ?? "").match(CNJ_RE)?.[0] ?? null;

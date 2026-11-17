@@ -2,7 +2,7 @@
 // dependência nova — ver README.md).
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { classifyEsfera, extractOrigemInfo, extractOrigemCnjs, extractPartes, temAcordoHomologado, extractAndamentos, extractPeticoesDiversas, extractMovimentacoesAjax, movimentacoesViaAjax, classificarAcordoHomologado, fichaSemConteudo, buscaRequisitorioUtil, processoPrincLink, codigoForoFromHref, load } from "./parse.js";
+import { extractDepreAndamentos, classifyEsfera, extractOrigemInfo, extractOrigemCnjs, extractPartes, temAcordoHomologado, extractAndamentos, extractPeticoesDiversas, extractMovimentacoesAjax, movimentacoesViaAjax, classificarAcordoHomologado, fichaSemConteudo, buscaRequisitorioUtil, processoPrincLink, codigoForoFromHref, load } from "./parse.js";
 
 test("classifyEsfera: tokens estaduais originais", () => {
   assert.equal(classifyEsfera("FAZENDA PUBLICA DO ESTADO DE SAO PAULO"), "Estadual");
@@ -321,4 +321,34 @@ test("extractPartes: RepreLeg sem OAB — nome do advogado termina antes do Repr
   const { ativas } = extractPartes($);
   assert.equal(ativas[0]!.advogados[0]!.nome, "Beltrano Silva");
   assert.equal(ativas[0]!.advogados[0]!.sem_oab, true);
+});
+
+test("extractDepreAndamentos: acha o .0500 citado numa descrição (caso real: incidente 00047, 02/11/2026)", () => {
+  assert.equal(
+    extractDepreAndamentos([
+      { descricao: "Certidão de Publicação Expedida" },
+      { descricao: "Ofício Requisitório - Protocolo Eletrônico - DEPRE Processo de requisitório 0430048-21.2026.8.26.0500 iniciado e encaminhado ao DEPRE" },
+    ]),
+    "0430048-21.2026.8.26.0500",
+  );
+});
+
+test("extractDepreAndamentos: o mesmo .0500 repetido em várias descrições conta como um só", () => {
+  const d = "Processo de requisitório 0430048-21.2026.8.26.0500 iniciado";
+  assert.equal(extractDepreAndamentos([{ descricao: d }, { descricao: `${d} (retificação)` }]), "0430048-21.2026.8.26.0500");
+});
+
+test("extractDepreAndamentos: 2+ .0500 distintos -> null (ambíguo, não arrisca vínculo errado)", () => {
+  assert.equal(
+    extractDepreAndamentos([
+      { descricao: "requisitório 0430048-21.2026.8.26.0500 encaminhado" },
+      { descricao: "requisitório 0044752-07.2026.8.26.0500 encaminhado" },
+    ]),
+    null,
+  );
+});
+
+test("extractDepreAndamentos: sem .0500 (ou só CNJ de outro foro) -> null", () => {
+  assert.equal(extractDepreAndamentos([]), null);
+  assert.equal(extractDepreAndamentos([{ descricao: "Distribuído 0415617-64.1986.8.26.0053" }]), null);
 });

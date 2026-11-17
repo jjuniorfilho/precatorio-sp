@@ -154,6 +154,29 @@ test(
 );
 
 test(
+  "crawlSeed: layout novo — .0500 citado só num andamento do incidente (AJAX) vira numero_depre",
+  { skip },
+  async () => {
+    const crawlSeed = await crawlSeedComPaginas(
+      {
+        [ROOT_CODIGO]: semTabela(`<script>saj.env.queryString='processo.codigo=${ROOT_CODIGO}&processo.foro=${FORO}';</script>
+          <span id="numeroProcesso">${SEED}</span>
+          <a class="incidente" href="show.do?processo.codigo=${CUMP_CODIGO}&amp;processo.foro=${FORO}">Cumprimento de Sentença</a>`),
+        [CUMP_CODIGO]: semTabela(`<a class="incidente" href="show.do?processo.codigo=${INC_CODIGO}&amp;processo.foro=${FORO}">Precatório - 00047</a>`),
+        [INC_CODIGO]: semTabela(),
+      },
+      {
+        [ROOT_CODIGO]: `<table>${movimentacao("01/01/2023", "Distribuído")}</table>`,
+        [CUMP_CODIGO]: `<table>${movimentacao("02/02/2023", "Distribuído")}</table>`,
+        [INC_CODIGO]: `<table>${movimentacao("02/11/2026", "Ofício Requisitório - Protocolo Eletrônico - DEPRE Processo de requisitório 0430048-21.2026.8.26.0500 iniciado e encaminhado ao DEPRE")}</table>`,
+      },
+    );
+    const tree = await crawlSeed(SEED, SESSION);
+    assert.equal(tree.cumprimentos[0]!.incidentes[0]!.numero_depre, "0430048-21.2026.8.26.0500");
+  },
+);
+
+test(
   "crawlSeed: AJAX de movimentações recusado propaga o erro (job vai p/ retry), não grava lista vazia como completa",
   { skip },
   async () => {
